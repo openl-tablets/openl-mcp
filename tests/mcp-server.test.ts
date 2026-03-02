@@ -157,6 +157,27 @@ describe("MCP Server Tools", () => {
     expect(result.content[0].text).toContain("Successfully appended");
   });
 
+  it("should execute openl_append_table with RawSource and report row count", async () => {
+    const encoded = encodeProjectPath(projectId);
+    const appendData = {
+      tableType: "RawSource",
+      rows: [
+        [{ value: "A1" }, { value: "B1" }],
+        [{ value: "A2" }, { value: "B2" }],
+      ],
+    };
+    mockAxios
+      .onPost(`/projects/${encoded}/tables/${encodeURIComponent("RawTable_5678")}/lines`, appendData)
+      .reply(200);
+
+    const result = await executeTool(
+      "openl_append_table",
+      { projectId, tableId: "RawTable_5678", appendData },
+      client
+    );
+    expect(result.content[0].text).toContain("Successfully appended 2 row(s)");
+  });
+
   it("should execute openl_list_branches", async () => {
     const repos: RepositoryInfo[] = [{ id: "design", name: "Design Repository", aclId: "acl-design" }];
     mockAxios.onGet("/repos").reply(200, repos);
