@@ -7,6 +7,10 @@ description: Creating custom data structures (Datatypes) and enumerations (Vocab
 
 **Define reusable data structures**: Datatype tables create custom types with typed fields (like classes); Vocabulary tables define allowed values (like enums). Use Datatypes for domain objects (Policy, Customer), Vocabularies for fixed sets (RiskLevel, StateCode).
 
+**Workflow by repository type:**
+- **Design repository:** Open project if needed (openl_open_project), create/update Datatype or Vocabulary tables, then call openl_save_project to persist (status must be EDITING; comment required).
+- **Repository 'local':** Do not call openl_open_project or openl_save_project. Create or update Datatype/Vocabulary tables directly with openl_create_project_table or openl_update_table; no save step.
+
 # Datatypes and Vocabularies in OpenL Studio
 
 Two table types for defining data structures:
@@ -402,17 +406,18 @@ CA
 
 ## Workflow Integration
 
-### Creating Datatype/Vocabulary
+### Design-repository workflow (uses EDITING and openl_save_project)
 
+**Creating Datatype/Vocabulary:**
 ```text
-1. openl_get_table(tableId=existingTable) → Get reference structure
-2. openl_create_project_table(moduleName=..., table={...}) → Create with full structure
-3. openl_validate_project() → Check for compilation errors
-4. openl_save_project(comment="...") → Persist (only when status EDITING; comment required; new revision, project → OPENED)
+1. openl_open_project(projectId) if project not already OPENED/EDITING
+2. openl_get_table(tableId=existingTable) → Get reference structure
+3. openl_create_project_table(moduleName=..., table={...}) → Create with full structure
+4. openl_validate_project() → Check for compilation errors
+5. openl_save_project(comment="...") → Persist (only when status EDITING; comment required; new revision, project → OPENED)
 ```
 
-### Updating Datatype/Vocabulary
-
+**Updating Datatype/Vocabulary:**
 ```text
 1. openl_get_table(tableId=...) → Get current structure
 2. openl_update_table(tableId=..., view={...}) → Add fields/values
@@ -420,6 +425,25 @@ CA
 4. IF errors → Fix references in rules
 5. openl_save_project(comment="...") → Persist (only when status EDITING; comment required)
 ```
+
+### Local-repository workflow (do not call openl_save_project)
+
+For projects with `repository: 'local'`, do not call openl_open_project or openl_save_project. Create and update Datatype/Vocabulary tables directly:
+
+**Creating Datatype/Vocabulary:**
+```text
+1. openl_get_table(tableId=existingTable) → Get reference structure (optional)
+2. openl_create_project_table(moduleName=..., table={...}) → Create with full structure
+3. openl_validate_project() → Check for compilation errors
+```
+
+**Updating Datatype/Vocabulary:**
+```text
+1. openl_get_table(tableId=...) → Get current structure
+2. openl_update_table(tableId=..., view={...}) → Add fields/values
+3. openl_validate_project() → Check for errors; if errors, fix references in rules
+```
+(No save step—changes are applied directly.)
 
 ## Common Mistakes
 
@@ -482,4 +506,4 @@ OpenL validates:
 | Add Value | `openl_append_table(tableId=..., appendData={tableType:"Vocabulary", values:[newValue]})` | Use append for simple additions |
 | Inherit | `openl_create_project_table(moduleName=..., table={tableType:"Datatype", returnType:parentType})` | Parent in returnType |
 | Validate | `openl_validate_project()` | After any change |
-| Save | `openl_save_project(comment="...")` | Only when EDITING; comment required |
+| Save (design repos only) | `openl_save_project(comment="...")` | Design repo: only when EDITING; comment required. Local repo: do not call. |

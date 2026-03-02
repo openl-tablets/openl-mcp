@@ -1336,9 +1336,10 @@ export class OpenLClient {
 
   /**
    * Start project tests execution
-   * 
-   * Ensures project is opened before starting tests. Automatically opens project if closed.
-   * 
+   *
+   * For design repositories: ensures project is opened before starting tests; automatically opens if closed.
+   * For repository 'local': does not open the project; runs tests directly (local projects are always editable).
+   *
    * @param projectId - Project ID
    * @param options - Test execution options
    * @returns Test execution start response
@@ -1354,24 +1355,23 @@ export class OpenLClient {
   ): Promise<Types.TestExecutionStartResponse> {
     const projectPath = this.buildProjectPath(projectId);
 
-    // Check if project is opened, open if needed
+    // Local projects are always editable — skip open; for design repos open if needed
     let projectWasOpened = false;
+    let needsOpen = false;
     try {
       const project = await this.getProject(projectId);
-      if (project.status !== "OPENED" && project.status !== "EDITING") {
-        await this.openProject(projectId);
-        projectWasOpened = true;
-      }
+      needsOpen = project.repository !== REPOSITORY_LOCAL &&
+                  project.status !== "OPENED" && project.status !== "EDITING";
     } catch {
-      // If getProject fails, try to open project anyway
+      // getProject failed — attempt open anyway (will throw for local with a clear message)
+      needsOpen = true;
+    }
+    if (needsOpen) {
       try {
         await this.openProject(projectId);
         projectWasOpened = true;
       } catch (openError) {
-        throw new Error(
-          `Failed to open project: ${sanitizeError(openError)}. ` +
-          `Project must be opened before running tests.`
-        );
+        throw new Error(`Failed to open project: ${sanitizeError(openError)}.`);
       }
     }
 

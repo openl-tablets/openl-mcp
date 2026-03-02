@@ -2,7 +2,7 @@
 
 ## [Version 1.0.0](https://github.com/openl-tablets/openl-studio-mcp/releases/tag/v1.0.0) - February 23, 2026
 
-The OpenL Studio MCP Server enables **natural language interaction with OpenL Studio** through AI assistants like Claude Desktop, Cursor IDE, and VS Code Copilot. This initial release brings 25 production-ready tools, 14 expert guidance prompts, and comprehensive MCP protocol support to business rules management.
+The OpenL Studio MCP Server enables **natural language interaction with OpenL Studio** through AI assistants like Claude Desktop, Cursor IDE, and VS Code Copilot. This initial release brings 25 production-ready tools, 15 expert guidance prompts, and comprehensive MCP protocol support to business rules management.
 
 Built on the Model Context Protocol (MCP) v1.26.0, the server acts as a bridge between AI assistants and OpenL Studio's REST API, transforming complex business rules operations into simple conversational commands. Business analysts, QA teams, and operations staff can now create rules, run tests, and deploy to production using plain English - no programming required.
 
@@ -47,9 +47,12 @@ The server provides comprehensive OpenL Studio access through 25 tools organized
 - `openl_deploy_project` - Deploy to production
 - `openl_redeploy_project` - Redeploy with new version
 
-### 14 Expert Guidance Prompts
+### 15 Expert Guidance Prompts
 
 Built-in templates provide contextual assistance for complex OpenL workflows:
+
+**Local Projects**
+- `local_projects` - Working with repository 'local' (no open/save/close; table/rule/test tools only)
 
 **Table Creation & Management**
 - `create_rule` - Comprehensive guide for all table types

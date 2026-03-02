@@ -53,6 +53,11 @@ export interface PromptFrontmatter {
  */
 export const PROMPTS: PromptDefinition[] = [
   {
+    name: "local_projects",
+    title: "Local Projects (repository: local)",
+    description: "Working with projects in repository 'local': no open/save/close, no Git; table/rule/test tools work directly without opening",
+  },
+  {
     name: "append_table",
     title: "Append to Table",
     description: "Guide for efficiently appending new rows/fields to existing Datatype and Data tables without replacing the entire structure",

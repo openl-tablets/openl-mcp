@@ -44,7 +44,7 @@ Spec Kit is a toolkit that helps AI coding agents understand projects through st
 **Key topics**:
 - Core capabilities (10 major capabilities)
 - All 18 MCP tools with detailed descriptions (openl_ prefix naming)
-- 14 prompts with usage guidance
+- 15 prompts with usage guidance
 - Functional requirements (FR-1 through FR-15, including pagination & formatting)
 - Non-functional requirements (security, performance, reliability)
 - Success criteria
