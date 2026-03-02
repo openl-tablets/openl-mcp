@@ -12,7 +12,7 @@ arguments:
 
 ## Summary
 
-**Test updates preserve structure**: Use openl_get_table() to fetch current structure, modify rows (add/update/remove test cases or fix _res_/_error_ values), then openl_update_table() with FULL view. Always run tests after updates to verify.
+**Test updates preserve structure**: Use openl_get_table() to fetch current structure, modify rows (add/update/remove test cases or fix _res_/_error_ values), then openl_update_table() with FULL view. Always run tests after updates to verify. **Repository type:** For **design** repositories, persist with openl_save_project (only when status EDITING; comment required). For **repository 'local'**, do not call openl_save_project—update and run tests directly; no persist step.
 
 # Updating Test Tables
 
@@ -219,7 +219,7 @@ AFTER updating test table:
 2. openl_get_test_results_by_table(projectId, testedRuleId) → Get test results for the rule
 3. IF all pass → Proceed
 4. IF fail → Review test data (type mismatch, wrong expected value)
-5. openl_save_project(comment="...") → Persist changes (only when status EDITING; comment required; after save, new revision, project → OPENED)
+5. (Design repo only) If repository is design (not 'local') and status is EDITING: openl_save_project(comment="...") → Persist (comment required; new revision, project → OPENED). If repository is 'local', skip this step—no persist.
 ```
 
 ## Common Update Scenarios
@@ -314,4 +314,4 @@ Row: { "policy.vehicle": "> UpdatedPolicies.vehicles", "_res_": 1100 }
 | Add context | Add column `_context_.property` |
 | Add description | Add column `_description_` |
 | Verify changes | `openl_start_project_tests(projectId, { tableId: ruleId })` then `openl_get_test_results_by_table(projectId, ruleId)` |
-| Persist | `openl_save_project(comment="...")` — only when EDITING; comment required |
+| Persist (design repo only) | `openl_save_project(comment="...")` — design repo, only when EDITING; comment required. Local repo: skip. |

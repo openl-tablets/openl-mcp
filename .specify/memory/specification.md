@@ -160,16 +160,18 @@ The OpenL Studio MCP Server is a Model Context Protocol implementation that prov
 ### 9. Prompt Library
 
 **Expert guidance templates**:
-- 14 comprehensive prompts for common workflows
+- 15 comprehensive prompts for common workflows
 - Dynamic argument substitution
 - Conditional content blocks
 - Best practices and examples embedded
 
 **Available Prompts**:
+- `local_projects` - Working with repository 'local' (no open/save/close; table/rule/test tools only)
 - `create_rule` - Guide for creating OpenL tables (general overview)
 - `create_rule_decision_tables` - Comprehensive guide for decision tables (Rules, SimpleRules, SmartRules, SimpleLookup, SmartLookup)
 - `create_rule_spreadsheet` - Detailed guide for Spreadsheet tables with formula syntax
 - `datatype_vocabulary` - Custom datatypes and enumerations
+- `append_table` - Incremental table updates
 - `create_test` - Test table creation guide
 - `update_test` - Modifying existing tests
 - `run_test` - Test selection and execution
@@ -332,7 +334,7 @@ The OpenL Studio MCP Server is a Model Context Protocol implementation that prov
 
 ### FR-5: Prompt System
 
-**Requirement**: Provide 14 prompts with argument substitution.
+**Requirement**: Provide 15 prompts with argument substitution.
 
 **Prompt Features**:
 - YAML frontmatter metadata
@@ -588,7 +590,7 @@ The MCP server is considered successful when:
 2. ✅ All active tools support response_format parameter
 3. ✅ All list operations support pagination
 4. ✅ Character limits enforced on all responses
-5. ✅ All 14 prompts render correctly
+5. ✅ All 15 prompts render correctly
 6. ✅ Both authentication methods work (Basic Auth, PAT)
 7. ⏳ Test coverage >38% (target: 80%)
 8. ✅ ESLint enforced (no errors on commit)

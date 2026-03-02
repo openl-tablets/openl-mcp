@@ -16,7 +16,8 @@ arguments:
 
 **Test Execution Workflow:**
 1. Use `openl_start_project_tests()` to start test execution
-   - Project will be automatically opened if closed
+   - For design repositories: project is automatically opened if closed
+   - For repository 'local': project is not opened; tests run directly
    - Returns execution status and metadata
 2. Use `openl_get_test_results_summary()` for brief summary (without testCases)
 3. Use `openl_get_test_results()` for full results with pagination
@@ -58,10 +59,11 @@ AFTER modification:
 3. IF pass AND not saving → done
 4. IF saving → start all tests (omit `tableId`, no exceptions): `openl_start_project_tests(projectId)`
 
-BEFORE openl_save_project():
+BEFORE openl_save_project() (design repositories only; not applicable for repository 'local'):
 - openl_save_project works only when project status is EDITING; comment is required; after save, new revision is created and project → OPENED
 - `openl_start_project_tests(projectId)` → `openl_get_test_results(projectId)` MUST pass
 - `Validate in OpenL Studio UI (openl_validate_project temporarily disabled)` MUST pass
+- For repository 'local': do not call openl_save_project; run tests without open/save.
 
 BEFORE openl_deploy_project():
 - All above + `openl_get_project_errors()` MUST be 0

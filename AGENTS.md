@@ -128,24 +128,41 @@ All tools are prefixed with `openl_` and versioned (v1.0.0+).
 - `openl_deploy_project` - Deploy to production
 - `openl_redeploy_project` - Redeploy with new version
 
-## Prompts (14 Total)
+## Local projects (repository: local)
+
+Projects with `repository: 'local'` are stored on disk without Git; **OPENED/EDITING status is not checked or required** for them — local projects are always considered editable.
+
+**For local, these work:**
+- `openl_list_projects` (call without repository filter, then filter by `repository: "local"` in the response; the `repository: "local"` filter may fail because the "local" repository is often not returned by `openl_list_repositories`), `openl_get_project`;
+- Table tools: `openl_list_tables`, `openl_get_table`, `openl_update_table`, `openl_append_table`, `openl_create_project_table`;
+- Test execution and results: `openl_start_project_tests`, `openl_get_test_results_summary`, `openl_get_test_results`, `openl_get_test_results_by_table` (the project is not opened before running tests for local).
+
+**For local, do not use:**
+- `openl_open_project`, `openl_save_project`, `openl_close_project` (no commits or status changes);
+- Git tools: `openl_list_branches`, `openl_create_project_branch`, `openl_repository_project_revisions`, `openl_get_project_history`, `openl_get_file_history`, `openl_revert_version`;
+- `openl_list_project_local_changes`, `openl_restore_project_local_change` (require an opened project; local projects cannot be opened).
+
+Deployment (`openl_deploy_project`, `openl_redeploy_project`) for projects with `repository: 'local'` is typically not used via the studio.
+
+## Prompts (15 Total)
 
 Expert guidance templates for complex OpenL workflows:
 
-1. **create_rule** - Guide for creating OpenL tables (general overview)
-2. **create_rule_decision_tables** - Comprehensive guide for decision tables (Rules, SimpleRules, SmartRules, SimpleLookup, SmartLookup)
-3. **create_rule_spreadsheet** - Detailed guide for Spreadsheet tables with formula syntax and JSON structure
-4. **create_test** - Guide for creating test tables
-5. **update_test** - Guide for modifying tests
-6. **run_test** - Test execution workflow
-7. **execute_rule** - Rule execution guide
-8. **append_table** - Incremental table updates
-9. **datatype_vocabulary** - Data structure definitions
-10. **dimension_properties** - Context-based rule selection
-11. **deploy_project** - Deployment workflow
-12. **get_project_errors** - Error analysis workflow
-13. **file_history** - File version history
-14. **project_history** - Project audit trail
+1. **local_projects** - Working with projects in repository 'local' (no open/save/close; table/rule/test tools only)
+2. **create_rule** - Guide for creating OpenL tables (general overview)
+3. **create_rule_decision_tables** - Comprehensive guide for decision tables (Rules, SimpleRules, SmartRules, SimpleLookup, SmartLookup)
+4. **create_rule_spreadsheet** - Detailed guide for Spreadsheet tables with formula syntax and JSON structure
+5. **create_test** - Guide for creating test tables
+6. **update_test** - Guide for modifying tests
+7. **run_test** - Test execution workflow
+8. **execute_rule** - Rule execution guide
+9. **append_table** - Incremental table updates
+10. **datatype_vocabulary** - Data structure definitions
+11. **dimension_properties** - Context-based rule selection
+12. **deploy_project** - Deployment workflow
+13. **get_project_errors** - Error analysis workflow
+14. **file_history** - File version history
+15. **project_history** - Project audit trail
 
 ## Resources
 

@@ -14,6 +14,8 @@ arguments:
 
 **Use openl_append_table for incremental additions**: Append new fields to Datatypes or rows to Data tables without fetching full structure. For modifications or reordering, use openl_update_table instead.
 
+**For projects with repository 'local'**: Do not call openl_open_project or openl_save_project; do not require EDITING. Local projects are always editable; use append_table directly.
+
 # Appending Data to Tables
 
 {if tableId}

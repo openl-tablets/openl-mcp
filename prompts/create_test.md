@@ -12,7 +12,7 @@ arguments:
 
 ## Summary
 
-**Test tables mirror method signatures**: Create with columns matching tested table parameters plus _res_ (expected result) or _error_ (expected error). Minimum 3 rows required (header, column definitions, at least 1 test case). Run tests immediately after creation to verify structure.
+**Test tables mirror method signatures**: Create with columns matching tested table parameters plus _res_ (expected result) or _error_ (expected error). Minimum 3 rows required (header, column definitions, at least 1 test case). Run tests immediately after creation to verify structure. **Repository type:** If the project is in a **design** repository, open the project if needed (openl_open_project) and save after changes (openl_save_project). If the project is in repository **'local'**, skip open and save; create and run tests directly.
 
 # Creating Test Tables in OpenL Studio
 
@@ -317,9 +317,11 @@ openl_get_test_results(projectId)
 → Should show all tests passing
 ```
 
-7. Save project (only when status is EDITING; comment required; creates new revision, project → OPENED):
+7. Persist changes (**design repositories only**): Check repository type and project status. For **repository 'local'**: do not call openl_open_project or openl_save_project; steps 1–6 are sufficient. For **design** repositories: only when status is EDITING, run openl_open_project (if not already opened) then openl_save_project to persist.
 ```text
-openl_save_project(projectId, comment: "Added tests for calculatePremium")
+IF repository === 'local' → skip openl_open_project and openl_save_project.
+IF repository is design AND status is EDITING:
+  openl_save_project(projectId, comment: "Added tests for calculatePremium")
 ```
 
 ## Common Mistakes to Avoid

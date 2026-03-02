@@ -12,7 +12,7 @@ arguments:
 
 ## Summary
 
-**Track file changes with Git commit history**: Every save creates a Git commit with hash (not v1/v2). Use openl_get_file_history() to view commits, openl_download_file(version=hash) for old versions, openl_revert_version() to restore previous state.
+**Track file changes with Git commit history**: Every save creates a Git commit with hash (not v1/v2). **openl_get_file_history**, **openl_download_file**, and **openl_revert_version** are temporarily unavailable on the server—use the OpenL Studio UI to view commit history, download older versions, and restore files. Git history is only supported for projects in a design repository; for `repository: 'local'` it is not available.
 
 # OpenL File History (Git-Based Versioning)
 
@@ -29,38 +29,21 @@ OpenL uses Git for version control. Every save/upload creates Git commit automat
 ## Version = Git Commit Hash
 Versions are commit hashes (e.g., "7a3f2b1c"), NOT v1/v2/v3
 
-## Common Operations
+## Common Operations (UI / manual fallbacks)
 
-**VIEW history:**
-```text
-openl_get_file_history({if filePath}filePath="{filePath}", {end if}limit=20)
-```
+*openl_get_file_history, openl_download_file, openl_revert_version, and openl_compare_versions are temporarily unavailable on the server. Use the OpenL Studio UI or repository Git commands below.*
 
-**FIND specific date:**
-```text
-openl_get_file_history({if filePath}filePath="{filePath}", {end if}limit=100) → filter by date → find commitHash
-```
+**VIEW history:** Open OpenL Studio UI → open project → file history for the file (or use repository: `git log -- <filePath>`).
 
-**DOWNLOAD old version:**
-```text
-openl_download_file(fileName, version=commitHash)
-```
+**FIND specific date:** In OpenL Studio UI file history, filter by date; or use `git log` with date options to find the commit hash.
 
-**COMPARE versions:**
-```text
-Note: openl_compare_versions is temporarily disabled - use OpenL Studio UI for version comparison
-```
+**DOWNLOAD old version:** Use OpenL Studio UI download action for the file at a given version, or in the repository run `git show <commitHash>:<filePath>` / `git checkout <commitHash> -- <filePath>`.
 
-**RECOVER deleted file:**
-```text
-1. openl_get_file_history({if filePath}filePath="{filePath}"{end if}) → find last SAVE commit before ERASE
-2. openl_download_file(fileName, version=lastGoodCommitHash)
-```
+**COMPARE versions:** *openl_compare_versions is disabled.* Use OpenL Studio UI for version comparison (or `git diff <commit1> <commit2> -- <filePath>` in the repository).
 
-**REVERT:**
-```text
-openl_revert_version(targetVersion=oldCommitHash) → Creates NEW commit
-```
+**RECOVER deleted file:** In OpenL Studio UI, use file history to find the last SAVE commit before ERASE, then restore or download that version; or use repository Git to checkout the file from the last good commit.
+
+**REVERT:** Use OpenL Studio UI restore/rollback for the file, or in the repository use your Git rollback procedure (e.g. revert commit or checkout and commit).
 
 ## OpenL Commit Types
 
@@ -71,5 +54,4 @@ openl_revert_version(targetVersion=oldCommitHash) → Creates NEW commit
 - **MERGE**: Git branch merge
 
 ## Pagination
-- `limit`: 50 (default), `offset`: 0
-- Large history → use offset: 50, 100, 150...
+When file-history tools are available, API pagination uses `limit` (default 50) and `offset`. For UI or Git, use the interface’s own paging or log options.

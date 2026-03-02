@@ -1349,6 +1349,35 @@ describe("OpenLClient", () => {
       const summary = await client.getTestResultsSummary("design-project1");
       expect(summary.numberOfTests).toBe(5);
     });
+
+    it("should not call openProject for local repository; start tests directly", async () => {
+      const localProjectId = "local-project1";
+      const localProjectPath = `/projects/${encodeURIComponent(localProjectId)}`;
+
+      const mockLocalProject = {
+        id: "local:project1",
+        name: "Local Project",
+        repository: "local",
+        status: "CLOSED",
+        path: "Local Project",
+        modifiedBy: "admin",
+        modifiedAt: "2024-01-01T00:00:00Z",
+      };
+
+      mockAxios.onGet(localProjectPath).reply(200, mockLocalProject);
+      mockAxios.onPost(`${localProjectPath}/tests/run`).reply(
+        200,
+        { status: "ok" },
+        { "Set-Cookie": "JSESSIONID=local-session; Path=/" }
+      );
+
+      const result = await client.startProjectTests(localProjectId);
+
+      expect(result.status).toBe("started");
+      expect(result.projectId).toBe(localProjectId);
+      expect(result.projectWasOpened).toBe(false);
+      expect(mockAxios.history.patch).toHaveLength(0);
+    });
   });
 
   describe("URL Encoding", () => {

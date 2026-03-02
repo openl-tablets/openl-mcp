@@ -120,7 +120,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: "openl_list_projects",
     description:
-      "List all projects with optional filters (repository, status, tags). Returns project names, status (OPENED/CLOSED), metadata, and a convenient 'projectId' field from API to use with other tools. Projects with repository 'local' are local-only (not connected to remote Git); open/save/close and other status-changing tools do not work for them. IMPORTANT: The 'projectId' is returned exactly as provided by the API and should be used without modification. Use repository name (not ID) - e.g., 'Design Repository' instead of 'design-repo'. Example: if list_repositories returns {id: 'design-repo', name: 'Design Repository'}, use repository: 'Design Repository' (the name). Use this to discover and filter projects before opening them for editing.",
+      "List all projects with optional filters (repository, status, tags). Returns project names, status (OPENED/CLOSED), metadata, and a convenient 'projectId' field from API to use with other tools. For local-only projects, do not pass repository filter 'local' (it may fail); list projects without that filter and filter results by repository === 'local' client-side. For such projects, open/save/close do not work; table/rule/test tools work without opening. IMPORTANT: The 'projectId' is returned exactly as provided by the API and should be used without modification. Use repository name (not ID) - e.g., 'Design Repository' instead of 'design-repo'. Use this to discover and filter projects.",
     inputSchema: schemas.z.toJSONSchema(schemas.listProjectsSchema) as Record<string, unknown>,
     _meta: {
       version: "1.0.0",
@@ -130,7 +130,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "openl_get_project",
-    description: "Get comprehensive project information including details, modules, dependencies, and metadata. Returns full project structure, configuration, and status. Use this to understand project organization before making changes.",
+    description: "Get comprehensive project information including details, modules, dependencies, and metadata. Returns full project structure, configuration, and status. Supports projects with repository 'local' (local-only projects; for them branches/revisions are not applicable). Use this to understand project organization before making changes.",
     inputSchema: schemas.z.toJSONSchema(schemas.getProjectSchema) as Record<string, unknown>,
     _meta: {
       version: "1.0.0",
@@ -184,7 +184,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "openl_list_project_local_changes",
-    description: "List local change history for a project. Returns list of workspace history items with versions, authors, timestamps, and comments. Use this to see all local changes before restoring a previous version. NOTE: This endpoint requires the project to be loaded in OpenL Studio session (use openl_open_project to open the project first). The endpoint uses session-based project context, so no projectId parameter is needed.",
+    description: "List local change history for a project. Returns list of workspace history items with versions, authors, timestamps, and comments. NOTE: Requires the project to be opened (openl_open_project first); not available for repository 'local' (local projects cannot be opened). Uses session-based project context; no projectId parameter.",
     inputSchema: schemas.z.toJSONSchema(schemas.listProjectLocalChangesSchema) as Record<string, unknown>,
     _meta: {
       version: "1.0.0",
@@ -194,7 +194,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "openl_restore_project_local_change",
-    description: "Restore a project to a specified version from its local history. Use the historyId from list_project_local_changes response. This restores the workspace state to a previous local change. NOTE: This endpoint requires the project to be loaded in OpenL Studio session (use openl_open_project to open the project first). The endpoint uses session-based project context, so no projectId parameter is needed.",
+    description: "Restore a project to a specified version from its local history. Use the historyId from openl_list_project_local_changes response. NOTE: Requires the project to be opened first; not available for repository 'local'. Uses session-based project context; no projectId parameter.",
     inputSchema: schemas.z.toJSONSchema(schemas.restoreProjectLocalChangeSchema) as Record<string, unknown>,
     _meta: {
       version: "1.0.0",
@@ -331,7 +331,7 @@ export const TOOLS: ToolDefinition[] = [
   // =============================================================================
   {
     name: "openl_start_project_tests",
-    description: "Start project test execution. The project will be automatically opened if closed. Returns execution status and metadata. Test results can be retrieved using openl_get_test_results_summary, openl_get_test_results, or openl_get_test_results_by_table.",
+    description: "Start project test execution. For design repositories the project is automatically opened if closed; for repository 'local' the project is not opened (tests run directly). Returns execution status and metadata. Test results can be retrieved using openl_get_test_results_summary, openl_get_test_results, or openl_get_test_results_by_table.",
     inputSchema: schemas.z.toJSONSchema(schemas.startProjectTestsSchema) as Record<string, unknown>,
     _meta: {
       version: "1.0.0",

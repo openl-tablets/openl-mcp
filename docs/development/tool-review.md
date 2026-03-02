@@ -6,6 +6,25 @@
 
 ---
 
+## Local projects (repository: local)
+
+Projects with `repository: 'local'` are stored on disk without Git. For them, **open/save/close** and **Git-related tools** are not supported; **table/rule/test tools** work without opening the project.
+
+| Tool group | Tools | Local |
+|------------|--------|--------|
+| Repositories/projects | `openl_list_repositories`, `openl_list_repository_features`, `openl_list_projects`, `openl_get_project` | ✅ Supported. Note: `openl_list_projects(repository: "local")` may fail if "local" is not in list_repositories; list without filter then filter by `repository === "local"` in response. For repo "local", branches/versions N/A |
+| Open/save/close | `openl_open_project`, `openl_save_project`, `openl_close_project` | ❌ Blocked in MCP and API |
+| Git (branches, history) | `openl_list_branches`, `openl_create_project_branch`, `openl_repository_project_revisions`, `openl_get_project_history`, `openl_get_file_history`, `openl_revert_version` | ❌ Not applicable (no Git) |
+| Session history | `openl_list_project_local_changes`, `openl_restore_project_local_change` | ❌ Require opened project; local cannot be opened |
+| Tables/tests | `openl_list_tables`, `openl_get_table`, `openl_update_table`, `openl_append_table`, `openl_create_project_table`, `openl_start_project_tests`, `openl_get_test_results_*` | ✅ Allowed; no OPENED/EDITING check; tests run without open |
+| Execute rule | `openl_execute_rule` | 🔴 Disabled (temporarily); do not call for any repository |
+| Upload/download | `openl_upload_file`, `openl_download_file` | TBD when enabled |
+| Deploy | `openl_list_deploy_repositories`, `openl_list_deployments`, `openl_deploy_project`, `openl_redeploy_project` | Deploy from design repo; local usually not used |
+
+See **AGENTS.md** § "Local projects (repository: local)" for agent-facing summary.
+
+---
+
 ## Repository Tools
 
 ### 1. `openl_list_repositories`

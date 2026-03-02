@@ -23,8 +23,8 @@ const __dirname = dirname(__filename);
 
 describe("Prompts Registry", () => {
   describe("PROMPTS array", () => {
-    test("should contain exactly 14 prompts", () => {
-      expect(PROMPTS).toHaveLength(14);
+    test("should contain exactly 15 prompts", () => {
+      expect(PROMPTS).toHaveLength(15);
     });
 
     test("all prompts should have required fields", () => {
@@ -111,6 +111,7 @@ describe("Prompts Registry", () => {
         "execute_rule",
         "file_history",
         "get_project_errors",
+        "local_projects",
         "project_history",
         "run_test",
         "update_test",
@@ -314,7 +315,7 @@ describe("Helper functions", () => {
   describe("getPromptNames", () => {
     test("should return all prompt names", () => {
       const names = getPromptNames();
-      expect(names).toHaveLength(14);
+      expect(names).toHaveLength(15);
       expect(names).toContain("create_rule");
       expect(names).toContain("create_rule_decision_tables");
       expect(names).toContain("create_rule_spreadsheet");

@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for multiple AI clients: Claude Desktop, Cursor IDE, and VS Code Copilot
 - Supported authentication: Basic Auth and Personal Access Token (PAT)
 - Four response formats: json, markdown, markdown_concise, markdown_detailed
-- 14 AI guidance prompts for complex workflows (table creation, testing, deployment, version control)
+- 15 AI guidance prompts for complex workflows (table creation, testing, deployment, version control)
 - 4 MCP resources for read-only access to OpenL data via URI patterns
 - Docker support with official image and Docker Compose examples
 - Comprehensive documentation: 19+ guides organized into Getting Started, Setup, Usage, and Development sections
