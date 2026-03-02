@@ -167,6 +167,12 @@ export type AppendTableView =
       tableType: "Vocabulary";
       /** Array of vocabulary value objects to append */
       values: Array<any>;
+    }
+  | {
+      /** Table type: RawSource */
+      tableType: "RawSource";
+      /** Array of rows to append; each row is an array of cell objects (e.g. { value: string, colspan?: number } or { covered?: boolean }) */
+      rows: Array<Array<Record<string, unknown>>>;
     };
 
 export interface DatatypeView extends EditableTableView {

@@ -265,7 +265,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "openl_append_table",
-    description: "Append new rows/fields to an existing table WITHOUT replacing the entire structure. Use for ADDING rows/fields ONLY - does not modify existing data. Examples: Adding 1 row → use append_table. Adding multiple rows → use append_table. Adding fields to Datatype → use append_table. More efficient than update_table for simple additions. Only requires the NEW data to append, not the full table structure. For modifications, deletions, or reordering → use update_table instead. Workflow: 1) Call get_table() to understand current structure, 2) Prepare only the new data to add, 3) Call append_table() with appendData. Modifies table in memory (requires save_project to persist changes).",
+    description: "Add new rows/fields to an existing table (additions only). Payload by type: Datatype→fields, SimpleRules/SmartRules→rules, SimpleSpreadsheet→steps, Vocabulary→values, RawSource→rows. For modifying, deleting, or reordering use update_table instead.",
     inputSchema: schemas.z.toJSONSchema(schemas.appendTableSchema) as Record<string, unknown>,
     _meta: {
       version: "1.0.0",

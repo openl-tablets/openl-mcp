@@ -932,7 +932,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "openl Append Table",
     version: "1.0.0",
     description:
-      "Append new rows/fields to an existing table WITHOUT replacing the entire structure. Use for ADDING rows/fields ONLY - does not modify existing data. Examples: Adding 1 row → use append_table. Adding multiple rows → use append_table. More efficient than update_table for simple additions. Only requires the NEW data to append, not the full table structure. For modifications, deletions, or reordering → use update_table instead.",
+      "Add new rows/fields to an existing table (additions only). Payload by type: Datatype→fields, SimpleRules/SmartRules→rules, SimpleSpreadsheet→steps, Vocabulary→values, RawSource→rows. For modifying, deleting, or reordering use update_table instead.",
     inputSchema: schemas.z.toJSONSchema(schemas.appendTableSchema) as Record<string, unknown>,
     annotations: {
       idempotentHint: true,
@@ -948,6 +948,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
           rules?: Array<Record<string, any>>;
           steps?: Array<any>;
           values?: Array<any>;
+          rows?: Array<Array<Record<string, unknown>>>;
         };
         response_format?: "json" | "markdown";
       };
@@ -978,6 +979,9 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
       } else if (typedArgs.appendData.values) {
         itemCount = typedArgs.appendData.values.length;
         itemType = "value(s)";
+      } else if ("rows" in typedArgs.appendData && Array.isArray(typedArgs.appendData.rows)) {
+        itemCount = typedArgs.appendData.rows.length;
+        itemType = "row(s)";
       }
 
       const result = {

@@ -143,7 +143,12 @@ export const appendTableSchema = z.object({
       tableType: z.literal("Vocabulary"),
       values: z.array(z.unknown()).describe("Array of vocabulary value objects to append"),
     }),
-  ]).describe("Data structure to append to the table. Structure depends on tableType: Datatype uses 'fields', SimpleRules/SmartRules use 'rules', SimpleSpreadsheet uses 'steps', Vocabulary uses 'values'"),
+    // RawSourceAppend
+    z.object({
+      tableType: z.literal("RawSource"),
+      rows: z.array(z.array(z.record(z.string(), z.unknown()))).describe("Array of rows to append; each row is an array of cell objects (e.g. { value: string, colspan?: number } or { covered?: boolean })"),
+    }),
+  ]).describe("Data structure to append to the table. Structure depends on tableType: Datatype uses 'fields', SimpleRules/SmartRules use 'rules', SimpleSpreadsheet uses 'steps', Vocabulary uses 'values', RawSource uses 'rows' (array of rows)"),
   response_format: ResponseFormat.optional(),
 }).strict();
 
