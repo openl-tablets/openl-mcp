@@ -244,7 +244,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "openl_get_table",
-    description: "Get detailed information about a specific table/rule. Returns table structure, signature, conditions, actions, dimension properties, and all row data. Use this to understand existing rules before modifying them.",
+    description: "Get detailed information about a specific table/rule. By default returns a parsed table structure with signature, conditions, actions, dimension properties, and row data. Set raw=true to get an unparsed 2D cell matrix (RawTableView) instead — useful for unknown/custom table types or preserving exact cell layout. Note: raw output cannot be passed directly to openl_update_table (which expects the parsed form).",
     inputSchema: schemas.z.toJSONSchema(schemas.getTableSchema) as Record<string, unknown>,
     _meta: {
       version: "1.0.0",

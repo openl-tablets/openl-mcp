@@ -27,7 +27,7 @@ dist/
 *.swp
 *.swo
 *~
-/.claude/worktrees/
+/.claude/
 
 # OS
 .DS_Store

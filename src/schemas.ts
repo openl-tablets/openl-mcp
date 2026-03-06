@@ -99,6 +99,7 @@ export const listTablesSchema = z.object({
 export const getTableSchema = z.object({
   projectId: projectIdSchema,
   tableId: tableIdSchema,
+  raw: z.boolean().optional().describe("If true, returns the raw table view as a 2D matrix of cells without any parsing or structure interpretation. Useful for reading tables of unknown or custom types, preserving exact cell positioning and merge regions."),
   response_format: ResponseFormat.optional(),
 }).strict();
 

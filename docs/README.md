@@ -10,7 +10,7 @@ New to the project? Start here:
 
 ### ⚙️ Setup & Configuration
 Setting up the MCP server for your environment:
-- **[MCP Connection Guide](setup/mcp-connection-guide.md)** - Connect Cursor or Claude Desktop to MCP server
+- **[MCP Connection Guide](setup/mcp-connection-guide.md)** - Connect Cursor, Claude Desktop, or VS Code to MCP server
 - **[Docker Setup](setup/docker.md)** - Run MCP server in Docker
 - **[Authentication Guide](guides/authentication.md)** - Configure authentication (Basic Auth, PAT)
 
@@ -45,7 +45,7 @@ docs/
 
 **I want to...**
 - **Set up MCP server** → [Quick Start](getting-started/quick-start.md)
-- **Connect Cursor/Claude Desktop** → [MCP Connection Guide](setup/mcp-connection-guide.md)
+- **Connect Cursor/Claude Desktop/VS Code** → [MCP Connection Guide](setup/mcp-connection-guide.md)
 - **Configure authentication** → [Authentication Guide](guides/authentication.md)
 - **Use MCP tools** → [Usage Examples](guides/examples.md)
 - **Troubleshoot issues** → [Troubleshooting Guide](guides/troubleshooting.md)

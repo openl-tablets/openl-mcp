@@ -857,7 +857,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "openl Get Table",
     version: "1.0.0",
     description:
-      "Get detailed information about a specific table/rule. Returns table structure, signature, conditions, actions, dimension properties, and all row data.",
+      "Get detailed information about a specific table/rule. By default returns a parsed table structure with signature, conditions, actions, dimension properties, and row data. Set raw=true to get an unparsed 2D cell matrix (RawTableView) instead — useful for unknown/custom table types or preserving exact cell layout. Note: raw output cannot be passed directly to openl_update_table (which expects the parsed form).",
     inputSchema: schemas.z.toJSONSchema(schemas.getTableSchema) as Record<string, unknown>,
     annotations: {
       readOnlyHint: true,
@@ -868,6 +868,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
       const typedArgs = args as {
         projectId: string;
         tableId: string;
+        raw?: boolean;
         response_format?: "json" | "markdown";
       };
 
@@ -877,7 +878,9 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
       const format = validateResponseFormat(typedArgs.response_format);
 
-      const table = await client.getTable(typedArgs.projectId, typedArgs.tableId);
+      const table = typedArgs.raw
+        ? await client.getTable(typedArgs.projectId, typedArgs.tableId, true)
+        : await client.getTable(typedArgs.projectId, typedArgs.tableId);
 
       const formattedResult = formatResponse(table, format);
 

@@ -365,8 +365,21 @@ export type ProjectHistory = ProjectHistoryItem;
 /** Table metadata for list operations */
 export type TableMetadata = SummaryTableView;
 
-/** Full table view with data */
+/** Full table view with data (parsed form) */
 export type TableView = EditableTableView;
+
+/** Raw table cell with merge information */
+export interface RawTableCell {
+  value?: string;
+  colspan?: number;
+  rowspan?: number;
+  covered?: boolean;
+}
+
+/** Raw table view as a 2D matrix of cells without parsing */
+export interface RawTableView extends EditableTableView {
+  source: RawTableCell[][];
+}
 
 /** Deployment result */
 export type DeploymentResult = DeploymentInfo;

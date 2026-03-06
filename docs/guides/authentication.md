@@ -103,7 +103,7 @@ environment:
 - MCP client configuration files (Cursor/Claude Desktop)
 - Query parameters or headers when connecting via HTTP (for one-time connections)
 
-For complete configuration examples, see [MCP Connection Guide](../setup/mcp-connection-guide.md#complete-configuration-examples).
+For complete configuration examples, see [MCP Connection Guide](../setup/mcp-connection-guide.md).
 
 ## Basic Authentication
 

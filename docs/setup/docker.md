@@ -1,161 +1,200 @@
-# 🐳 Docker and Docker Compose for MCP Server
+# Docker Setup for MCP Server
 
 ## Overview
 
-MCP Server can now run as a standalone HTTP application on Express, allowing it to be integrated into Docker Compose as a microservice.
+MCP Server runs as a standalone HTTP application (Express) that provides MCP protocol access (SSE and Streamable HTTP transports) to OpenL Studio. It can be deployed as a Docker container that connects to any OpenL Studio instance.
 
 ## Architecture
 
-```
-┌─────────────────┐
-│   HTTP Client   │  ← External requests
-└────────┬────────┘
+```text
+┌─────────────────────┐
+│  AI Client          │  Claude Desktop / Cursor / VS Code
+│  (MCP Client)       │
+└────────┬────────────┘
+         │ SSE / Streamable HTTP
+         │ (port 3000)
+         ▼
+┌─────────────────────┐
+│  MCP Server         │  Docker container
+│  (Express + MCP SDK)│
+└────────┬────────────┘
          │ HTTP API
          │
          ▼
-┌─────────────────┐
-│ Express Server  │  ← HTTP API on port 3000
-│  (server.ts)    │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  MCP Tools      │  ← Call OpenL tools
-│  (tool-handlers)│
-└────────┬────────┘
-         │ HTTP API
-         │
-         ▼
-┌─────────────────┐
-│  OpenL Studio   │  ← OpenL Studio API
-│  (studio:8080)  │
-└─────────────────┘
+┌─────────────────────┐
+│  OpenL Studio       │  External or Docker container
+│  (port 8080)        │
+└─────────────────────┘
 ```
 
-## Running via Docker Compose
+**Key points:**
+- MCP Server does NOT store credentials — authentication is passed from the AI client via headers or query parameters
+- `OPENL_BASE_URL` is configured on the server side (tells MCP Server where OpenL Studio is)
+- The AI client provides the authentication token per session
 
-### Quick Start
+---
+
+## Quick Start
+
+### Option A: Full Stack (OpenL Studio + MCP Server)
+
+Use `compose.studio.yaml` to run both OpenL Studio and MCP Server together:
 
 ```bash
-cd <path-to-project>
-docker compose up mcp-server
+docker compose -f compose.studio.yaml up -d
 ```
 
-### Running the Full Stack
+This starts:
+- **OpenL Studio** at `http://localhost:8080` (image from GHCR)
+- **MCP Server** at `http://localhost:3000` (image from GHCR)
+
+OpenL Studio runs in single-user mode — no authentication is needed.
+
+Verify:
+```bash
+# Check MCP Server health
+curl http://localhost:3000/health
+
+# Check OpenL Studio
+curl http://localhost:8080
+```
+
+### Option B: MCP Server Only (connect to existing OpenL Studio)
+
+Use `compose.yaml` when you already have OpenL Studio running elsewhere:
 
 ```bash
-docker compose up
+# Set the URL of your OpenL Studio instance
+export OPENL_BASE_URL=http://host.docker.internal:8080
+
+docker compose up -d
 ```
 
-This will start:
-- PostgreSQL
-- OpenL Studio (port 8080)
-- Rule Services (port 8081)
-- MCP Server (port 3000)
-- Nginx Proxy (port 80)
+`host.docker.internal` resolves to the host machine from inside Docker. Replace with your OpenL Studio URL if it runs on a different host.
 
-## HTTP API Endpoints
-
-### Health Check
+Verify:
 ```bash
-GET http://localhost:3000/health
+curl http://localhost:3000/health
 ```
 
-Response:
+---
+
+## Connecting AI Clients
+
+After starting the Docker container, configure your AI client to connect.
+
+### Cursor / VS Code (direct HTTP)
+
 ```json
 {
-  "status": "ok",
-  "timestamp": "2024-01-01T12:00:00.000Z",
-  "service": "openl-mcp-server",
-  "version": "1.0.0"
-}
-```
-
-### List Tools
-```bash
-GET http://localhost:3000/tools
-```
-
-Response:
-```json
-{
-  "tools": [
-    {
-      "name": "openl_list_repositories",
-      "title": "openl List Repositories",
-      "description": "...",
-      "inputSchema": {...}
-    },
-    ...
-  ],
-  "count": 18
-}
-```
-
-### Tool Information
-```bash
-GET http://localhost:3000/tools/openl_list_repositories
-```
-
-### Execute Tool
-
-**Option 1: Via tool endpoint**
-```bash
-POST http://localhost:3000/tools/openl_list_repositories/execute
-Content-Type: application/json
-
-{
-  "repository": "design"
-}
-```
-
-**Option 2: Universal endpoint**
-```bash
-POST http://localhost:3000/execute
-Content-Type: application/json
-
-{
-  "tool": "openl_list_repositories",
-  "arguments": {
-    "repository": "design"
+  "mcpServers": {
+    "openl-mcp-server": {
+      "url": "http://localhost:3000/mcp/sse",
+      "transport": "sse",
+      "headers": {
+        "Authorization": "Token <your-pat-token>"
+      }
+    }
   }
 }
 ```
+
+### Claude Desktop (requires [Node.js 24+](https://nodejs.org/) and mcp-remote stdio proxy)
+
+Claude Desktop only supports stdio transport, so `mcp-remote` is needed as a bridge:
+
+```bash
+# Install mcp-remote if not installed
+npm install -g mcp-remote
+```
+
+```json
+{
+  "mcpServers": {
+    "openl-mcp-server": {
+      "command": "<path-to-node>",
+      "args": [
+        "<path-to-mcp-remote>",
+        "http://localhost:3000/mcp/sse",
+        "--header",
+        "Authorization: Token <your-pat-token>"
+      ]
+    }
+  }
+}
+```
+
+Find your paths:
+```bash
+which node         # e.g., /Users/username/.nvm/versions/node/v24.0.0/bin/node
+which mcp-remote   # e.g., /Users/username/.nvm/versions/node/v24.0.0/bin/mcp-remote
+```
+
+> **Note:** When using `compose.studio.yaml` (single-user mode), authentication headers are not required.
+
+For detailed client configuration, see [MCP Connection Guide](mcp-connection-guide.md).
+
+---
 
 ## Environment Variables
 
 MCP Server uses the following environment variables:
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PORT` | HTTP server port | `3000` |
-| `OPENL_BASE_URL` | OpenL Studio API URL | `http://studio:8080` |
-| `OPENL_USERNAME` | Username | `admin` |
-| `OPENL_PASSWORD` | Password | `admin` |
-| `NODE_ENV` | Environment mode | `production` |
+| Variable | Description | Required | Default |
+|----------|-------------|----------|---------|
+| `OPENL_BASE_URL` | OpenL Studio API URL | **Yes** | — |
+| `PORT` | HTTP server port | No | `3000` |
+| `NODE_ENV` | Environment mode | No | `production` |
 
-## Access via Nginx Proxy
+> **Authentication is NOT configured via environment variables.** Credentials are passed from the AI client per session via `Authorization` header or query parameters. See [Authentication Guide](../guides/authentication.md) for details.
 
-MCP Server is also accessible through Nginx proxy:
+---
 
-```bash
-# Health check
-GET http://localhost/mcp/health
+## Docker Compose Files
 
-# List tools
-GET http://localhost/mcp/tools
+### `compose.studio.yaml` — Full Stack
 
-# Execute tool
-POST http://localhost/mcp/execute
+Runs OpenL Studio and MCP Server together. Best for getting started quickly.
+
+```yaml
+# Key services:
+# - studio: OpenL Studio (port 8080)
+# - mcp-server: MCP Server (port 3000), connects to studio internally
 ```
 
-## Local Development
+### `compose.yaml` — MCP Server Only
 
-### Running without Docker
+Runs just the MCP Server. Requires `OPENL_BASE_URL` to point to an existing OpenL Studio instance.
 
 ```bash
-cd mcp-server
+# Connect to OpenL Studio on the host machine
+OPENL_BASE_URL=http://host.docker.internal:8080 docker compose up -d
 
+# Connect to a remote OpenL Studio
+OPENL_BASE_URL=https://openl.example.com docker compose up -d
+```
+
+The container port can be changed via `MCP_PORT`:
+```bash
+MCP_PORT=3001 docker compose up -d
+# MCP Server will be available at http://localhost:3001
+```
+
+---
+
+## Building from Source
+
+By default, `compose.yaml` builds the image locally from the Dockerfile. To use a pre-built image instead:
+
+```bash
+MCP_IMAGE=ghcr.io/openl-tablets/openl-studio-mcp:latest docker compose up -d
+```
+
+---
+
+## Local Development (without Docker)
+
+```bash
 # Install dependencies
 npm install
 
@@ -164,165 +203,110 @@ npm run build
 
 # Start HTTP server
 export OPENL_BASE_URL="http://localhost:8080"
-export OPENL_USERNAME="admin"
-export OPENL_PASSWORD="admin"
 npm run start:http
 ```
 
 ### Development Mode with Auto-rebuild
 
 ```bash
-# Terminal 1: Auto-rebuild
+# Terminal 1: Watch for changes and rebuild
 npm run watch
 
 # Terminal 2: Start server
-npm run dev:http
+export OPENL_BASE_URL="http://localhost:8080"
+npm run start:http
 ```
 
-## Testing
+---
+
+## HTTP API Endpoints
 
 ### Health Check
 ```bash
 curl http://localhost:3000/health
 ```
 
-### List Tools
-```bash
-curl http://localhost:3000/tools | jq
+### MCP Protocol (SSE)
+```text
+GET  /mcp/sse              — Establish SSE connection
+POST /mcp/messages          — Send messages to MCP server
+POST /mcp/sse              — Streamable HTTP transport
 ```
 
-### Execute Tool
+### REST API (for debugging)
 ```bash
+# List all tools
+curl http://localhost:3000/tools | jq
+
+# Get tool info
+curl http://localhost:3000/tools/openl_list_repositories | jq
+
+# Execute tool
 curl -X POST http://localhost:3000/execute \
   -H "Content-Type: application/json" \
-  -d '{
-    "tool": "openl_list_repositories",
-    "arguments": {}
-  }' | jq
+  -d '{"tool": "openl_list_repositories", "arguments": {}}'
 ```
 
-## Logs
-
-### View Docker Compose Logs
-```bash
-docker compose logs -f mcp-server
-```
-
-### Real-time Logs
-```bash
-docker compose logs -f --tail=100 mcp-server
-```
+---
 
 ## Troubleshooting
 
 ### MCP Server doesn't start
 
-1. Check logs:
-   ```bash
-   docker compose logs mcp-server
-   ```
+```bash
+# Check container status
+docker compose logs mcp-server
 
-2. Check that OpenL Studio is running:
-   ```bash
-   docker compose ps studio
-   ```
-
-3. Check environment variables:
-   ```bash
-   docker compose exec mcp-server env | grep OPENL
-   ```
-
-### Connection Error to OpenL
-
-Ensure that:
-- OpenL Studio is running (`docker compose ps studio`)
-- `OPENL_BASE_URL` points to the correct address (`http://studio:8080`)
-- Credentials are correct (`OPENL_USERNAME`, `OPENL_PASSWORD`)
-
-### Port 3000 is Occupied
-
-Change port in `compose.yaml`:
-```yaml
-ports:
-  - "3001:3000"  # External:Internal
+# Verify OPENL_BASE_URL is set (for compose.yaml)
+docker compose exec mcp-server env | grep OPENL
 ```
 
-Or set environment variable:
-```yaml
-environment:
-  PORT: 3001
+### Cannot connect to OpenL Studio
+
+```bash
+# Check that OpenL Studio is reachable from the container
+docker compose exec mcp-server wget -qO- http://studio:8080/health || echo "Not reachable"
+
+# For compose.yaml (external OpenL Studio), verify the URL
+docker compose exec mcp-server wget -qO- $OPENL_BASE_URL || echo "Not reachable"
+```
+
+Common causes:
+- OpenL Studio not running — check with `curl http://localhost:8080`
+- Wrong `OPENL_BASE_URL` — must be reachable from inside the container (use `host.docker.internal` for host machine)
+- Network/firewall issues — ensure the port is accessible
+
+### Port 3000 is occupied
+
+Change the external port:
+```bash
+MCP_PORT=3001 docker compose up -d
+```
+
+### AI client cannot connect to MCP Server
+
+1. Verify MCP Server is running: `curl http://localhost:3000/health`
+2. Check that the URL in client config matches the port
+3. For Claude Desktop: ensure `mcp-remote` is installed (`npm install -g mcp-remote`)
+4. Restart the AI client after configuration changes
+
+### View logs
+
+```bash
+# Follow logs in real-time
+docker compose logs -f mcp-server
+
+# Last 100 lines
+docker compose logs --tail=100 mcp-server
 ```
 
 For more troubleshooting, see [Troubleshooting Guide](../guides/troubleshooting.md).
 
-## Production Deployment
+---
 
-For production, it's recommended to:
+## Additional Resources
 
-1. Use HTTPS through reverse proxy
-2. Configure authentication at API level
-3. Limit resources in `deploy.resources`
-4. Set up monitoring and logging
-5. Use secrets for passwords (don't store in compose.yaml)
-
-## Usage Examples
-
-### Python
-```python
-import requests
-
-# Health check
-response = requests.get('http://localhost:3000/health')
-print(response.json())
-
-# Execute tool
-response = requests.post(
-    'http://localhost:3000/execute',
-    json={
-        'tool': 'openl_list_repositories',
-        'arguments': {}
-    }
-)
-print(response.json())
-```
-
-### JavaScript/Node.js
-```javascript
-const axios = require('axios');
-
-// Health check
-const health = await axios.get('http://localhost:3000/health');
-console.log(health.data);
-
-// Execute tool
-const result = await axios.post('http://localhost:3000/execute', {
-  tool: 'openl_list_repositories',
-  arguments: {}
-});
-console.log(result.data);
-```
-
-### cURL
-```bash
-# Health check
-curl http://localhost:3000/health
-
-# List tools
-curl http://localhost:3000/tools
-
-# Execute tool
-curl -X POST http://localhost:3000/execute \
-  -H "Content-Type: application/json" \
-  -d '{
-    "tool": "openl_list_repositories",
-    "arguments": {}
-  }'
-```
-
-## Additional Information
-
-- [Quick Start Guide](../getting-started/quick-start.md) - Get started quickly
-- [MCP Connection Guide](mcp-connection-guide.md#scenario-2-connecting-to-mcp-in-docker-using-cursor) - Connect Cursor to Docker container
-- [Authentication Guide](../guides/authentication.md) - Authentication setup
-- [Troubleshooting Guide](../guides/troubleshooting.md) - Common issues
-
+- [Quick Start Guide](../getting-started/quick-start.md) — Get started quickly
+- [MCP Connection Guide](mcp-connection-guide.md) — Detailed client setup (Cursor, Claude Desktop, VS Code)
+- [Authentication Guide](../guides/authentication.md) — Authentication methods
+- [Troubleshooting Guide](../guides/troubleshooting.md) — Common issues and solutions

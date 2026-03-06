@@ -1063,12 +1063,16 @@ export class OpenLClient {
    *
    * @param projectId - Opaque project ID returned by backend.
    * @param tableId - Table identifier
-   * @returns Complete table view with data and structure
+   * @param raw - If true, returns raw 2D cell matrix instead of parsed table
+   * @returns Parsed table view or raw table view depending on raw flag
    */
-  async getTable(projectId: string, tableId: string): Promise<Types.TableView> {
+  async getTable(projectId: string, tableId: string, raw: true): Promise<Types.RawTableView>;
+  async getTable(projectId: string, tableId: string, raw?: false): Promise<Types.TableView>;
+  async getTable(projectId: string, tableId: string, raw?: boolean): Promise<Types.TableView | Types.RawTableView> {
     const projectPath = this.buildProjectPath(projectId);
-    const response = await this.axiosInstance.get<Types.TableView>(
-      `${projectPath}/tables/${encodeURIComponent(tableId)}`
+    const response = await this.axiosInstance.get<Types.TableView | Types.RawTableView>(
+      `${projectPath}/tables/${encodeURIComponent(tableId)}`,
+      { params: raw ? { raw: true } : undefined }
     );
     return response.data;
   }
