@@ -620,12 +620,39 @@ describe("OpenLClient", () => {
         const projectIdForPath = "design-project1";
         const encodedProjectId = encodeURIComponent(projectIdForPath);
         const encodedTableId = encodeURIComponent("nonexistent");
-        
+
         mockAxios.onGet(`/projects/${encodedProjectId}/tables/${encodedTableId}`).reply(404);
 
         await expect(
           client.getTable("design-project1", "nonexistent")
         ).rejects.toThrow();
+      });
+
+      it("should pass raw=true query param when raw is true", async () => {
+        const projectIdForPath = "design-project1";
+        const encodedProjectId = encodeURIComponent(projectIdForPath);
+        const encodedTableId = encodeURIComponent("calculatePremium_1234");
+
+        mockAxios.onGet(`/projects/${encodedProjectId}/tables/${encodedTableId}`).reply((config) => {
+          expect(config.params).toEqual({ raw: true });
+          return [200, { id: "calculatePremium_1234" }];
+        });
+
+        await client.getTable("design-project1", "calculatePremium_1234", true);
+      });
+
+      it("should not pass raw param when raw is false or undefined", async () => {
+        const projectIdForPath = "design-project1";
+        const encodedProjectId = encodeURIComponent(projectIdForPath);
+        const encodedTableId = encodeURIComponent("calculatePremium_1234");
+
+        mockAxios.onGet(`/projects/${encodedProjectId}/tables/${encodedTableId}`).reply((config) => {
+          expect(config.params).toBeUndefined();
+          return [200, { id: "calculatePremium_1234" }];
+        });
+
+        await client.getTable("design-project1", "calculatePremium_1234");
+        await client.getTable("design-project1", "calculatePremium_1234", false);
       });
     });
 

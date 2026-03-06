@@ -287,7 +287,7 @@ For complete setup instructions, see the [MCP Connection Guide](docs/setup/mcp-c
 
 ### Essential Guides
 - [Quick Start Guide](docs/getting-started/quick-start.md) - 5-minute setup
-- [MCP Connection Guide](docs/setup/mcp-connection-guide.md) - 6 detailed scenarios
+- [MCP Connection Guide](docs/setup/mcp-connection-guide.md) - Cursor, Claude Desktop, VS Code setup
 - [Usage Examples](docs/guides/examples.md) - Common workflows
 - [Troubleshooting Guide](docs/guides/troubleshooting.md) - Solutions to common issues
 - [Authentication Guide](docs/guides/authentication.md) - Security best practices

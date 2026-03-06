@@ -22,7 +22,7 @@ npm install
 npm run build
 ```
 
-2. Add to your Claude Desktop config (see [MCP Connection Guide](../setup/mcp-connection-guide.md#complete-configuration-examples))
+2. Add to your Claude Desktop config (see [MCP Connection Guide](../setup/mcp-connection-guide.md#claude-desktop))
 
 3. Restart Claude Desktop
 

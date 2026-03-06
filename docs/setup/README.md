@@ -4,28 +4,28 @@ Guides for setting up and configuring the OpenL Studio MCP Server for different 
 
 ## Available Guides
 
-- **[MCP Connection Guide](mcp-connection-guide.md)** - Complete guide for connecting Cursor and Claude Desktop to MCP server (Remote and Docker)
-- **[VS Code / Copilot MCP Setup](vscode-copilot-mcp.md)** - Connect OpenL Studio MCP to VS Code and GitHub Copilot Chat using Docker and an env file
-- **[Docker Setup](docker.md)** - Running MCP server in Docker (technical details)
+- **[MCP Connection Guide](mcp-connection-guide.md)** — Connect Cursor, Claude Desktop, or VS Code to MCP server (Remote and Docker)
+- **[Docker Setup](docker.md)** — Running MCP server in Docker (technical details)
 
 ## Quick Links
 
-- [Quick Start Guide](../getting-started/quick-start.md) - Get started quickly
-- [Authentication Guide](../guides/authentication.md) - Configure authentication
-- [Troubleshooting Guide](../guides/troubleshooting.md) - Common issues and solutions
+- [Quick Start Guide](../getting-started/quick-start.md) — Get started quickly
+- [Authentication Guide](../guides/authentication.md) — Configure authentication
+- [Troubleshooting Guide](../guides/troubleshooting.md) — Common issues and solutions
 
-## Setup Scenarios
+## Setup by Client
 
-### For Cursor IDE
-- **Remote MCP Server**: See [MCP Connection Guide - Scenario 1](mcp-connection-guide.md#scenario-1-connecting-to-remote-mcp-using-cursor)
-- **Docker MCP Server**: See [MCP Connection Guide - Scenario 2](mcp-connection-guide.md#scenario-2-connecting-to-mcp-in-docker-using-cursor)
+### Cursor IDE
+- [Remote MCP Server](mcp-connection-guide.md#remote-mcp-server)
+- [Docker MCP Server](mcp-connection-guide.md#docker-mcp-server)
 
-### For Claude Desktop
-- **Remote MCP Server**: See [MCP Connection Guide - Scenario 3](mcp-connection-guide.md#scenario-3-connecting-to-remote-mcp-using-claude-desktop)
-- **Docker MCP Server**: See [MCP Connection Guide - Scenario 4](mcp-connection-guide.md#scenario-4-connecting-to-mcp-in-docker-using-claude-desktop)
+### Claude Desktop
+- [Remote MCP Server](mcp-connection-guide.md#remote-mcp-server-1)
+- [Docker MCP Server](mcp-connection-guide.md#docker-mcp-server-1)
 
-### For VS Code / GitHub Copilot
-- **Docker + env file**: See [VS Code Copilot MCP Setup](vscode-copilot-mcp.md) (stdio via Docker, credentials in `--env-file`)
+### VS Code / GitHub Copilot
+- [HTTP Transport](mcp-connection-guide.md#approach-a-http-transport-remote-or-docker-mcp-server) — connect to running MCP server
+- [Stdio via Docker](mcp-connection-guide.md#approach-b-stdio-transport-via-docker-standalone) — run MCP server from Docker directly
 
 ## Related Documentation
 
