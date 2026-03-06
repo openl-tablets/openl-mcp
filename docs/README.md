@@ -1,6 +1,6 @@
 # Documentation Index
 
-Welcome to the OpenL Studio MCP Server documentation. This index helps you navigate to the right guide based on your needs.
+Welcome to the OpenL MCP Server documentation. This index helps you navigate to the right guide based on your needs.
 
 ## Quick Navigation
 

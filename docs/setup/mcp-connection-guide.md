@@ -1,6 +1,6 @@
 # MCP Server Connection Guide
 
-Step-by-step guide for connecting AI clients to the OpenL Studio MCP server.
+Step-by-step guide for connecting AI clients to the OpenL MCP server.
 
 ## Quick Jump
 
@@ -272,7 +272,7 @@ Create `.vscode/mcp.json` in your project (workspace config) or use `Cmd/Ctrl + 
         "--pull=always",
         "--env-file",
         "/Users/<username>/.mcp/.env",
-        "ghcr.io/openl-tablets/openl-studio-mcp:latest",
+        "ghcr.io/openl-tablets/openl-mcp:latest",
         "node",
         "dist/index.js"
       ]
@@ -294,10 +294,10 @@ Replace `/Users/<username>/.mcp/.env` with the absolute path to your env file.
 #### Using a local image (for development)
 
 ```bash
-docker build -t openl-studio-mcp:local .
+docker build -t openl-mcp:local .
 ```
 
-In `mcp.json`, replace the image name with `openl-studio-mcp:local` and remove `--pull=always`.
+In `mcp.json`, replace the image name with `openl-mcp:local` and remove `--pull=always`.
 
 ---
 

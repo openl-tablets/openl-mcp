@@ -1,8 +1,8 @@
-# Release Notes - OpenL Studio MCP Server
+# Release Notes - OpenL MCP Server
 
-## [Version 1.0.0](https://github.com/openl-tablets/openl-studio-mcp/releases/tag/v1.0.0) - February 23, 2026
+## [Version 1.0.0](https://github.com/openl-tablets/openl-mcp/releases/tag/v1.0.0) - February 23, 2026
 
-The OpenL Studio MCP Server enables **natural language interaction with OpenL Studio** through AI assistants like Claude Desktop, Cursor IDE, and VS Code Copilot. This initial release brings 25 production-ready tools, 15 expert guidance prompts, and comprehensive MCP protocol support to business rules management.
+The OpenL MCP Server enables **natural language interaction with OpenL Studio** through AI assistants like Claude Desktop, Cursor IDE, and VS Code Copilot. This initial release brings 25 production-ready tools, 15 expert guidance prompts, and comprehensive MCP protocol support to business rules management.
 
 Built on the Model Context Protocol (MCP) v1.26.0, the server acts as a bridge between AI assistants and OpenL Studio's REST API, transforming complex business rules operations into simple conversational commands. Business analysts, QA teams, and operations staff can now create rules, run tests, and deploy to production using plain English - no programming required.
 
@@ -299,10 +299,10 @@ For complete setup instructions, see the [MCP Connection Guide](docs/setup/mcp-c
 - [Tool Review](docs/development/tool-review.md) - API analysis
 
 ### External Resources
-- [GitHub Repository](https://github.com/openl-tablets/openl-studio-mcp) - Source code
+- [GitHub Repository](https://github.com/openl-tablets/openl-mcp) - Source code
 - [OpenL Tablets](https://github.com/openl-tablets/openl-tablets) - Main project
 - [MCP Specification](https://modelcontextprotocol.io/) - Protocol docs
-- [GitHub Discussions](https://github.com/openl-tablets/openl-studio-mcp/discussions) - Community support
+- [GitHub Discussions](https://github.com/openl-tablets/openl-mcp/discussions) - Community support
 
 ---
 
@@ -312,7 +312,7 @@ For complete setup instructions, see the [MCP Connection Guide](docs/setup/mcp-c
 
 **For MCP Server issues:**
 1. Check the [Troubleshooting Guide](docs/guides/troubleshooting.md)
-2. Search [existing issues](https://github.com/openl-tablets/openl-studio-mcp/issues)
+2. Search [existing issues](https://github.com/openl-tablets/openl-mcp/issues)
 
 **For OpenL Tablets questions:**
 - [OpenL Documentation](https://openl-tablets.org/)
@@ -331,4 +331,4 @@ Built by the OpenL Tablets community to bring AI-powered automation to business 
 
 ---
 
-*For the latest updates and releases, visit the [GitHub repository](https://github.com/openl-tablets/openl-studio-mcp).*
+*For the latest updates and releases, visit the [GitHub repository](https://github.com/openl-tablets/openl-mcp).*

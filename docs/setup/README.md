@@ -1,6 +1,6 @@
 # Setup Guides
 
-Guides for setting up and configuring the OpenL Studio MCP Server for different environments and clients.
+Guides for setting up and configuring the OpenL MCP Server for different environments and clients.
 
 ## Available Guides
 

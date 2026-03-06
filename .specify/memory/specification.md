@@ -1,13 +1,13 @@
-# OpenL Studio MCP Server - Functional Specification
+# OpenL MCP Server - Functional Specification
 
 ## Overview
 
-The OpenL Studio MCP Server is a Model Context Protocol implementation that provides AI coding agents with seamless access to the OpenL Studio Business Rules Management System through a type-safe, comprehensive API.
+The OpenL MCP Server is a Model Context Protocol implementation that provides AI coding agents with seamless access to the OpenL Studio Business Rules Management System through a type-safe, comprehensive API.
 
 ## Target Users
 
 **Primary**: AI coding agents (Claude Code, GitHub Copilot, Cursor, Windsurf, Gemini Code Assist)
-**Secondary**: Developers integrating OpenL Studio with AI workflows
+**Secondary**: Developers integrating OpenL with AI workflows
 **Tertiary**: DevOps teams automating rules management
 
 ## Core Capabilities

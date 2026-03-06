@@ -1,6 +1,6 @@
 # 🔍 Troubleshooting Guide
 
-This guide covers common issues and their solutions when working with the OpenL Studio MCP Server.
+This guide covers common issues and their solutions when working with the OpenL MCP Server.
 
 ## Table of Contents
 

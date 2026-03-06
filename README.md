@@ -1,4 +1,4 @@
-# OpenL Studio MCP Server
+# OpenL MCP Server
 
 Model Context Protocol server for [OpenL Studio](https://github.com/openl-tablets/openl-tablets) Business Rules Management System.
 
@@ -25,7 +25,7 @@ docker compose -f compose.studio.yaml up -d
 
 This starts:
 - OpenL Studio image from GHCR: `ghcr.io/openl-tablets/webstudio:x`
-- MCP image from GHCR: `ghcr.io/openl-tablets/openl-studio-mcp:latest`
+- MCP image from GHCR: `ghcr.io/openl-tablets/openl-mcp:latest`
 - OpenL Studio at `http://localhost:8080`
 - MCP server at `http://localhost:3000`
 
@@ -131,7 +131,7 @@ See [Contributing Guide](docs/development/contributing.md) for development guide
 ## Project Structure
 
 ```
-openl-studio-mcp/
+openl-mcp/
 ├── src/                    # Source code (TypeScript)
 ├── tests/                  # Jest test suites
 ├── prompts/                # AI assistant guidance (OpenL-specific)

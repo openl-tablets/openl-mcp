@@ -1,4 +1,4 @@
-# OpenL Studio MCP Server - Implementation Plan
+# OpenL MCP Server - Implementation Plan
 
 > **Status**: Experimental (v1.0.0) - 22/28 tools active, 6 temporarily disabled
 > **Last Updated**: 2026-01-28
@@ -6,7 +6,7 @@
 
 ## Executive Summary
 
-The OpenL Studio MCP Server underwent a **major architectural refactoring** in November 2025, transforming from a monolithic 766-line `index.ts` file to a clean, modular architecture with dedicated modules for tool handling, formatting, validation, and logging.
+The OpenL MCP Server underwent a **major architectural refactoring** in November 2025, transforming from a monolithic 766-line `index.ts` file to a clean, modular architecture with dedicated modules for tool handling, formatting, validation, and logging.
 
 **Key Improvements**:
 - ✅ **RegisterTool Pattern**: Replaced 400+ line switch statement with registry-based tool management
@@ -872,12 +872,12 @@ dist/
 **package.json**:
 ```json
 {
-  "name": "openl-studio-mcp-server",
+  "name": "openl-mcp-server",
   "version": "1.0.0",
   "type": "module",  // ES Modules
   "main": "dist/index.js",
   "bin": {
-    "openl-studio-mcp": "dist/index.js"
+    "openl-mcp": "dist/index.js"
   },
   "engines": {
     "node": ">=24.0.0"
@@ -895,8 +895,8 @@ dist/
 
 **1. npm Package**:
 ```bash
-npm install -g openl-studio-mcp-server
-openl-studio-mcp
+npm install -g openl-mcp-server
+openl-mcp
 ```
 
 **2. Docker Container**:

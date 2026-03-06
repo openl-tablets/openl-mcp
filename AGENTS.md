@@ -1,8 +1,8 @@
-# OpenL Studio MCP Server - Agent Description
+# OpenL MCP Server - Agent Description
 
 ## Overview
 
-The OpenL Studio MCP Server is a Model Context Protocol (MCP) server that provides AI coding agents with seamless access to the OpenL Studio Business Rules Management System (BRMS). It acts as a bridge between AI assistants (like Claude Desktop, Cursor IDE) and the OpenL Studio API, enabling natural language interaction with business rules management.
+The OpenL MCP Server is a Model Context Protocol (MCP) server that provides AI coding agents with seamless access to the OpenL Studio Business Rules Management System (BRMS). It acts as a bridge between AI assistants (like Claude Desktop, Cursor IDE) and the OpenL Studio API, enabling natural language interaction with business rules management.
 
 ## Purpose
 
@@ -390,7 +390,7 @@ Always use placeholders:
 ## Project Structure
 
 ```text
-openl-studio-mcp/
+openl-mcp/
 ├── src/                    # Source code
 │   ├── index.ts           # Main entry (stdio transport)
 │   ├── server.ts          # HTTP server (SSE/StreamableHTTP)
@@ -438,7 +438,7 @@ docker run -e OPENL_BASE_URL=http://openl:8080 \
 ```yaml
 services:
   mcp-server:
-    image: ghcr.io/openl-tablets/openl-studio-mcp:x
+    image: ghcr.io/openl-tablets/openl-mcp:x
     environment:
       OPENL_BASE_URL: https://openl.example.com/studio
 ```

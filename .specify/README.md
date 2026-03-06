@@ -1,6 +1,6 @@
-# OpenL Studio MCP Server - Spec Kit
+# OpenL MCP Server - Spec Kit
 
-This directory contains [GitHub Spec Kit](https://github.com/github/spec-kit) artifacts for the OpenL Studio MCP Server. Spec Kit implements "Spec-Driven Development" - a methodology where specifications become executable and directly generate working implementations.
+This directory contains [GitHub Spec Kit](https://github.com/github/spec-kit) artifacts for the OpenL MCP Server. Spec Kit implements "Spec-Driven Development" - a methodology where specifications become executable and directly generate working implementations.
 
 ## What is Spec Kit?
 
@@ -346,4 +346,4 @@ feat(auth): add SAML authentication support
 **Spec Kit Version**: 2.0.0
 **MCP Server Version**: 2.0.0
 **Last Updated**: 2025-11-16
-**Maintained By**: OpenL Studio MCP Server Team
+**Maintained By**: OpenL MCP Server Team

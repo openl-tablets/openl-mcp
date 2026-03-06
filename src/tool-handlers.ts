@@ -1,5 +1,5 @@
 /**
- * Tool Handlers for OpenL Studio MCP Server
+ * Tool Handlers for OpenL MCP Server
  *
  * This module implements the registerTool pattern to replace the switch statement
  * in index.ts. Each tool is registered individually with its own handler function.

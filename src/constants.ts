@@ -1,5 +1,5 @@
 /**
- * Constants and configuration defaults for the OpenL Studio MCP Server
+ * Constants and configuration defaults for the OpenL MCP Server
  */
 
 /**

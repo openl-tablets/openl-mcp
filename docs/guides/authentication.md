@@ -1,6 +1,6 @@
 # Authentication Guide
 
-This guide covers the authentication methods supported by the OpenL Studio MCP Server: Personal Access Token (PAT) and Basic Authentication.
+This guide covers the authentication methods supported by the OpenL MCP Server: Personal Access Token (PAT) and Basic Authentication.
 
 ## Table of Contents
 - [Authentication Methods](#authentication-methods)

@@ -187,7 +187,7 @@ MCP_PORT=3001 docker compose up -d
 By default, `compose.yaml` builds the image locally from the Dockerfile. To use a pre-built image instead:
 
 ```bash
-MCP_IMAGE=ghcr.io/openl-tablets/openl-studio-mcp:latest docker compose up -d
+MCP_IMAGE=ghcr.io/openl-tablets/openl-mcp:latest docker compose up -d
 ```
 
 ---

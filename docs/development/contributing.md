@@ -1,4 +1,4 @@
-# Contributing to OpenL Studio MCP Server
+# Contributing to OpenL MCP Server
 
 Thank you for your interest in contributing! This guide covers the essentials for extending the codebase.
 

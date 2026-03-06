@@ -1,7 +1,7 @@
 /**
  * Zod Schemas for MCP Tool Input Validation
  *
- * This module defines all input schemas for OpenL Studio MCP tools using Zod.
+ * This module defines all input schemas for OpenL MCP tools using Zod.
  * Benefits:
  * - Type-safe input validation with runtime checks
  * - Automatic TypeScript type inference

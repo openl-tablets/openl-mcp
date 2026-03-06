@@ -8,7 +8,7 @@ services:
       - "127.0.0.1:8080:8080"
 
   mcp-server:
-    image: ghcr.io/openl-tablets/openl-studio-mcp:latest
+    image: ghcr.io/openl-tablets/openl-mcp:latest
     pull_policy: always
     container_name: mcp-server
     restart: unless-stopped

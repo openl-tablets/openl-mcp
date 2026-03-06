@@ -1,5 +1,5 @@
 /**
- * Utility functions for the OpenL Studio MCP Server
+ * Utility functions for the OpenL MCP Server
  */
 
 import { createHash } from "crypto";

@@ -1,6 +1,6 @@
 # Usage Guides
 
-Practical guides for using the OpenL Studio MCP Server.
+Practical guides for using the OpenL MCP Server.
 
 ## Available Guides
 

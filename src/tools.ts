@@ -1,7 +1,7 @@
 /**
  * MCP Tool Definitions
  *
- * This module defines all available tools for the OpenL Studio MCP server.
+ * This module defines all available tools for the OpenL MCP server.
  * Each tool includes:
  * - Name and description
  * - Input schema (Zod-based validation)

@@ -1,5 +1,5 @@
 /**
- * Authentication module for OpenL Studio MCP Server
+ * Authentication module for OpenL MCP Server
  *
  * Supports multiple authentication methods:
  * - Basic Authentication (username/password)

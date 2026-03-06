@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Express HTTP Server for OpenL Studio MCP Server
+ * Express HTTP Server for OpenL MCP Server
  * 
  * Provides HTTP REST API for accessing MCP tools as a standalone service.
  * This allows the MCP server to be used as a microservice in Docker Compose.

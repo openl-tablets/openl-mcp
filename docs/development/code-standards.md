@@ -1,6 +1,6 @@
 # Best Practices Implementation
 
-This document outlines all the best practices implemented in the OpenL Studio MCP Server project.
+This document outlines all the best practices implemented in the OpenL MCP Server project.
 
 ## Table of Contents
 
@@ -45,7 +45,7 @@ This document outlines all the best practices implemented in the OpenL Studio MC
 ### File Structure ✓
 
 ```text
-openl-studio-mcp/
+openl-mcp/
 ├── src/               # Source code (TypeScript)
 ├── dist/              # Compiled output (JavaScript)
 ├── tests/             # Test suites

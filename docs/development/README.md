@@ -1,6 +1,6 @@
 # Development Documentation
 
-Documentation for developers contributing to the OpenL Studio MCP Server.
+Documentation for developers contributing to the OpenL MCP Server.
 
 **Community standards:** See [Code of Conduct](../../CODE_OF_CONDUCT.md) for expected behavior.
 

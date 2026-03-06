@@ -1,8 +1,8 @@
-# OpenL Studio MCP Server - Constitution
+# OpenL MCP Server - Constitution
 
 ## Project Identity
 
-**Name**: OpenL Studio MCP Server
+**Name**: OpenL MCP Server
 **Purpose**: Model Context Protocol server for OpenL Tablets Business Rules Management System
 **Version**: 1.0.0
 **License**: MIT

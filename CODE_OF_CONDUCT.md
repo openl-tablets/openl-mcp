@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This Code of Conduct outlines expected behavior for all contributors to the OpenL Studio MCP Server project. We are committed to providing a welcoming and inclusive environment for everyone who participates in our community.
+This Code of Conduct outlines expected behavior for all contributors to the OpenL MCP Server project. We are committed to providing a welcoming and inclusive environment for everyone who participates in our community.
 
 For security-related issues, please see our [Security Policy](SECURITY.md).
 
@@ -52,7 +52,7 @@ Instances of abusive, harassing, or otherwise unacceptable behavior may be repor
 **Please report incidents privately via email** to avoid public exposure and escalation.
 
 To find the current maintainer contact information:
-1. Check the repository's [GitHub Issues](https://github.com/openl-tablets/openl-studio-mcp/issues) for a pinned contact issue
+1. Check the repository's [GitHub Issues](https://github.com/openl-tablets/openl-mcp/issues) for a pinned contact issue
 2. Review [SECURITY.md](SECURITY.md) for the security contact email (also suitable for conduct reports)
 3. Open a new GitHub issue requesting private contact information if needed
 

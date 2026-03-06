@@ -1,6 +1,6 @@
 # Reference Documentation
 
-Technical reference materials for the OpenL Studio MCP Server.
+Technical reference materials for the OpenL MCP Server.
 
 ## Available References
 

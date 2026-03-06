@@ -8,7 +8,7 @@
 ### How to Report
 
 **Primary method (recommended):**
-1. Go to the [Security tab](https://github.com/openl-tablets/openl-studio-mcp/security) of this repository
+1. Go to the [Security tab](https://github.com/openl-tablets/openl-mcp/security) of this repository
 2. Click "Report a vulnerability"
 3. Follow the private vulnerability reporting workflow
 
@@ -124,8 +124,8 @@ MCP servers are often used in chains with other tools and AI models. This create
 
 Security updates will be released as patch versions (e.g., 1.0.1, 1.0.2) and announced via:
 
-- [GitHub Security Advisories](https://github.com/openl-tablets/openl-studio-mcp/security/advisories)
-- [GitHub Releases](https://github.com/openl-tablets/openl-studio-mcp/releases)
+- [GitHub Security Advisories](https://github.com/openl-tablets/openl-mcp/security/advisories)
+- [GitHub Releases](https://github.com/openl-tablets/openl-mcp/releases)
 - CHANGELOG.md with a `### Security` section
 
 Subscribe to repository notifications to receive security updates.

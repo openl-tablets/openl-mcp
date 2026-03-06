@@ -1,6 +1,6 @@
 # Claude AI Agent Configuration
 
-This document provides instructions for configuring Claude AI to work with OpenL Studio MCP Server.
+This document provides instructions for configuring Claude AI to work with OpenL MCP Server.
 
 **👉 See [AGENTS.md](./AGENTS.md) for complete agent configuration guide.**
 

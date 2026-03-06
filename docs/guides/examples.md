@@ -1,6 +1,6 @@
-# OpenL Studio MCP Server - Usage Examples
+# OpenL MCP Server - Usage Examples
 
-This document provides practical examples of using the OpenL Studio MCP Server with AI assistants.
+This document provides practical examples of using the OpenL MCP Server with AI assistants.
 
 ## Table of Contents
 - [Getting Started](#getting-started)

@@ -1,4 +1,4 @@
-# OpenL Studio MCP Server - Task List
+# OpenL MCP Server - Task List
 
 ## Status Overview
 

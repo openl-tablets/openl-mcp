@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * OpenL Studio MCP Server
+ * OpenL MCP Server
  *
  * Model Context Protocol server for OpenL Studio Rules Management System.
  * Provides tools and resources for managing rules projects, tables, and deployments.
@@ -12,7 +12,7 @@
  * - Request tracking with Client Document ID (OPENL_CLIENT_DOCUMENT_ID) for audit and debugging
  * - Comprehensive error handling
  *
- * @see https://github.com/openl-tablets/openl-studio-mcp
+ * @see https://github.com/openl-tablets/openl-mcp
  * @see https://modelcontextprotocol.io/
  */
 
@@ -480,7 +480,7 @@ async function main(): Promise<void> {
     await server.start();
   } catch (error: unknown) {
     const sanitizedMessage = sanitizeError(error);
-    console.error("Failed to start OpenL Studio MCP server:", sanitizedMessage);
+    console.error("Failed to start OpenL MCP server:", sanitizedMessage);
     process.exit(1);
   }
 }

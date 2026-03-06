@@ -4,8 +4,8 @@ services:
     # Production: MCP_IMAGE=ghcr.io/openl-tablets/mcp-server:x docker compose up -d
     # Development (local build): docker compose up -d --build
     # By default, builds from local source. Set MCP_IMAGE to use pre-built image.
-    # If MCP_IMAGE is not set, image will be built locally and named: openl-studio-mcp-mcp-server
-    image: ${MCP_IMAGE:-openl-studio-mcp-mcp-server:latest}
+    # If MCP_IMAGE is not set, image will be built locally and named: openl-mcp-server
+    image: ${MCP_IMAGE:-openl-mcp:latest}
     build:
       context: .
       dockerfile: Dockerfile

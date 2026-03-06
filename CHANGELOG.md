@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Initial public release of OpenL Studio MCP Server
+- Initial public release of OpenL MCP Server
 - 25 production-ready MCP tools organized into 4 categories: Repository Management (4), Project Management (13), Rules & Tables Management (5), Deployment (3)
 - Support for multiple transport modes: stdio, HTTP SSE, and streamablehttp
 - Support for multiple AI clients: Claude Desktop, Cursor IDE, and VS Code Copilot
@@ -45,5 +45,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Supported transports: stdio, HTTP SSE, streamablehttp
 - Supported authentication: Basic Auth and Personal Access Token (PAT)
 
-[Unreleased]: https://github.com/openl-tablets/openl-studio-mcp/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/openl-tablets/openl-studio-mcp/releases/tag/v1.0.0
+[Unreleased]: https://github.com/openl-tablets/openl-mcp/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/openl-tablets/openl-mcp/releases/tag/v1.0.0

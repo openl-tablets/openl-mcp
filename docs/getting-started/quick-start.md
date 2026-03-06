@@ -28,7 +28,7 @@ docker compose -f compose.studio.yaml up -d
 
 This starts:
 - **OpenL Studio** at `http://localhost:8080` (image: `ghcr.io/openl-tablets/webstudio:x`)
-- **MCP Server** at `http://localhost:3000` (image: `ghcr.io/openl-tablets/openl-studio-mcp:latest`)
+- **MCP Server** at `http://localhost:3000` (image: `ghcr.io/openl-tablets/openl-mcp:latest`)
 
 Wait 1-2 minutes for everything to start.
 
