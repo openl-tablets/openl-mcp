@@ -252,7 +252,7 @@ Instead of navigating complex interfaces, simply describe what you want:
 
 ### Prerequisites
 
-1. **OpenL Studio Server** - Version 6.0.0 or later
+1. **OpenL Studio** - Version 6.0.0 or later
 2. **AI Assistant** - Claude Desktop, Cursor IDE, or VS Code with Copilot
 3. **Node.js** - Version 24 or later (for non-Docker installations)
 
