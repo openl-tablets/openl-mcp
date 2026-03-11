@@ -799,6 +799,44 @@ export interface GetProjectHistoryResult {
 }
 
 // =============================================================================
+// Trace API Types (BETA)
+// =============================================================================
+
+/** Trace parameter value (input, context, or result) - may be lazy-loaded */
+export interface TraceParameterValue {
+  name: string;
+  description: string;
+  lazy: boolean;
+  parameterId?: number | null;
+  value?: unknown;
+  schema?: object;
+}
+
+/** Trace node view - tree node with optional detail fields */
+export interface TraceNodeView {
+  key: number;
+  title: string;
+  tooltip: string;
+  type: string;
+  lazy: boolean;
+  extraClasses: string;
+  error?: boolean;
+  parameters?: TraceParameterValue[];
+  context?: TraceParameterValue;
+  result?: TraceParameterValue;
+  errors?: Array<{ severity: string; summary: string; detail?: string; sourceLocation?: string }>;
+}
+
+/** Start trace request - tableId required; for regular methods use inputJson, for test suite use testRanges */
+export interface StartTraceRequest {
+  projectId: string;
+  tableId: string;
+  testRanges?: string;
+  fromModule?: string;
+  inputJson?: string | object;
+}
+
+// =============================================================================
 // API Error Response Types
 // =============================================================================
 

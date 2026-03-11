@@ -76,12 +76,19 @@ This MCP server enables AI agents to:
 - Execute individual rules with test data
 - Get project errors and validation results (planned)
 
-### 6. Deployment
+### 6. Trace (BETA)
+- Start trace execution for rules/test tables
+- Get trace tree nodes and node details
+- Inspect parameters, context, and results
+- Export trace as text
+- Cancel ongoing trace
+
+### 7. Deployment
 - List active deployments
 - Deploy projects to production
 - Redeploy with new versions
 
-## Tools (27 Active, 4 Disabled, 31 Total Defined)
+## Tools (31 Active, 6 Disabled, 37 Total Defined)
 
 All tools are prefixed with `openl_` and versioned (v1.0.0+).
 
@@ -116,6 +123,14 @@ All tools are prefixed with `openl_` and versioned (v1.0.0+).
 - `openl_append_table` - Add rows/fields to table
 - `openl_create_project_table` - Create new table
 - `openl_execute_rule` - Execute rule with test data
+
+### Trace Tools (6, BETA)
+- `openl_start_trace` - Start trace execution for a table
+- `openl_get_trace_nodes` - Get trace tree nodes (root or children)
+- `openl_get_trace_node_details` - Get node details (parameters, context, result)
+- `openl_get_trace_parameter` - Get lazy-loaded parameter value
+- `openl_cancel_trace` - Cancel ongoing trace
+- `openl_export_trace` - Export trace as text
 
 ### Version Control (3)
 - `openl_get_project_history` - Git commit history for project

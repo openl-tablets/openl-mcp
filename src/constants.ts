@@ -52,6 +52,7 @@ export const TOOL_CATEGORIES = {
   REPOSITORY: "repository",
   PROJECT: "project",
   RULES: "rules",
+  TRACE: "trace",
   VERSION_CONTROL: "version-control",
   DEPLOYMENT: "deployment",
 } as const;

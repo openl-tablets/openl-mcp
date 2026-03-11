@@ -2041,4 +2041,114 @@ export class OpenLClient {
     };
   }
 
+  // =============================================================================
+  // Trace API (BETA)
+  // =============================================================================
+
+  /**
+   * Start trace execution for a table (asynchronous, returns 202 Accepted).
+   * For TestSuiteMethod: use testRanges (e.g. "1-3,5").
+   * For regular methods: use inputJson with { params: {...}, runtimeContext?: {...} }.
+   */
+  async startTrace(request: Types.StartTraceRequest): Promise<void> {
+    const projectPath = this.buildProjectPath(request.projectId);
+    const params = new URLSearchParams({ tableId: request.tableId });
+    if (request.testRanges) params.set("testRanges", request.testRanges);
+    if (request.fromModule) params.set("fromModule", request.fromModule);
+
+    const body = request.inputJson != null
+      ? (typeof request.inputJson === "string" ? request.inputJson : JSON.stringify(request.inputJson))
+      : undefined;
+
+    await this.axiosInstance.post(
+      `${projectPath}/trace?${params.toString()}`,
+      body,
+      body != null ? { headers: { "Content-Type": "application/json" } } : undefined
+    );
+  }
+
+  /**
+   * Get trace node children (or root nodes if nodeId omitted).
+   * Returns 409 Conflict if trace is still running.
+   */
+  async getTraceNodes(
+    projectId: string,
+    options?: { nodeId?: number; showRealNumbers?: boolean }
+  ): Promise<Types.TraceNodeView[]> {
+    const projectPath = this.buildProjectPath(projectId);
+    const params: Record<string, string> = {
+      showRealNumbers: String(options?.showRealNumbers ?? false),
+    };
+    if (options?.nodeId != null) params.id = String(options.nodeId);
+
+    const response = await this.axiosInstance.get<Types.TraceNodeView[]>(
+      `${projectPath}/trace/nodes`,
+      { params }
+    );
+    return response.data;
+  }
+
+  /**
+   * Get detailed trace node (parameters, context, result).
+   */
+  async getTraceNodeDetails(
+    projectId: string,
+    nodeId: number,
+    showRealNumbers = false
+  ): Promise<Types.TraceNodeView> {
+    const projectPath = this.buildProjectPath(projectId);
+    const response = await this.axiosInstance.get<Types.TraceNodeView>(
+      `${projectPath}/trace/nodes/${nodeId}`,
+      { params: { showRealNumbers } }
+    );
+    return response.data;
+  }
+
+  /**
+   * Get lazy-loaded parameter value.
+   */
+  async getTraceParameter(
+    projectId: string,
+    parameterId: number
+  ): Promise<Types.TraceParameterValue> {
+    const projectPath = this.buildProjectPath(projectId);
+    const response = await this.axiosInstance.get<Types.TraceParameterValue>(
+      `${projectPath}/trace/parameters/${parameterId}`
+    );
+    return response.data;
+  }
+
+
+  /**
+   * Cancel ongoing trace execution.
+   */
+  async cancelTrace(projectId: string): Promise<void> {
+    const projectPath = this.buildProjectPath(projectId);
+    await this.axiosInstance.delete(`${projectPath}/trace`);
+  }
+
+  /**
+   * Export trace as text (returns raw response stream).
+   * Use responseType: 'arraybuffer' or 'stream' for binary; 'text' for string.
+   */
+  async exportTrace(
+    projectId: string,
+    options?: { showRealNumbers?: boolean; release?: boolean }
+  ): Promise<string> {
+    const projectPath = this.buildProjectPath(projectId);
+    const params: Record<string, string> = {};
+    if (options?.showRealNumbers) params.showRealNumbers = "true";
+    if (options?.release) params.release = "true";
+
+    const response = await this.axiosInstance.get<string>(
+      `${projectPath}/trace/export`,
+      {
+        params: Object.keys(params).length ? params : undefined,
+        responseType: "text",
+        headers: { Accept: "text/plain" },
+      }
+    );
+    return response.data;
+  }
+
 }
