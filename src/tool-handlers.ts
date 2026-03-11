@@ -1206,6 +1206,221 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   */
 
   // =============================================================================
+  // Trace Tools (BETA - Execution Trace API)
+  // =============================================================================
+
+  registerTool({
+    name: "openl_start_trace",
+    title: "openl Start Trace",
+    version: "1.0.0",
+    description:
+      "Start trace execution for a table. Trace is asynchronous (returns 202 Accepted). For regular rules: provide inputJson with { params: {...}, runtimeContext?: {...} }. For test tables: use testRanges (e.g. '1-3,5'). After starting, use openl_get_trace_nodes to retrieve results; if you get 409 Conflict, trace is still running—wait and retry.",
+    inputSchema: schemas.z.toJSONSchema(schemas.startTraceSchema) as Record<string, unknown>,
+    annotations: {
+      openWorldHint: true,
+    },
+    handler: async (args, client): Promise<ToolResponse> => {
+      const typedArgs = args as {
+        projectId: string;
+        tableId: string;
+        testRanges?: string;
+        fromModule?: string;
+        inputJson?: string | Record<string, unknown>;
+        response_format?: "json" | "markdown";
+      };
+
+      if (!typedArgs?.projectId || !typedArgs?.tableId) {
+        throw new McpError(ErrorCode.InvalidParams, "Missing required arguments: projectId, tableId");
+      }
+
+      await client.startTrace({
+        projectId: typedArgs.projectId,
+        tableId: typedArgs.tableId,
+        testRanges: typedArgs.testRanges,
+        fromModule: typedArgs.fromModule,
+        inputJson: typedArgs.inputJson,
+      });
+
+      const msg =
+        "Trace execution started (202 Accepted). Use openl_get_trace_nodes(projectId) to retrieve results. " +
+        "If you receive 409 Conflict, the trace is still running—wait a few seconds and retry.";
+
+      return {
+        content: [{ type: "text", text: msg }],
+      };
+    },
+  });
+
+  registerTool({
+    name: "openl_get_trace_nodes",
+    title: "openl Get Trace Nodes",
+    version: "1.0.0",
+    description:
+      "Get trace node children (or root nodes if nodeId omitted). Requires trace to be completed (409 Conflict if still running). Use openl_start_trace first, then poll this until it returns nodes.",
+    inputSchema: schemas.z.toJSONSchema(schemas.getTraceNodesSchema) as Record<string, unknown>,
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    handler: async (args, client): Promise<ToolResponse> => {
+      const typedArgs = args as {
+        projectId: string;
+        nodeId?: number;
+        showRealNumbers?: boolean;
+        response_format?: "json" | "markdown";
+      };
+
+      if (!typedArgs?.projectId) {
+        throw new McpError(ErrorCode.InvalidParams, "Missing required argument: projectId");
+      }
+
+      const format = validateResponseFormat(typedArgs.response_format);
+
+      const nodes = await client.getTraceNodes(typedArgs.projectId, {
+        nodeId: typedArgs.nodeId,
+        showRealNumbers: typedArgs.showRealNumbers,
+      });
+
+      const formattedResult = formatResponse(nodes, format);
+      return {
+        content: [{ type: "text", text: formattedResult }],
+      };
+    },
+  });
+
+  registerTool({
+    name: "openl_get_trace_node_details",
+    title: "openl Get Trace Node Details",
+    version: "1.0.0",
+    description:
+      "Get detailed trace node including parameters, context, result, and errors. Node IDs come from openl_get_trace_nodes.",
+    inputSchema: schemas.z.toJSONSchema(schemas.getTraceNodeDetailsSchema) as Record<string, unknown>,
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    handler: async (args, client): Promise<ToolResponse> => {
+      const typedArgs = args as {
+        projectId: string;
+        nodeId: number;
+        showRealNumbers?: boolean;
+        response_format?: "json" | "markdown";
+      };
+
+      if (!typedArgs?.projectId || typedArgs?.nodeId == null) {
+        throw new McpError(ErrorCode.InvalidParams, "Missing required arguments: projectId, nodeId");
+      }
+
+      const format = validateResponseFormat(typedArgs.response_format);
+
+      const node = await client.getTraceNodeDetails(
+        typedArgs.projectId,
+        typedArgs.nodeId,
+        typedArgs.showRealNumbers ?? false
+      );
+
+      const formattedResult = formatResponse(node, format);
+      return {
+        content: [{ type: "text", text: formattedResult }],
+      };
+    },
+  });
+
+  registerTool({
+    name: "openl_get_trace_parameter",
+    title: "openl Get Trace Parameter",
+    version: "1.0.0",
+    description:
+      "Get lazy-loaded parameter value. Use when a TraceParameterValue has lazy:true and parameterId set.",
+    inputSchema: schemas.z.toJSONSchema(schemas.getTraceParameterSchema) as Record<string, unknown>,
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    handler: async (args, client): Promise<ToolResponse> => {
+      const typedArgs = args as {
+        projectId: string;
+        parameterId: number;
+        response_format?: "json" | "markdown";
+      };
+
+      if (!typedArgs?.projectId || typedArgs?.parameterId == null) {
+        throw new McpError(ErrorCode.InvalidParams, "Missing required arguments: projectId, parameterId");
+      }
+
+      const format = validateResponseFormat(typedArgs.response_format);
+
+      const param = await client.getTraceParameter(typedArgs.projectId, typedArgs.parameterId);
+
+      const formattedResult = formatResponse(param, format);
+      return {
+        content: [{ type: "text", text: formattedResult }],
+      };
+    },
+  });
+
+
+  registerTool({
+    name: "openl_cancel_trace",
+    title: "openl Cancel Trace",
+    version: "1.0.0",
+    description: "Cancel ongoing trace execution for a project.",
+    inputSchema: schemas.z.toJSONSchema(schemas.cancelTraceSchema) as Record<string, unknown>,
+    annotations: { openWorldHint: true },
+    handler: async (args, client): Promise<ToolResponse> => {
+      const typedArgs = args as { projectId: string; response_format?: "json" | "markdown" };
+
+      if (!typedArgs?.projectId) {
+        throw new McpError(ErrorCode.InvalidParams, "Missing required argument: projectId");
+      }
+
+      await client.cancelTrace(typedArgs.projectId);
+
+      return {
+        content: [{ type: "text", text: "Trace cancelled." }],
+      };
+    },
+  });
+
+  registerTool({
+    name: "openl_export_trace",
+    title: "openl Export Trace",
+    version: "1.0.0",
+    description:
+      "Export trace as plain text. Returns full trace content. Use release: true to clear trace from memory after export.",
+    inputSchema: schemas.z.toJSONSchema(schemas.exportTraceSchema) as Record<string, unknown>,
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    handler: async (args, client): Promise<ToolResponse> => {
+      const typedArgs = args as {
+        projectId: string;
+        showRealNumbers?: boolean;
+        release?: boolean;
+        response_format?: "json" | "markdown";
+      };
+
+      if (!typedArgs?.projectId) {
+        throw new McpError(ErrorCode.InvalidParams, "Missing required argument: projectId");
+      }
+
+      const text = await client.exportTrace(typedArgs.projectId, {
+        showRealNumbers: typedArgs.showRealNumbers,
+        release: typedArgs.release,
+      });
+
+      return {
+        content: [{ type: "text", text }],
+      };
+    },
+  });
+
+  // =============================================================================
   // Version Control Tools
   // =============================================================================
 

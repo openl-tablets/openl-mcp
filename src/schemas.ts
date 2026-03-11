@@ -270,6 +270,52 @@ export const executeRuleSchema = z.object({
   response_format: ResponseFormat.optional(),
 }).strict();
 
+// =============================================================================
+// Trace API Schemas (BETA)
+// =============================================================================
+
+export const startTraceSchema = z.object({
+  projectId: projectIdSchema,
+  tableId: tableIdSchema.describe("Table ID to trace (e.g., 'calculatePremium_1234'). Get from openl_list_tables()."),
+  testRanges: z.string().optional().describe("For test tables: comma-separated ranges (e.g., '1-3,5'). Omit for regular rule/table execution."),
+  fromModule: z.string().optional().describe("Module name for opened module execution. Usually omit."),
+  inputJson: z.union([z.string(), z.record(z.string(), z.any())]).optional().describe("For regular rules: JSON input. Use object with params (required) and runtimeContext (optional). E.g. { params: { age: 25 }, runtimeContext: { lob: 'Auto' } }."),
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+export const getTraceNodesSchema = z.object({
+  projectId: projectIdSchema,
+  nodeId: z.number().int().nonnegative().optional().describe("Parent node ID. Omit for root nodes."),
+  showRealNumbers: z.boolean().optional().describe("Show exact numbers instead of formatted (default: false)."),
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+export const getTraceNodeDetailsSchema = z.object({
+  projectId: projectIdSchema,
+  nodeId: z.number().int().nonnegative().describe("Trace node ID from get_trace_nodes."),
+  showRealNumbers: z.boolean().optional(),
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+export const getTraceParameterSchema = z.object({
+  projectId: projectIdSchema,
+  parameterId: z.number().int().nonnegative().describe("Parameter ID from TraceParameterValue (lazy-loaded params)."),
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+
+export const cancelTraceSchema = z.object({
+  projectId: projectIdSchema,
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+export const exportTraceSchema = z.object({
+  projectId: projectIdSchema,
+  showRealNumbers: z.boolean().optional(),
+  release: z.boolean().optional().describe("Clear trace from memory after export (default: false)."),
+  response_format: ResponseFormat.optional(),
+}).strict();
+
 export const compareVersionsSchema = z.object({
   projectId: projectIdSchema,
   baseCommitHash: z.string().describe("Base Git commit hash to compare from (e.g., '7a3f2b1c...')"),
