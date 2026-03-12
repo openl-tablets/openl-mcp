@@ -21,11 +21,17 @@ Step-by-step guide for connecting AI clients to the OpenL MCP server.
 - **AI Client** — [Cursor IDE](https://cursor.com), [Claude Desktop](https://claude.ai/download), or [VS Code](https://code.visualstudio.com/) with GitHub Copilot
 - **MCP Server running** — see [Quick Start](../getting-started/quick-start.md) or [Docker Setup](docker.md)
 
-Verify Node.js and mcp-remote paths (needed for Claude Desktop):
+Verify paths (needed for Claude Desktop configuration):
+
 ```bash
-which node         # e.g., /Users/username/.nvm/versions/node/v24.0.0/bin/node
-which mcp-remote   # e.g., /Users/username/.nvm/versions/node/v24.0.0/bin/mcp-remote
+which node
 ```
+Example output: `/Users/username/.nvm/versions/node/v24.0.0/bin/node`
+
+```bash
+which mcp-remote
+```
+Example output: `/Users/username/.nvm/versions/node/v24.0.0/bin/mcp-remote`
 
 ---
 
