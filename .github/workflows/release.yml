@@ -1,35 +1,59 @@
-# This workflow is triggered when a release tag (e.g. 1.2.3) is pushed.
-# It builds multi-platform Docker images (amd64 + arm64), publishes them to
-# GitHub Container Registry.
+# Release npm package to npmjs.com — single source of truth for releases.
+#
+# Manually triggered via the Actions UI. The workflow is the only intended way
+# to cut a release: it bumps package.json, commits, tags, builds, publishes to
+# npm, and pushes the commit and tag.
+#
+# Docker Hub publishing is decoupled: trigger publish-dockerhub.yml manually
+# after a release (or any time) to ship a Docker image for a given version.
+#
+# Authentication: OIDC via npm Trusted Publishers — no NPM_TOKEN secret
+# needed. Configure once on npmjs.com under the package's Access settings:
+#   Trusted Publisher → GitHub Actions
+#     Organization:       openl-tablets
+#     Repository:         openl-mcp
+#     Workflow filename:  release.yml
 
-name: Release
+name: Release (npm)
 
 on:
-  push:
-    tags:
-      - '[0-9]+.[0-9]+.[0-9]+'
-
-env:
-  IMAGE: ghcr.io/openl-tablets/openl-mcp:${{ github.ref_name }}
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump'
+        required: true
+        type: choice
+        default: 'patch'
+        options:
+          - patch
+          - minor
+          - major
 
 jobs:
   release:
-    name: Build and Release
+    name: Publish to npmjs.com
     runs-on: ubuntu-latest
 
     permissions:
-      packages: write
+      contents: write   # to commit version bump and push tag
+      id-token: write   # required for npm provenance via OIDC
 
     steps:
-      - name: Checkout code
+      - name: Configure git identity
+        run: |
+          git config --global user.name "OpenL Tablets"
+          git config --global user.email openltablets@gmail.com
+
+      - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Node.js and cache
+      - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '24'
           cache: 'npm'
           cache-dependency-path: package-lock.json
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
         run: npm ci
@@ -37,21 +61,27 @@ jobs:
       - name: Build TypeScript
         run: npm run build
 
-      - name: Prepare for multi-platform docker build
+      # `npm version <bump>` bumps package.json + creates commit + annotated
+      # tag in one shot. `--tag-version-prefix=""` drops the default `v`
+      # prefix so tags match the existing X.Y.Z scheme in the repo.
+      - name: Bump package.json version, create commit and tag
+        id: bump
         run: |
-          docker run --privileged --rm tonistiigi/binfmt --install all
-          docker buildx create --use
+          npm version "${{ inputs.bump }}" --tag-version-prefix="" --message "Release %s"
+          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push Docker image
-        run: |
-          echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
-          docker buildx build \
-            -t "${IMAGE}" \
-            --platform linux/amd64,linux/arm64/v8 \
-            --push \
-            --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --label "org.opencontainers.image.version=${{ github.ref_name }}" \
-            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
-            --label "org.opencontainers.image.title=OpenL MCP Server" \
-            --label "org.opencontainers.image.description=Model Context Protocol server for OpenL Studio" \
-            .
+      # README swap is done after the commit so the npm-specific README is not
+      # committed to main. It only ends up in the npm tarball.
+      - name: Use npm-specific README for the package tarball
+        run: cp README.npm.md README.md
+
+      - name: Publish to npm
+        # No NODE_AUTH_TOKEN — authentication is negotiated via OIDC
+        # (npm Trusted Publishers). Provenance is attested automatically.
+        run: npm publish --access public --provenance
+
+      - name: Push commit and tag
+        # Pushing only after a successful npm publish: if publish fails, no
+        # commit/tag pollutes main. If push fails after publish, recovery is
+        # `git push origin HEAD <tag>` from a workstation.
+        run: git push --atomic origin "HEAD:${{ github.ref_name }}" "refs/tags/${{ steps.bump.outputs.version }}"

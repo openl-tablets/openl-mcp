@@ -13,6 +13,12 @@ Built with MCP SDK v1.26+ featuring type-safe validation (Zod) and comprehensive
 - 🐛 [Troubleshooting](docs/guides/troubleshooting.md) - Common issues and solutions
 - 👨‍💻 [Contributing](docs/development/contributing.md) - Development guide
 
+## npm Distribution
+
+The MCP server is published as an npm package: [`openl-mcp-server`](https://www.npmjs.com/package/openl-mcp-server) — stdio transport via `npx` for Claude Desktop / Cursor / VS Code.
+
+For details see [README.npm.md](README.npm.md).
+
 ## Quick Start
 
 ### Run OpenL Studio + MCP with Docker
