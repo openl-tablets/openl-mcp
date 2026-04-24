@@ -65,13 +65,9 @@ MAJOR.MINOR.PATCH
 2.0.0  — major: breaking changes (removed tools, changed API)
 ```
 
-Update `package.json` version before tagging:
-
-```bash
-npm version minor   # 1.0.0 → 1.1.0 (auto-creates commit + tag)
-npm version patch   # 1.1.0 → 1.1.1
-npm version major   # 1.1.1 → 2.0.0
-```
+The `package.json` version, the git tag, and the npm publish are produced
+by the **Release (npm)** workflow — see [Release](#release) below. You don't
+run `npm version` locally for releases.
 
 ## Workflows
 
@@ -86,16 +82,26 @@ git checkout -b feature/trace-api
 
 ### Release
 
-```bash
-# 1. Bump version and tag
-git checkout main
-npm version minor                # creates commit + tag v1.1.0
+Releases are cut from the **Release (npm)** GitHub Actions workflow. The
+workflow is the single source of truth: it bumps `package.json`, commits,
+tags, builds, publishes the npm package, and pushes commit + tag back to the
+branch.
 
-# 2. Create support branch from the tag
-git checkout -b release/1.1.x
+1. Make sure `main` (or the release branch you're releasing from) is in the
+   shape you want to ship.
+2. Open **Actions → Release (npm) → Run workflow**, pick the bump type
+   (`patch` / `minor` / `major` / `prepatch` / `preminor` / `premajor` /
+   `prerelease`) and the right source branch in the dropdown — the
+   commit/tag are pushed back to that branch.
+3. Create the release branch from the tag for the next minor:
 
-# 3. Decide on previous release branch (see EOL Policy below)
-```
+   ```bash
+   git fetch --tags
+   git checkout -b release/1.1.x 1.1.0
+   git push -u origin release/1.1.x
+   ```
+
+4. Decide on the previous release branch (see EOL Policy below).
 
 ### Hotfix
 
@@ -105,19 +111,25 @@ git checkout release/1.1.x
 git checkout -b fix/timeout-bug
 # ... fix ...
 # PR → release/1.1.x
-
-# 2. Bump patch version and tag
-git checkout release/1.1.x
-npm version patch                # creates commit + tag v1.1.1
-
-# 3. Bring fix to main
-git checkout main
-git cherry-pick <fix-commit>
-# Or: merge release/1.1.x → main (if multiple fixes accumulated)
-
-# 4. If multiple release branches are supported (LTS), cherry-pick to each:
-# git checkout release/1.0.x && git cherry-pick <fix-commit>
 ```
+
+2. Cut a patch release: open **Actions → Release (npm) → Run workflow**,
+   pick branch `release/1.1.x` and bump type `patch`. The workflow tags
+   `1.1.1` (or whatever the next patch is) on that branch and publishes to
+   npm.
+3. Bring the fix back to `main`:
+
+   ```bash
+   git checkout main
+   git cherry-pick <fix-commit>
+   # Or: merge release/1.1.x → main (if multiple fixes accumulated)
+   ```
+
+4. If multiple release branches are supported (LTS), cherry-pick to each:
+
+   ```bash
+   git checkout release/1.0.x && git cherry-pick <fix-commit>
+   ```
 
 ## Release Lifecycle & EOL Policy
 

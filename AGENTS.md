@@ -440,6 +440,10 @@ npm run watch
 
 ## Deployment
 
+### Pre-built distributions
+
+- **npm:** `npx -y openl-mcp-server` (stdio transport)
+
 ### Docker
 ```bash
 docker build -t openl-mcp-server .

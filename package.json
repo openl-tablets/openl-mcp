@@ -7,6 +7,24 @@
   "bin": {
     "openl-mcp": "dist/index.js"
   },
+  "files": [
+    "dist/",
+    "prompts/",
+    "LICENSE",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openl-tablets/openl-mcp.git"
+  },
+  "homepage": "https://github.com/openl-tablets/openl-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/openl-tablets/openl-mcp/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
