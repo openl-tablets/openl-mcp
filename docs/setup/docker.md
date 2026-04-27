@@ -45,8 +45,8 @@ docker compose -f compose.studio.yaml up -d
 ```
 
 This starts:
-- **OpenL Studio** at `http://localhost:8080` (image from GHCR)
-- **MCP Server** at `http://localhost:3000` (image from GHCR)
+- **OpenL Studio** at `http://localhost:8080` (image from GHCR — webstudio is only published there)
+- **MCP Server** at `http://localhost:3000` (image from Docker Hub — `openltablets/openl-mcp:latest`)
 
 OpenL Studio runs in single-user mode — no authentication is needed.
 
@@ -187,6 +187,13 @@ MCP_PORT=3001 docker compose up -d
 By default, `compose.yaml` builds the image locally from the Dockerfile. To use a pre-built image instead:
 
 ```bash
+# Stable tagged release (Docker Hub)
+MCP_IMAGE=openltablets/openl-mcp:<X.Y.Z> docker compose up -d
+
+# Latest stable
+MCP_IMAGE=openltablets/openl-mcp:latest docker compose up -d
+
+# Nightly edge build (GHCR)
 MCP_IMAGE=ghcr.io/openl-tablets/openl-mcp:latest docker compose up -d
 ```
 

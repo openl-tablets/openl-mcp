@@ -8,7 +8,9 @@ services:
       - "127.0.0.1:8080:8080"
 
   mcp-server:
-    image: ghcr.io/openl-tablets/openl-mcp:latest
+    # Stable tagged releases live on Docker Hub. For nightly edge builds,
+    # swap to: ghcr.io/openl-tablets/openl-mcp:latest
+    image: openltablets/openl-mcp:latest
     pull_policy: always
     container_name: mcp-server
     restart: unless-stopped
