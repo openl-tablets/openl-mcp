@@ -170,6 +170,21 @@ main           ──●────●──────●──────�
 
 **Current project decision:** Single active branch (no LTS). Revisit if external consumers appear.
 
+## Docker Hub publishing
+
+Docker Hub releases are decoupled from version tagging and are produced
+manually via the **Publish (Docker Hub)** GitHub Actions workflow
+(`publish-dockerhub.yml`):
+
+- Run with the version field blank to ship the latest npm release. The image
+  is tagged both `:VERSION` and `:latest` on Docker Hub.
+- Run with an explicit version (`X.Y.Z`) to ship/republish a specific release.
+  The image is tagged `:VERSION` only — `:latest` on Docker Hub is **not**
+  moved.
+
+GHCR's `:latest` tag is updated nightly by the separate `deploy.yml` workflow
+and is unrelated to tagged releases.
+
 ## Rules
 
 1. **`main` is always deployable** — broken builds must be fixed immediately.

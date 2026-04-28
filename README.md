@@ -13,11 +13,17 @@ Built with MCP SDK v1.26+ featuring type-safe validation (Zod) and comprehensive
 - 🐛 [Troubleshooting](docs/guides/troubleshooting.md) - Common issues and solutions
 - 👨‍💻 [Contributing](docs/development/contributing.md) - Development guide
 
-## npm Distribution
+## Distribution
 
-The MCP server is published as an npm package: [`openl-mcp-server`](https://www.npmjs.com/package/openl-mcp-server) — stdio transport via `npx` for Claude Desktop / Cursor / VS Code.
+The MCP server is published through three channels:
 
-For details see [README.npm.md](README.npm.md).
+| Channel | Coordinates | Purpose |
+|---|---|---|
+| npm | [`openl-mcp-server`](https://www.npmjs.com/package/openl-mcp-server) | stdio transport via `npx` (Claude Desktop, Cursor) |
+| Docker Hub | `openltablets/openl-mcp:X.Y.Z` and `:latest` | tagged release images for HTTP transport |
+| GHCR | `ghcr.io/openl-tablets/openl-mcp:latest` | nightly build (edge), no tagged releases |
+
+For Claude Desktop / Cursor see [README.npm.md](README.npm.md). For Docker see [README.docker.md](README.docker.md).
 
 ## Quick Start
 
@@ -31,7 +37,7 @@ docker compose -f compose.studio.yaml up -d
 
 This starts:
 - OpenL Studio image from GHCR: `ghcr.io/openl-tablets/webstudio:x`
-- MCP image from GHCR: `ghcr.io/openl-tablets/openl-mcp:latest`
+- MCP image from Docker Hub: `openltablets/openl-mcp:latest`
 - OpenL Studio at `http://localhost:8080`
 - MCP server at `http://localhost:3000`
 

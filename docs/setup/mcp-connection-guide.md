@@ -278,7 +278,7 @@ Create `.vscode/mcp.json` in your project (workspace config) or use `Cmd/Ctrl + 
         "--pull=always",
         "--env-file",
         "/Users/<username>/.mcp/.env",
-        "ghcr.io/openl-tablets/openl-mcp:latest",
+        "openltablets/openl-mcp:latest",
         "node",
         "dist/index.js"
       ]

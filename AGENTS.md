@@ -443,8 +443,10 @@ npm run watch
 ### Pre-built distributions
 
 - **npm:** `npx -y openl-mcp-server` (stdio transport)
+- **Docker Hub:** `openltablets/openl-mcp:<X.Y.Z>` or `:latest` (HTTP transport, tagged releases)
+- **GHCR:** `ghcr.io/openl-tablets/openl-mcp:latest` (nightly edge build)
 
-### Docker
+### Docker (local build)
 ```bash
 docker build -t openl-mcp-server .
 docker run -e OPENL_BASE_URL=http://openl:8080 \
@@ -457,7 +459,7 @@ docker run -e OPENL_BASE_URL=http://openl:8080 \
 ```yaml
 services:
   mcp-server:
-    image: ghcr.io/openl-tablets/openl-mcp:x
+    image: openltablets/openl-mcp:<X.Y.Z>   # or :latest
     environment:
       OPENL_BASE_URL: https://openl.example.com/studio
 ```
