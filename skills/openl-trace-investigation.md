@@ -8,11 +8,11 @@ description: >
   request", "why is the premium null", "investigate this OpenL result", "what
   went wrong in the calculation", "debug this rating", "why was my claim
   rejected", or when the user pastes a JSON payload and asks for an
-  explanation. Also trigger when the user references a Jira ticket number
-  related to an OpenL outcome, or asks to fix a dispatch table or rule row.
-  Always use this skill before attempting any manual table reading — a live
-  trace is the only reliable source of truth. Requires the openl-mcp-server
-  tool to be connected.
+  explanation. Also trigger when the user references a ticket number in a
+  tracking system (like Jira) related to an OpenL outcome, or asks to fix a
+  dispatch table or rule row. Always use this skill before attempting any
+  manual table reading — a live trace is the only reliable source of truth.
+  Requires the openl-mcp-server tool to be connected.
 compatibility: "Requires openl-mcp-server MCP tool"
 ---
 
@@ -21,7 +21,7 @@ compatibility: "Requires openl-mcp-server MCP tool"
 | Field | Value |
 |---|---|
 | **name** | `openl-trace-investigation` |
-| **description** | Use this skill whenever the user wants to investigate, debug, or explain the result of an OpenL Tablets rules execution — including unexpected nulls, wrong premiums, rejected claims, incorrect lookups, incorrect decisions, or any "why did OpenL produce X?" question. Trigger on phrases like: "trace this request", "why is the premium null", "investigate this OpenL result", "what went wrong in the calculation", "debug this rating", "why was my claim rejected", or when the user pastes a JSON payload and asks for an explanation. Also trigger when the user references a Jira ticket number related to an OpenL outcome, or asks to fix a dispatch table or rule row. Always use this skill before attempting any manual table reading — a live trace is the only reliable source of truth. Requires the openl-mcp-server tool to be connected. |
+| **description** | Use this skill whenever the user wants to investigate, debug, or explain the result of an OpenL Tablets rules execution — including unexpected nulls, wrong premiums, rejected claims, incorrect lookups, incorrect decisions, or any "why did OpenL produce X?" question. Trigger on phrases like: "trace this request", "why is the premium null", "investigate this OpenL result", "what went wrong in the calculation", "debug this rating", "why was my claim rejected", or when the user pastes a JSON payload and asks for an explanation. Also trigger when the user references a ticket number in a tracking system (like Jira) related to an OpenL outcome, or asks to fix a dispatch table or rule row. Always use this skill before attempting any manual table reading — a live trace is the only reliable source of truth. Requires the openl-mcp-server tool to be connected. |
 
 Investigate OpenL Tablets rule execution outcomes for EIS Group. Supports claim
 specialists, BAs, and developers. Always lead with root cause and fix — trace
@@ -68,8 +68,9 @@ Always identify the expected vs actual outcome before tracing. Common issue type
 - A rule was skipped or matched incorrectly
 - A validation fired when it should not, or did not fire when it should
 
-If the user provides a **Jira ticket number**, fetch it first via the Jira MCP
-(if connected) to understand full context before doing anything else.
+If the user provides a **ticket number from a tracking system (like Jira)**,
+fetch it first via the issue tracker MCP tool (if connected) to understand full
+context before doing anything else.
 
 If the problem description is unclear, ask **one** clarifying question: what
 was the expected outcome and what was the actual outcome?
@@ -220,9 +221,10 @@ explicit user confirmation.**
 If the user is a **claim specialist**: describe the fix in business terms and
 note it requires a development team action.
 
-After a confirmed fix, suggest a Jira ticket if a bug or data gap was found:
+After a confirmed fix, suggest filing a ticket in the tracking system (like
+Jira) if a bug or data gap was found:
 > "Suggest filing: `AgeFactor dispatch table missing cat rows for MixedBreed —
-> causes null premium for mixed-breed cats`"
+>   causes null premium for mixed-breed cats`"
 
 ---
 
