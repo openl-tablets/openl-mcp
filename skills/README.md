@@ -34,8 +34,8 @@ If the `.claude/skills/` folder does not exist yet, create it — or ask your de
 **Step 3 — Use it**
 
 Open Claude Code and either:
-- Type `/openl-trace-investigation` to start the skill directly, or
-- Describe your problem in plain language (e.g. *"why is the premium null for this policy?"*) and Claude will pick up the skill automatically.
+- Type `/<skill-name>` to start the skill directly (e.g. `/openl-trace-investigation`), or
+- Describe your problem in plain language and Claude will pick up the relevant skill automatically.
 
 ## Requirements
 
