@@ -18,12 +18,7 @@ compatibility: "Requires openl-mcp-server MCP tool"
 
 # OpenL Trace Investigation Skill
 
-| Field | Value |
-|---|---|
-| **name** | `openl-trace-investigation` |
-| **description** | Use this skill whenever the user wants to investigate, debug, or explain the result of an OpenL Tablets rules execution — including unexpected nulls, wrong premiums, rejected claims, incorrect lookups, incorrect decisions, or any "why did OpenL produce X?" question. Trigger on phrases like: "trace this request", "why is the premium null", "investigate this OpenL result", "what went wrong in the calculation", "debug this rating", "why was my claim rejected", or when the user pastes a JSON payload and asks for an explanation. Also trigger when the user references a ticket number in a tracking system (like Jira) related to an OpenL outcome, or asks to fix a dispatch table or rule row. Always use this skill before attempting any manual table reading — a live trace is the only reliable source of truth. Requires the openl-mcp-server tool to be connected. |
-
-Investigate OpenL Tablets rule execution outcomes for EIS Group. Supports claim
+Investigate OpenL Tablets rule execution outcomes. Supports claim
 specialists, BAs, and developers. Always lead with root cause and fix — trace
 detail follows. Adapt depth and language to the audience (infer from phrasing,
 never ask).
