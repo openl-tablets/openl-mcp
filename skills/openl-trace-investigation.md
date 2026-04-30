@@ -237,9 +237,9 @@ When a failing table calls into a shared library or another project:
 3. Repeat Phase 3 in the dependency project.
 4. Report root cause at the dependency level, not the caller level.
 
-**Common EIS pattern**: GENESIS rating projects depend on Shared Rules Library
-tables. The failure appears in the GENESIS project but missing data is in the
-library.
+**Common pattern**: Rating or processing projects often depend on shared library
+projects. The failure appears in the calling project but the missing data or
+rule is in the shared library.
 
 ---
 
