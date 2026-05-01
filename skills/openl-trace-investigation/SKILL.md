@@ -11,7 +11,7 @@ compatibility: "Requires the openl-mcp-server MCP tool to be running and connect
 # OpenL Trace Investigation Skill
 
 Investigate OpenL Tablets rule execution outcomes. Supports claim
-specialists, BAs, and developers. Always lead with root cause and fix — trace
+business users, BAs, and developers. Always lead with root cause and fix — trace
 detail follows. Adapt depth and language to the audience (infer from phrasing,
 never ask).
 
@@ -23,9 +23,9 @@ never ask).
    or formula syntax. State what produced the wrong outcome and why.
 2. **SUGGESTED FIX** — concrete and minimal. Name the table, row/condition, and
    corrected logic. Offer to apply directly if user is a developer or BA. For
-   claim specialists, describe in business terms and note it requires a dev team.
+   business users, describe in business terms and note it requires a dev team.
 3. **SUPPORTING EVIDENCE** — trace summary and table data proving the root
-   cause. Depth varies by audience: claim specialists get a plain summary;
+   cause. Depth varies by audience: business users get a plain summary;
    developers get the full trace tree, formulas, and table data.
 
 Never reverse this order.
@@ -207,7 +207,7 @@ If the user is a **developer or BA**: offer to apply the fix directly using
 `openl_update_table` or `openl_create_project_table`. **Never apply without
 explicit user confirmation.**
 
-If the user is a **claim specialist**: describe the fix in business terms and
+If the user is a **business user**: describe the fix in business terms and
 note it requires a development team action.
 
 After a confirmed fix, suggest filing a ticket in the tracking system (like
@@ -239,5 +239,5 @@ rule is in the shared library.
 - Never assume data is missing from a lookup without reading the full table.
 - Never treat all nulls as errors — check whether null is the intended result.
 - Never apply a fix in OpenL Studio without explicit user confirmation.
-- Never expose internal table IDs or system URLs in claim specialist outputs.
+- Never expose internal table IDs or system URLs in business user outputs.
 - Never skip running a trace and rely solely on manual table reading to determine the root cause.
