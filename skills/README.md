@@ -23,11 +23,11 @@ Claude looks for skills in a specific folder on your computer:
 
 Copy the downloaded skill folder (e.g. `openl-trace-investigation`) into that location. The result should look like:
 
-```
+```text
 ~/.claude/skills/
 └── openl-trace-investigation/
     └── SKILL.md
-```
+```text
 
 If the `.claude/skills/` folder does not exist yet, create it — or ask your developer to do this step.
 
