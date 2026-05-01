@@ -10,8 +10,8 @@ compatibility: "Requires the openl-mcp-server MCP tool to be running and connect
 
 # OpenL Trace Investigation Skill
 
-Investigate OpenL Tablets rule execution outcomes. Supports claim
-business users, BAs, and developers. Always lead with root cause and fix — trace
+Investigate OpenL Tablets rule execution outcomes. Supports business users,
+BAs, and developers. Always lead with root cause and fix — trace
 detail follows. Adapt depth and language to the audience (infer from phrasing,
 never ask).
 
