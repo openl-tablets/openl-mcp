@@ -1,19 +1,11 @@
 ---
 name: openl-trace-investigation
 description: >
-  Use this skill whenever the user wants to investigate, debug, or explain the
-  result of an OpenL Tablets rules execution — including unexpected nulls, wrong
-  premiums, rejected claims, incorrect lookups, incorrect decisions, or any
-  "why did OpenL produce X?" question. Trigger on phrases like: "trace this
-  request", "why is the premium null", "investigate this OpenL result", "what
-  went wrong in the calculation", "debug this rating", "why was my claim
-  rejected", or when the user pastes a JSON payload and asks for an
-  explanation. Also trigger when the user references a ticket number in a
-  tracking system (like Jira) related to an OpenL outcome, or asks to fix a
-  dispatch table or rule row. Always use this skill before attempting any
-  manual table reading — a live trace is the only reliable source of truth.
-  Requires the openl-mcp-server tool to be connected.
-compatibility: "Requires openl-mcp-server MCP tool"
+  Investigate why OpenL Tablets produced an unexpected result — wrong value,
+  null, rejected claim, or incorrect decision. Trigger when the user asks why
+  OpenL returned X, pastes a JSON payload for explanation, references a rule
+  execution issue, or asks to fix a dispatch table or rule row.
+compatibility: "Requires the openl-mcp-server MCP tool to be running and connected"
 ---
 
 # OpenL Trace Investigation Skill
@@ -90,8 +82,10 @@ Entry points are tables exposed as API endpoints. To identify them:
 
 1. Look for a `rules.xml` file or table properties containing an **Included
    Methods** RegExp pattern — tables whose names match are exposed as endpoints.
-2. Call `openl_list_tables(projectId=<id>)` and scan for names containing:
-   `DeterminePolicy`, `Calculate`, `Process`, `Rate`, or the product name.
+2. Call `openl_list_tables(projectId=<id>)` and find candidates based on the
+   user's problem context — the entry point name typically reflects the product
+   or operation described. Common naming patterns include `Determine*`,
+   `Calculate*`, `Process*`, `Rate*`, but match by context first, not by name.
 3. **Match against the user's input structure**: read the top-level parameter
    types of each candidate (from the table signature). Compare against keys in
    the user's JSON. E.g. if input has a `policy` object and the signature is
@@ -246,22 +240,4 @@ rule is in the shared library.
 - Never treat all nulls as errors — check whether null is the intended result.
 - Never apply a fix in OpenL Studio without explicit user confirmation.
 - Never expose internal table IDs or system URLs in claim specialist outputs.
-- Never fall back to manual table reading as a substitute for a live trace.
-
----
-
-## OpenL MCP tools reference
-
-| Tool | When to use |
-|---|---|
-| `openl_list_projects` | Find the right project by product name |
-| `openl_open_project` | Open project before tracing if session is stale |
-| `openl_list_tables` | Discover entry point and related lookup tables |
-| `openl_get_table` | Read the exact formula or data of a table |
-| `openl_start_trace` | Run a live trace with the user's input JSON |
-| `openl_export_trace` | Get the full trace text; scan for ERROR and null |
-| `openl_get_trace_nodes` | Navigate the trace tree top-down |
-| `openl_get_trace_node_details` | Read full detail of a specific node |
-| `openl_get_trace_parameter` | Resolve lazy-loaded parameter values |
-| `openl_update_table` | Apply a fix to an existing table (BA/dev only, with confirmation) |
-| `openl_create_project_table` | Create a new table (BA/dev only, with confirmation) |
+- Never skip running a trace and rely solely on manual table reading to determine the root cause.
