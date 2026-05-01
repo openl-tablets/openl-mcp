@@ -68,7 +68,7 @@ was the expected outcome and what was the actual outcome?
 
 ### Step 1: Find the right project
 
-```
+```text
 openl_list_projects()
 ```
 
@@ -102,7 +102,7 @@ Entry points are tables exposed as API endpoints. To identify them:
 
 If `openl_start_trace` returns 404, the project session is stale:
 
-```
+```text
 openl_open_project(projectId=<id>)
 ```
 
@@ -118,8 +118,8 @@ Wrap the user's JSON as:
 
 The param name comes from the entry point table's signature.
 
-```
-openl_start_trace(tableId=<id>, input=<wrapped_json>)
+```text
+openl_start_trace(projectId=<id>, tableId=<id>, inputJson=<wrapped_json>)
 ```
 
 If this still fails after opening the project:
@@ -129,7 +129,7 @@ If this still fails after opening the project:
 
 ### Step 5: Export the full trace
 
-```
+```text
 openl_export_trace(traceId=<id>)
 ```
 
@@ -149,7 +149,7 @@ reported problem — do not look only for exceptions.
 
 Follow every ERROR node to its deepest child:
 
-```
+```text
 openl_get_trace_nodes(traceId=<id>)
 openl_get_trace_nodes(traceId=<id>, nodeId=<id>)   # drill into children
 openl_get_trace_node_details(traceId=<id>, nodeId=<id>)
