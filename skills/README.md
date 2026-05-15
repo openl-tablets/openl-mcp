@@ -27,7 +27,7 @@ Copy the downloaded skill folder (e.g. `openl-trace-investigation`) into that lo
 ~/.claude/skills/
 └── openl-trace-investigation/
     └── SKILL.md
-```text
+```
 
 If the `.claude/skills/` folder does not exist yet, create it — or ask your developer to do this step.
 
