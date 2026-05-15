@@ -68,23 +68,19 @@ was the expected outcome and what was the actual outcome?
 
 ### Step 1: Find the right project
 
-```text
-openl_list_projects()
-```
-
-Match by product keyword from the user's description (e.g. "Personal Pet",
-"STD", "Claims", "Group Dental", "Offering"). If ambiguous, list candidates and
-ask the user to confirm.
+List the available OpenL projects and match by product keyword from the user's
+description (e.g. "Personal Pet", "STD", "Claims", "Group Dental", "Offering").
+If ambiguous, list candidates and ask the user to confirm.
 
 ### Step 2: Find the entry point table
 
 Entry points are tables exposed as API endpoints. To identify them:
 
-1. Look for a `rules.xml` file or table properties containing an **Included
-   Methods** RegExp pattern — tables whose names match are exposed as endpoints.
-2. Call `openl_list_tables(projectId=<id>)` and find candidates based on the
-   user's problem context — the entry point name typically reflects the product
-   or operation described. Common naming patterns include `Determine*`,
+1. Look for a `rules.xml` file containing an **Included Methods** RegExp
+   pattern — tables whose names match are exposed as endpoints.
+2. List the tables in the project and find candidates based on the user's
+   problem context — the entry point name typically reflects the product or
+   operation described. Common naming patterns include `Determine*`,
    `Calculate*`, `Process*`, `Rate*`, but match by context first, not by name.
 3. **Match against the user's input structure**: read the top-level parameter
    types of each candidate (from the table signature). Compare against keys in
@@ -100,13 +96,9 @@ Entry points are tables exposed as API endpoints. To identify them:
 
 ### Step 3: Open the project if needed
 
-If `openl_start_trace` returns 404, the project session is stale:
-
-```text
-openl_open_project(projectId=<id>)
-```
-
-Then retry. Do NOT fall back to manual table reading — 404 is a session issue.
+If starting a trace returns 404, the project session is stale — open the
+project, then retry. Do NOT fall back to manual table reading — 404 is a
+session issue.
 
 ### Step 4: Wrap and start the trace
 
@@ -116,11 +108,8 @@ Wrap the user's JSON as:
 { "params": { "<paramName>": <value> } }
 ```
 
-The param name comes from the entry point table's signature.
-
-```text
-openl_start_trace(projectId=<id>, tableId=<id>, inputJson=<wrapped_json>)
-```
+The param name comes from the entry point table's signature. Start the trace
+on the identified project and entry point table with this wrapped input.
 
 If this still fails after opening the project:
 - Stop and report the exact error message
@@ -129,11 +118,7 @@ If this still fails after opening the project:
 
 ### Step 5: Export the full trace
 
-```text
-openl_export_trace(traceId=<id>)
-```
-
-Scan for:
+Export the complete trace and scan it for:
 - `ERROR` nodes
 - `null` values on fields the user cares about
 - Unexpected fallback branches or early exits
@@ -147,15 +132,9 @@ reported problem — do not look only for exceptions.
 
 ### Issue: error or exception
 
-Follow every ERROR node to its deepest child:
-
-```text
-openl_get_trace_nodes(traceId=<id>)
-openl_get_trace_nodes(traceId=<id>, nodeId=<id>)   # drill into children
-openl_get_trace_node_details(traceId=<id>, nodeId=<id>)
-```
-
-Read the actual table formula with `openl_get_table` — **never infer it**.
+Follow every ERROR node to its deepest child by listing its child nodes and
+drilling into the details of each. Read the actual table formula directly
+from the project — **never infer it**.
 
 ### Issue: null or blank result
 
@@ -163,7 +142,7 @@ Null can be a legitimate result (a rule row intentionally returns null, or no
 row matched). Do not assume null is always a bug.
 
 - Find where in the trace the value first became null.
-- Read the formula or decision table that produced it (`openl_get_table`).
+- Read the formula or decision table that produced it.
 - Read the **full** relevant lookup table to check whether the input combination
   has a matching row — do not assume it is missing.
 - Determine: is null expected (no match by design) or unexpected (missing data,
@@ -181,7 +160,7 @@ row matched). Do not assume null is always a bug.
 
 - Find the decision table node in the trace.
 - Check which condition matched and which rule was returned.
-- Read the full decision table (`openl_get_table`) to understand all conditions.
+- Read the full decision table to understand all conditions.
 - Determine whether the wrong row fired or the right row is missing.
 
 ### Root cause taxonomy
@@ -203,9 +182,9 @@ Always classify the root cause — the fix differs by type:
 State the minimum change needed. Reference the specific table, row, condition,
 or formula to change. Do not propose restructuring tables unnecessarily.
 
-If the user is a **developer or BA**: offer to apply the fix directly using
-`openl_update_table` or `openl_create_project_table`. **Never apply without
-explicit user confirmation.**
+If the user is a **developer or BA**: offer to apply the fix directly by
+updating the affected table or creating a new one in the project. **Never
+apply without explicit user confirmation.**
 
 If the user is a **business user**: describe the fix in business terms and
 note it requires a development team action.
@@ -222,7 +201,7 @@ Jira) if a bug or data gap was found:
 When a failing table calls into a shared library or another project:
 
 1. Note the dependency reference in the table formula.
-2. Use `openl_list_projects` to find the dependency project.
+2. Locate the dependency project from the list of available projects.
 3. Repeat Phase 3 in the dependency project.
 4. Report root cause at the dependency level, not the caller level.
 
