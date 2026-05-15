@@ -94,15 +94,7 @@ Entry points are tables exposed as API endpoints. To identify them:
 
 ## Phase 2 — Run the trace
 
-### Step 3: Open the project if needed
-
-Start a trace.
-
-If starting a trace returns 404, the project session is stale — open the
-project, then retry. Do NOT fall back to manual table reading — 404 is a
-session issue.
-
-### Step 4: Wrap and start the trace
+### Step 3: Start a trace
 
 Wrap the user's JSON as:
 
@@ -113,12 +105,16 @@ Wrap the user's JSON as:
 The param name comes from the entry point table's signature. Start the trace
 on the identified project and entry point table with this wrapped input.
 
-If this still fails after opening the project:
+If starting the trace returns 404, the project session is stale — open the
+project, then retry. Do NOT fall back to manual table reading — 404 is a
+session issue.
+
+If it still fails after opening the project:
 - Stop and report the exact error message
 - Do NOT attempt manual reconstruction
 - Suggest filing a bug against the OpenL MCP server
 
-### Step 5: Export the full trace
+### Step 4: Export the full trace
 
 Export the complete trace and scan it for:
 - `ERROR` nodes
