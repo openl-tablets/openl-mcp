@@ -94,7 +94,9 @@ Entry points are tables exposed as API endpoints. To identify them:
 
 ## Phase 2 — Run the trace
 
-### Step 3: Start a trace
+### Step 3: Open the project if needed
+
+Start a trace.
 
 If starting a trace returns 404, the project session is stale — open the
 project, then retry. Do NOT fall back to manual table reading — 404 is a
