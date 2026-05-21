@@ -1,18 +1,29 @@
 # Release npm package to npmjs.com — single source of truth for releases.
 #
 # Manually triggered via the Actions UI. The workflow is the only intended way
-# to cut a release: it bumps package.json, commits, tags, builds, publishes to
-# npm, and pushes the commit and tag.
+# to cut a release: it bumps package.json on a release-prep branch, opens a
+# PR, admin-merges it back into the source branch, builds, publishes to npm,
+# and tags the merge commit.
 #
 # Docker Hub publishing is decoupled: trigger publish-dockerhub.yml manually
 # after a release (or any time) to ship a Docker image for a given version.
 #
-# Authentication: OIDC via npm Trusted Publishers — no NPM_TOKEN secret
-# needed. Configure once on npmjs.com under the package's Access settings:
-#   Trusted Publisher → GitHub Actions
-#     Organization:       openl-tablets
-#     Repository:         openl-mcp
-#     Workflow filename:  release.yml
+# Authentication:
+# - npm:  OIDC via npm Trusted Publishers — no NPM_TOKEN secret needed.
+#         Configure once on npmjs.com under the package's Access settings:
+#           Trusted Publisher → GitHub Actions
+#             Organization:       openl-tablets
+#             Repository:         openl-mcp
+#             Workflow filename:  release.yml
+# - git:  RELEASE_TOKEN repo secret — a PAT (or GitHub App token) belonging
+#         to a user/app with the admin role on this repo, so it can bypass
+#         the "Copilot review for default branch" ruleset via
+#         `gh pr merge --admin`. The default GITHUB_TOKEN does not qualify.
+#         Required fine-grained PAT permissions:
+#           Contents: Read and write
+#           Pull requests: Read and write
+#           Workflows: Read and write
+#         (or a classic PAT with the `repo` and `workflow` scopes).
 
 name: Release (npm)
 
@@ -35,17 +46,24 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write   # to commit version bump and push tag
-      id-token: write   # required for npm provenance via OIDC
+      contents: write       # tag push
+      pull-requests: write  # open + admin-merge release PR
+      id-token: write       # npm provenance via OIDC
 
     steps:
       - name: Configure git identity
         run: |
           git config --global user.name "OpenL Tablets"
-          git config --global user.email openltablets@gmail.com
+          git config --global user.email "openltablets@gmail.com"
 
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          # RELEASE_TOKEN must be a PAT (or GitHub App token) owned by a
+          # repo admin — bypasses the ruleset on the default branch when
+          # merging the release PR with --admin and when pushing the tag.
+          token: ${{ secrets.RELEASE_TOKEN }}
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -61,17 +79,60 @@ jobs:
       - name: Build TypeScript
         run: npm run build
 
-      # `npm version <bump>` bumps package.json + creates commit + annotated
-      # tag in one shot. `--tag-version-prefix=""` drops the default `v`
-      # prefix so tags match the existing X.Y.Z scheme in the repo.
-      - name: Bump package.json version, create commit and tag
+      # Bump locally (no commit, no tag) so we control commit + tag below.
+      - name: Compute next version
         id: bump
         run: |
-          npm version "${{ inputs.bump }}" --tag-version-prefix="" --message "Release %s"
-          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+          NEW_VERSION=$(npm version "${{ inputs.bump }}" --no-git-tag-version)
+          NEW_VERSION="${NEW_VERSION#v}"
+          echo "Next version: ${NEW_VERSION}"
+          echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
 
-      # README swap is done after the commit so the npm-specific README is not
-      # committed to main. It only ends up in the npm tarball.
+      - name: Create release-prep branch and open PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          VERSION: ${{ steps.bump.outputs.version }}
+          BASE: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          BRANCH="release-prep/${VERSION}"
+          git checkout -b "$BRANCH"
+          git add package.json package-lock.json
+          git commit -m "Release ${VERSION}"
+          git push origin "$BRANCH"
+
+          PR_URL=$(gh pr create \
+            --title "Release ${VERSION}" \
+            --body "Automated version bump for npm release **${VERSION}**.
+
+          This PR was opened by the \`release.yml\` workflow and will be
+          admin-merged immediately. The merge commit is then tagged
+          \`${VERSION}\` and published to npm." \
+            --base "$BASE" \
+            --head "$BRANCH")
+          echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      # Squash-merge with --admin so the PR satisfies the
+      # "Changes must be made through a pull request" rule structurally,
+      # while the admin token bypasses required reviews (Copilot review).
+      - name: Admin-merge release PR
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: gh pr merge --admin --squash --delete-branch "${{ steps.pr.outputs.pr_url }}"
+
+      - name: Fast-forward to merge commit
+        env:
+          BASE: ${{ github.ref_name }}
+        run: |
+          git fetch origin "$BASE"
+          git checkout "$BASE"
+          git reset --hard "origin/$BASE"
+
+      # README swap is done after the merge so the npm-specific README is
+      # not committed to the source branch. It only ends up in the npm
+      # tarball.
       - name: Use npm-specific README for the package tarball
         run: cp README.npm.md README.md
 
@@ -80,8 +141,13 @@ jobs:
         # (npm Trusted Publishers). Provenance is attested automatically.
         run: npm publish --access public --provenance
 
-      - name: Push commit and tag
-        # Pushing only after a successful npm publish: if publish fails, no
-        # commit/tag pollutes main. If push fails after publish, recovery is
-        # `git push origin HEAD <tag>` from a workstation.
-        run: git push --atomic origin "HEAD:${{ github.ref_name }}" "refs/tags/${{ steps.bump.outputs.version }}"
+      # Tag the squash-merge commit (now HEAD of the source branch) and
+      # push the tag. Pushed after npm publish so a failed publish leaves
+      # the repo state clean for retry; if the tag push fails, recovery is
+      # `git push origin <tag>` from a workstation.
+      - name: Tag release and push
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          git tag -a "$VERSION" -m "Release $VERSION"
+          git push origin "refs/tags/$VERSION"
