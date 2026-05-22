@@ -1,9 +1,20 @@
 # Release npm package to npmjs.com — single source of truth for releases.
 #
-# Manually triggered via the Actions UI. The workflow is the only intended way
-# to cut a release: it bumps package.json on a release-prep branch, opens a
-# PR, admin-merges it back into the source branch, builds, publishes to npm,
-# and tags the merge commit.
+# Manually triggered via the Actions UI from the `main` branch. The workflow
+# is the only intended way to cut a release: it lint+tests+builds, bumps
+# package.json on a release-prep branch, opens a PR, admin-merges it back
+# into main, tags the merge commit, and FINALLY publishes to npm.
+#
+# Order matters: npm publish is the LAST step on purpose. The git state on
+# main is fully consistent (commit + tag pushed) before any irreversible
+# npm operation happens. Recovery semantics:
+#   - PR/merge fails       → no npm, no tag, no commit. Clean retry.
+#   - Tag push fails       → commit on main, no tag, no npm. Create tag
+#                            manually, then re-run `npm publish` from the
+#                            tagged commit.
+#   - npm publish fails    → commit + tag on main, version not on npm.
+#                            Re-run `npm publish` manually from the tagged
+#                            checkout. The version number is NOT burned.
 #
 # Docker Hub publishing is decoupled: trigger publish-dockerhub.yml manually
 # after a release (or any time) to ship a Docker image for a given version.
@@ -40,6 +51,14 @@ on:
           - minor
           - major
 
+# Serialize releases — two parallel runs would race on `npm version`, the
+# release-prep branch name, and the npm publish. We don't cancel an
+# in-progress run because cancelling mid-publish would leave inconsistent
+# state.
+concurrency:
+  group: release-npm
+  cancel-in-progress: false
+
 jobs:
   release:
     name: Publish to npmjs.com
@@ -51,6 +70,12 @@ jobs:
       id-token: write       # npm provenance via OIDC
 
     steps:
+      - name: Guard — releases only from main
+        if: github.ref_name != 'main'
+        run: |
+          echo "::error::Releases can only be cut from 'main' (got '${{ github.ref_name }}')."
+          exit 1
+
       - name: Configure git identity
         run: |
           git config --global user.name "OpenL Tablets"
@@ -75,6 +100,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Gate the release behind the same quality checks PRs run. A release
+      # MUST NOT be cut if main is red.
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
 
       - name: Build TypeScript
         run: npm run build
@@ -130,24 +163,26 @@ jobs:
           git checkout "$BASE"
           git reset --hard "origin/$BASE"
 
-      # README swap is done after the merge so the npm-specific README is
-      # not committed to the source branch. It only ends up in the npm
-      # tarball.
-      - name: Use npm-specific README for the package tarball
-        run: cp README.npm.md README.md
-
-      - name: Publish to npm
-        # No NODE_AUTH_TOKEN — authentication is negotiated via OIDC
-        # (npm Trusted Publishers). Provenance is attested automatically.
-        run: npm publish --access public --provenance
-
-      # Tag the squash-merge commit (now HEAD of the source branch) and
-      # push the tag. Pushed after npm publish so a failed publish leaves
-      # the repo state clean for retry; if the tag push fails, recovery is
-      # `git push origin <tag>` from a workstation.
-      - name: Tag release and push
+      # Tag the squash-merge commit (now HEAD of main) and push the tag
+      # BEFORE npm publish. This way, if anything below fails, the git
+      # state is already consistent and recoverable.
+      - name: Tag release commit and push tag
         env:
           VERSION: ${{ steps.bump.outputs.version }}
         run: |
           git tag -a "$VERSION" -m "Release $VERSION"
           git push origin "refs/tags/$VERSION"
+
+      # README swap is done after the merge so the npm-specific README is
+      # not committed to main. It only ends up in the npm tarball.
+      - name: Use npm-specific README for the package tarball
+        run: cp README.npm.md README.md
+
+      # LAST irreversible step. Everything before it is recoverable; this
+      # is not. By the time we get here, git has the consistent state
+      # (commit on main + tag pointing at it). If npm publish fails,
+      # re-run `npm publish` manually from the tagged checkout.
+      - name: Publish to npm
+        # No NODE_AUTH_TOKEN — authentication is negotiated via OIDC
+        # (npm Trusted Publishers). Provenance is attested automatically.
+        run: npm publish --access public --provenance
