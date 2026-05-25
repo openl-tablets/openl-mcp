@@ -38,7 +38,7 @@ After any edit to a table or rule (`openl_update_table`, `openl_append_table`, `
     modules:  { total, compiled, compiledModules?: [...] },
     tests:    { total }
   },
-  pendingChanges: { total, files: [{ path, type: "ADDED"|"MODIFIED"|"DELETED" }] },
+  pendingChanges: { total, files: [{ path, type: "added"|"modified"|"deleted" }] },
   lastModifiedBy: { author, date },
   revision, branch
 }
