@@ -437,6 +437,24 @@ export class OpenLClient {
   }
 
   /**
+   * Get post-compilation project status (compile state, diagnostics, pending changes).
+   * Read-only — does not trigger compilation. Works for all repositories including "local".
+   *
+   * @param projectId - Opaque project ID from the backend.
+   * @param branch - Optional branch name. When provided, the backend asserts it matches
+   *                 the project's currently opened branch (409 on mismatch).
+   */
+  async getProjectStatus(projectId: string, branch?: string): Promise<Types.ProjectStatusView> {
+    const url = `${this.buildProjectPath(projectId)}/status`;
+    const params: Record<string, string> = {};
+    if (branch) {
+      params.branch = branch;
+    }
+    const response = await this.axiosInstance.get<Types.ProjectStatusView>(url, { params });
+    return response.data;
+  }
+
+  /**
    * Throws if the project is in a local repository (repository === "local").
    * Local repositories are not connected to a remote Git; status change (open/save/close) is not supported by the API.
    */

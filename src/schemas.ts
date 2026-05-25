@@ -60,6 +60,14 @@ export const getProjectSchema = z.object({
   response_format: ResponseFormat.optional(),
 }).strict();
 
+export const projectStatusSchema = z.object({
+  projectId: projectIdSchema,
+  branch: branchNameSchema.optional().describe(
+    "Optional branch name. When provided, must match the project's currently opened branch (the backend returns 409 on mismatch). Omit for repositories that do not support branches and for projects with repository 'local'."
+  ),
+  response_format: ResponseFormat.optional(),
+}).strict();
+
 export const getProjectInfoSchema = z.object({
   repository: repositoryNameSchema,
   projectName: projectNameSchema,

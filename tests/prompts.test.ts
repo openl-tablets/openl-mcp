@@ -23,8 +23,8 @@ const __dirname = dirname(__filename);
 
 describe("Prompts Registry", () => {
   describe("PROMPTS array", () => {
-    test("should contain exactly 15 prompts", () => {
-      expect(PROMPTS).toHaveLength(15);
+    test("should contain exactly 16 prompts", () => {
+      expect(PROMPTS).toHaveLength(16);
     });
 
     test("all prompts should have required fields", () => {
@@ -115,11 +115,25 @@ describe("Prompts Registry", () => {
         "project_history",
         "run_test",
         "update_test",
+        "validate_after_edit",
       ];
 
       expectedPrompts.forEach((name) => {
         const prompt = PROMPTS.find((p) => p.name === name);
         expect(prompt).toBeDefined();
+      });
+    });
+
+    test("validate_after_edit prompt should describe the compile-check workflow", () => {
+      const prompt = PROMPTS.find((p) => p.name === "validate_after_edit");
+      expect(prompt).toBeDefined();
+      expect(prompt?.title).toBe("Validate Project After Edit");
+      const content = loadPromptContent("validate_after_edit");
+      expect(content).toContain("openl_project_status");
+      expect(content).toContain("compileState");
+      // Branches on all five states
+      ["ok", "errors", "warnings", "compiling", "idle"].forEach((state) => {
+        expect(content).toContain(state);
       });
     });
   });
@@ -315,12 +329,13 @@ describe("Helper functions", () => {
   describe("getPromptNames", () => {
     test("should return all prompt names", () => {
       const names = getPromptNames();
-      expect(names).toHaveLength(15);
+      expect(names).toHaveLength(16);
       expect(names).toContain("create_rule");
       expect(names).toContain("create_rule_decision_tables");
       expect(names).toContain("create_rule_spreadsheet");
       expect(names).toContain("create_test");
       expect(names).toContain("append_table");
+      expect(names).toContain("validate_after_edit");
     });
 
     test("should return array in same order as PROMPTS", () => {

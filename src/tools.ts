@@ -139,6 +139,16 @@ export const TOOLS: ToolDefinition[] = [
     },
   },
   {
+    name: "openl_project_status",
+    description: "Get the post-compilation status of a project: compile state (idle/compiling/ok/warnings/errors), diagnostics (errors and warnings with location and severity), pending file changes (added/modified/deleted), last-modified info, and module/test compilation summary. Read-only — does not trigger compilation; returns a snapshot of what the studio has already compiled in this session. Use after editing tables/rules to validate OpenL syntax and surface compilation errors so they can be fixed before saving. Works for all repositories including 'local'. The 'branch' parameter is optional and is validated against the project's currently opened branch when supplied; omit it for local and non-branch repositories. See the 'validate_after_edit' prompt for the recommended workflow.",
+    inputSchema: schemas.z.toJSONSchema(schemas.projectStatusSchema) as Record<string, unknown>,
+    _meta: {
+      version: "1.0.0",
+      category: TOOL_CATEGORIES.PROJECT,
+      requiresAuth: true,
+    },
+  },
+  {
     name: "openl_open_project",
     description: "Open a project for editing. Supports opening on specific branches or viewing specific Git revisions. Use this before making changes to project tables or rules. For branch switching, specify the branch parameter. For viewing a historical version, specify the revision parameter. Does not work for projects with repository 'local' (local-only, not connected to remote Git).",
     inputSchema: schemas.z.toJSONSchema(schemas.openProjectSchema) as Record<string, unknown>,
