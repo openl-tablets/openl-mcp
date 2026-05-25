@@ -140,6 +140,12 @@ class OpenLMCPServer {
           mimeType: "application/json",
         },
         {
+          uri: "openl://status/{projectId}/{branch}",
+          name: "OpenL Project Status",
+          description: "Post-compilation project status: compile state, diagnostics, pending changes. Branch segment is optional (omit for non-branch repositories and repository 'local').",
+          mimeType: "application/json",
+        },
+        {
           uri: "openl://projects/{projectId}/files/{filePath}",
           name: "Project File",
           description: "Download a file from a project",
@@ -316,6 +322,19 @@ class OpenLMCPServer {
 
         case "deployments": {
           data = await this.client.listDeployments();
+          break;
+        }
+
+        case "status": {
+          if (!path) {
+            throw new McpError(ErrorCode.InvalidRequest, `Project ID is required: ${uri}`);
+          }
+          const statusMatch = path.match(/^([^\/]+)(?:\/(.+))?$/);
+          if (!statusMatch) {
+            throw new McpError(ErrorCode.InvalidRequest, `Invalid status URI: ${uri}`);
+          }
+          const [, statusProjectId, statusBranch] = statusMatch;
+          data = await this.client.getProjectStatus(statusProjectId, statusBranch);
           break;
         }
 

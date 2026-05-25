@@ -799,6 +799,97 @@ export interface GetProjectHistoryResult {
 }
 
 // =============================================================================
+// Project Status Types (post-compilation snapshot)
+// =============================================================================
+
+/**
+ * Project compilation state.
+ *
+ * Mirrors the backend's
+ * `org.openl.studio.projects.model.project.status.CompileState` enum, which
+ * is serialized as lowercase via `@JsonProperty` on each constant.
+ */
+export type CompileState = "idle" | "compiling" | "ok" | "warnings" | "errors";
+
+/** Source-location discriminator. Backend has `TableMessageSource` and `ModuleMessageSource` variants; intentionally typed loosely to avoid coupling. */
+export type MessageSource = Record<string, unknown>;
+
+/**
+ * Compilation message. The backend flattens `MessageDescription`
+ * (`id`/`summary`/`severity`) onto this type via `@JsonUnwrapped`, so those
+ * fields appear at the top level alongside `location` and `stacktrace`.
+ */
+export interface DetailedMessageDescription {
+  id?: number;
+  summary?: string;
+  severity?: "ERROR" | "WARN" | "INFO";
+  location?: MessageSource;
+  stacktrace?: boolean;
+}
+
+export interface CompilationMessages {
+  items: DetailedMessageDescription[];
+  total: number;
+  errors: number;
+  warnings: number;
+}
+
+export interface CompilationModules {
+  total: number;
+  compiled: number;
+  compiledModules?: string[];
+}
+
+export interface CompilationTests {
+  total: number;
+}
+
+export interface CompilationDetails {
+  messages: CompilationMessages;
+  modules: CompilationModules;
+  tests: CompilationTests;
+}
+
+export interface ProjectModifiedBy {
+  author?: string;
+  /** ISO-8601 timestamp serialized from `ZonedDateTime`. */
+  date?: string;
+}
+
+export type FileChangeType = "ADDED" | "MODIFIED" | "DELETED";
+
+export interface FileChange {
+  /** `<projectRealPath>/<file>` (forward slashes), matching the merge API. */
+  path: string;
+  type: FileChangeType;
+}
+
+export interface PendingChanges {
+  total: number;
+  files: FileChange[];
+}
+
+/**
+ * Post-compilation project status returned by `GET /projects/{id}/status`.
+ *
+ * Named `ProjectStatusView` to avoid collision with the existing
+ * {@link ProjectStatus} string-enum that represents project lifecycle states
+ * (OPENED / CLOSED / EDITING / …).
+ */
+export interface ProjectStatusView {
+  projectId: ProjectId | string;
+  /** Present only for repositories that support branches. */
+  branch?: string;
+  revision?: string;
+  compileState: CompileState;
+  lastModifiedBy?: ProjectModifiedBy;
+  /** Omitted when no compilation has been registered yet (e.g. `compileState: "idle"`). */
+  compilation?: CompilationDetails;
+  /** Omitted when the working copy is clean. */
+  pendingChanges?: PendingChanges;
+}
+
+// =============================================================================
 // Trace API Types (BETA)
 // =============================================================================
 

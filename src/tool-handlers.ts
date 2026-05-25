@@ -404,6 +404,54 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     },
   });
 
+  registerTool({
+    name: "openl_project_status",
+    title: "openl Project Status",
+    version: "1.0.0",
+    description:
+      "Get the post-compilation status of a project: compile state, diagnostics, pending changes, and module/test summary. Read-only — does not trigger compilation. Use after edits to validate OpenL syntax.",
+    inputSchema: schemas.z.toJSONSchema(schemas.projectStatusSchema) as Record<string, unknown>,
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: true,
+      idempotentHint: true,
+    },
+    handler: async (args, client): Promise<ToolResponse> => {
+      const typedArgs = args as {
+        projectId: string;
+        branch?: string;
+        response_format?: "json" | "markdown" | "markdown_concise" | "markdown_detailed";
+      };
+
+      if (!typedArgs || !typedArgs.projectId) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          "Missing required argument: projectId. To find valid project IDs, use: openl_list_projects()"
+        );
+      }
+
+      const format = validateResponseFormat(typedArgs.response_format);
+      const status = await client.getProjectStatus(typedArgs.projectId, typedArgs.branch);
+
+      // When compilation succeeded, drop the noisy message list (severity counts and
+      // module/test totals are preserved). Other states pass through unchanged so the
+      // LLM can surface diagnostics, fix the source, and re-validate.
+      const payload = status.compileState === "ok" && status.compilation?.messages
+        ? {
+            ...status,
+            compilation: {
+              ...status.compilation,
+              messages: { ...status.compilation.messages, items: [] },
+            },
+          }
+        : status;
+
+      return {
+        content: [{ type: "text", text: formatResponse(payload, format) }],
+      };
+    },
+  });
+
 
   registerTool({
     name: "openl_open_project",

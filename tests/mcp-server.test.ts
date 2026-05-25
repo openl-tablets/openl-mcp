@@ -8,7 +8,7 @@ import MockAdapter from "axios-mock-adapter";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { OpenLClient } from "../src/client.js";
 import { executeTool, registerAllTools } from "../src/tool-handlers.js";
-import type { OpenLConfig, RepositoryInfo, ProjectViewModel, SummaryTableView } from "../src/types.js";
+import type { OpenLConfig, RepositoryInfo, ProjectViewModel, SummaryTableView, ProjectStatusView } from "../src/types.js";
 import {
   mockRepositories,
   mockProjects,
@@ -80,6 +80,101 @@ describe("MCP Server Tools", () => {
 
     const result = await executeTool("openl_get_project", { projectId }, client);
     expect(result.content[0].text).toContain("insurance-rules");
+  });
+
+  it("should execute openl_project_status and surface diagnostics on errors", async () => {
+    const encoded = encodeProjectPath(projectId);
+    const fixture: ProjectStatusView = {
+      projectId: { repository: "design", projectName: "insurance-rules" },
+      branch: "main",
+      compileState: "errors",
+      compilation: {
+        messages: {
+          items: [
+            { id: 1, summary: "Datatype 'Driver' not found", severity: "ERROR" },
+          ],
+          total: 1,
+          errors: 1,
+          warnings: 0,
+        },
+        modules: { total: 1, compiled: 0 },
+        tests: { total: 0 },
+      },
+    };
+    mockAxios.onGet(`/projects/${encoded}/status`).reply(200, fixture);
+
+    const result = await executeTool(
+      "openl_project_status",
+      { projectId, response_format: "json" },
+      client
+    );
+    expect(result.content[0].text).toContain("\"errors\"");
+    expect(result.content[0].text).toContain("Datatype 'Driver' not found");
+  });
+
+  it("should trim messages.items when compileState is ok", async () => {
+    const encoded = encodeProjectPath(projectId);
+    // Backend may return INFO items even when compilation succeeds; the handler should
+    // strip the items[] list while preserving the counts.
+    const fixture: ProjectStatusView = {
+      projectId: { repository: "design", projectName: "insurance-rules" },
+      branch: "main",
+      compileState: "ok",
+      compilation: {
+        messages: {
+          items: [
+            { id: 1, summary: "INFO_ITEM_SHOULD_BE_TRIMMED", severity: "INFO" },
+          ],
+          total: 1,
+          errors: 0,
+          warnings: 0,
+        },
+        modules: { total: 2, compiled: 2, compiledModules: ["A", "B"] },
+        tests: { total: 7 },
+      },
+    };
+    mockAxios.onGet(`/projects/${encoded}/status`).reply(200, fixture);
+
+    const result = await executeTool(
+      "openl_project_status",
+      { projectId, response_format: "json" },
+      client
+    );
+    expect(result.content[0].text).toContain("\"ok\"");
+    expect(result.content[0].text).not.toContain("INFO_ITEM_SHOULD_BE_TRIMMED");
+    // Counts and module info are preserved
+    expect(result.content[0].text).toContain("\"compiled\": 2");
+    expect(result.content[0].text).toContain("\"total\": 7");
+  });
+
+  it("should pass branch through to the status endpoint", async () => {
+    const encoded = encodeProjectPath(projectId);
+    mockAxios.onGet(`/projects/${encoded}/status`).reply((config) => {
+      if (config.params?.branch === "develop") {
+        return [200, {
+          projectId,
+          branch: "develop",
+          compileState: "ok",
+          compilation: {
+            messages: { items: [], total: 0, errors: 0, warnings: 0 },
+            modules: { total: 1, compiled: 1 },
+            tests: { total: 0 },
+          },
+        } as ProjectStatusView];
+      }
+      return [409, { message: "branch.mismatch" }];
+    });
+
+    const result = await executeTool(
+      "openl_project_status",
+      { projectId, branch: "develop", response_format: "json" },
+      client
+    );
+    expect(result.content[0].text).toContain("\"ok\"");
+  });
+
+  it("should validate projectId for openl_project_status", async () => {
+    await expect(executeTool("openl_project_status", {}, client)).rejects.toThrow(/projectId/);
   });
 
   it("should execute openl_open_project", async () => {
