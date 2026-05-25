@@ -112,18 +112,36 @@ export interface TableProperty {
   description?: string;
 }
 
+/**
+ * Common fields shared by every concrete table view returned from
+ * `GET /projects/{id}/tables/{tableId}` (parsed) or sent on
+ * create/update. Mirrors the fields that appear on every subtype in the
+ * studio OpenAPI under `EditableTableView` discriminator (Datatype,
+ * SimpleRules, Spreadsheet, RawTableView, …): `id`, `tableType`, `kind`,
+ * `name`, `properties`, `pos`, `messages`. `file` and `signature`/`returnType`
+ * are present on the `SummaryTableView` side too — included here for
+ * convenience since the same TypeScript type is reused for list and detail.
+ *
+ * `id` is optional because create-table requests are allowed to omit it
+ * (the server assigns one).
+ */
 export interface EditableTableView {
   id?: string;
   tableType: TableType;
   kind: TableKind;
   name: string;
-  technicalName?: string;
+  /** Custom dimension/business properties (state, lob, effectiveDate, …). */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   properties?: Record<string, any>;
-  uri?: string;
-  isBusinessView?: boolean;
-  editable?: boolean;
+  /** Position of the table within the source file (e.g. cell address). */
+  pos?: string;
+  /** File the table is defined in. Populated on read; ignored on create. */
   file?: string;
+  /**
+   * Compilation messages attached to this table (errors / warnings / info).
+   * Read-only — server-populated; ignored on update/create.
+   */
+  messages?: DetailedMessageDescription[];
 }
 
 /** Append data to project table (OpenAPI 3.0.1) - polymorphic type based on tableType */
@@ -368,15 +386,33 @@ export type TableMetadata = SummaryTableView;
 /** Full table view with data (parsed form) */
 export type TableView = EditableTableView;
 
-/** Raw table cell with merge information */
+/**
+ * A single cell in a raw table view's 2D source matrix.
+ *
+ * Mirrors `RawTableCell` in the studio OpenAPI. `value` is typed as `unknown`
+ * because the backend serializes whatever JSON value the cell holds (string,
+ * number, boolean, null). `cell` is the A1-notation address (e.g. `B3`) and
+ * matches the cell address that compilation messages reference — absent for
+ * covered cells.
+ */
 export interface RawTableCell {
-  value?: string;
+  /** A1-notation cell address (e.g. `B3`). Read-only; absent for covered cells. */
+  cell?: string;
+  value?: unknown;
+  /** Number of columns this cell spans (>=2 when merging; absent otherwise). */
   colspan?: number;
+  /** Number of rows this cell spans (>=2 when merging; absent otherwise). */
   rowspan?: number;
+  /** True when this cell is masked by another cell's span. */
   covered?: boolean;
 }
 
-/** Raw table view as a 2D matrix of cells without parsing */
+/**
+ * Raw 2D view of a table — the un-parsed cell matrix used when `raw=true` on
+ * `openl_get_table`. Inherits the common `EditableTableView` fields (id, kind,
+ * name, properties, pos, messages) and adds the `source` matrix. Mirrors
+ * `RawTableView` in the studio OpenAPI (`tableType: "RawSource"`).
+ */
 export interface RawTableView extends EditableTableView {
   source: RawTableCell[][];
 }
@@ -856,7 +892,14 @@ export interface ProjectModifiedBy {
   date?: string;
 }
 
-export type FileChangeType = "ADDED" | "MODIFIED" | "DELETED";
+/**
+ * Wire-level change type as serialized by the studio. The Java
+ * `org.openl.studio.projects.model.project.status.ChangeType` enum is
+ * annotated with `@JsonProperty("added")` / `"modified"` / `"deleted"`, so
+ * the values on the wire are lowercase — matching how `CompileState` is
+ * serialized.
+ */
+export type FileChangeType = "added" | "modified" | "deleted";
 
 export interface FileChange {
   /** `<projectRealPath>/<file>` (forward slashes), matching the merge API. */
