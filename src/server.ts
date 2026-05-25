@@ -172,11 +172,11 @@ async function initializeMCPServer(): Promise<void> {
     })),
   }));
 
-  mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
+  mcpServer.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     // Get client from request context (session ID stored in transport)
     // For now, use default client - we'll update this to use session-specific clients
     const client = getDefaultClientOrThrow();
-    const result = await executeTool(request.params.name, request.params.arguments, client);
+    const result = await executeTool(request.params.name, request.params.arguments, client, extra);
     return result as any;
   });
 
@@ -268,8 +268,8 @@ function setupSessionHandlers(server: Server, client: OpenLClient): void {
     })),
   }));
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const result = await executeTool(request.params.name, request.params.arguments, client);
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    const result = await executeTool(request.params.name, request.params.arguments, client, extra);
     return result as any;
   });
 

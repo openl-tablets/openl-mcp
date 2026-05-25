@@ -35,6 +35,17 @@ export class OpenLClient {
   private authManager: AuthenticationManager;
   private repositoriesCache: Types.Repository[] | null = null;
   private jsessionId: string | null = null; // Store JSESSIONID cookie for session management
+  /**
+   * Gate that serializes the very first cookie-less request so that any
+   * requests fired in parallel before the JSESSIONID is captured wait for it.
+   * Without this, LLM clients that dispatch multiple tool calls concurrently
+   * (typical for Claude Desktop / Cursor when a model emits several tool_use
+   * blocks in one turn) each get a fresh studio session, breaking session-
+   * scoped state like the compilation registry.
+   * Reset to `null` once the cookie has been captured, after which requests
+   * proceed in parallel without further serialization.
+   */
+  private firstRequestGate: Promise<void> | null = null;
   private testExecutionHeaders: Map<string, Record<string, string>> = new Map(); // Store headers for test execution sessions
 
   /**
@@ -91,29 +102,75 @@ export class OpenLClient {
    * Extracts JSESSIONID from set-cookie headers and adds it to all subsequent requests
    */
   private setupCookieInterceptors(): void {
-    // Response interceptor: Extract JSESSIONID from set-cookie headers
+    const debug = process.env.DEBUG_COOKIE === "true";
+
+    // Shared helper used by both success and error response paths to release the
+    // first-request gate (if this config opened one) so queued requests can fire.
+    const releaseFirstRequestGate = (config: unknown): void => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const release = (config as any)?._releaseFirstRequestGate;
+      if (release) {
+        release();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (config as any)._releaseFirstRequestGate = undefined;
+      }
+    };
+
+    // Response interceptor: Extract JSESSIONID from set-cookie headers.
     this.axiosInstance.interceptors.response.use(
       (response) => {
-        // Extract JSESSIONID from set-cookie header if present
         const setCookieHeader = response.headers['set-cookie'];
         if (setCookieHeader) {
           const cookies = Array.isArray(setCookieHeader) ? setCookieHeader : [setCookieHeader];
           for (const cookie of cookies) {
             const jsessionMatch = cookie.match(/JSESSIONID=([^;]+)/);
             if (jsessionMatch) {
+              const previous = this.jsessionId;
               this.jsessionId = jsessionMatch[1];
+              if (debug) {
+                console.error(
+                  `[Cookie] CAPTURE ${response.config?.method?.toUpperCase()} ${response.config?.url} → JSESSIONID=${this.jsessionId.substring(0, 12)}…${previous && previous !== this.jsessionId ? ` (was ${previous.substring(0, 12)}…)` : ""}`
+                );
+              }
               break;
             }
           }
         }
+        // Once the cookie is captured, clear the gate so any future cookie-less
+        // request (e.g. cookie expired and re-issued) gets its own bootstrap.
+        if (this.jsessionId) {
+          this.firstRequestGate = null;
+        }
+        releaseFirstRequestGate(response.config);
         return response;
       },
-      (error) => Promise.reject(error)
+      (error) => {
+        // Always release the gate on error, otherwise queued requests would
+        // wait forever if the bootstrap request failed.
+        releaseFirstRequestGate(error?.config);
+        return Promise.reject(error);
+      }
     );
 
-    // Request interceptor: Add JSESSIONID to Cookie header if available
+    // Request interceptor: bootstrap-gate + add JSESSIONID to Cookie header.
     this.axiosInstance.interceptors.request.use(
-      (config) => {
+      async (config) => {
+        // Bootstrap gate: when no cookie has been captured yet, only let one
+        // request through at a time. Parallel callers wait on the in-flight
+        // request and then get to add the freshly-captured cookie below.
+        if (!this.jsessionId) {
+          if (this.firstRequestGate) {
+            // A sibling request is currently bootstrapping; wait for it.
+            await this.firstRequestGate;
+          } else {
+            // We are the bootstrap. Open the gate and remember how to release it.
+            let resolveGate!: () => void;
+            this.firstRequestGate = new Promise<void>((r) => { resolveGate = r; });
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (config as any)._releaseFirstRequestGate = resolveGate;
+          }
+        }
+
         if (this.jsessionId && config.headers) {
           // Check if Cookie header already exists
           const existingCookie = config.headers['Cookie'] || config.headers['cookie'];
@@ -126,6 +183,15 @@ export class OpenLClient {
             // Set Cookie header with JSESSIONID
             config.headers['Cookie'] = `JSESSIONID=${this.jsessionId}`;
           }
+          if (debug) {
+            console.error(
+              `[Cookie] SEND    ${config.method?.toUpperCase()} ${config.url} ← JSESSIONID=${this.jsessionId.substring(0, 12)}…`
+            );
+          }
+        } else if (debug) {
+          console.error(
+            `[Cookie] SEND    ${config.method?.toUpperCase()} ${config.url} ← (no cookie)`
+          );
         }
         return config;
       },
@@ -138,6 +204,16 @@ export class OpenLClient {
    */
   public getBaseUrl(): string {
     return this.baseUrl;
+  }
+
+  /**
+   * Current `JSESSIONID` captured from a prior HTTP response, or `null` if none has
+   * been seen yet. Exposed so the STOMP transport can reuse the same session for the
+   * WebSocket handshake (the studio authenticates STOMP via the HTTP session cookie,
+   * not via STOMP CONNECT headers).
+   */
+  public getSessionCookie(): string | null {
+    return this.jsessionId;
   }
 
   /**
@@ -182,7 +258,7 @@ export class OpenLClient {
   async getRepositoryIdByName(repositoryName: string): Promise<string> {
     const repositories = await this.listRepositories();
     const repository = repositories.find(r => r.name === repositoryName);
-    
+
     if (!repository) {
       const availableNames = repositories.map(r => r.name).join(", ");
       throw new Error(
@@ -191,7 +267,7 @@ export class OpenLClient {
         `Use openl_list_repositories() to see all available repositories.`
       );
     }
-    
+
     return repository.id;
   }
 
