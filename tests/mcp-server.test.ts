@@ -177,6 +177,177 @@ describe("MCP Server Tools", () => {
     await expect(executeTool("openl_project_status", {}, client)).rejects.toThrow(/projectId/);
   });
 
+  it("should sort compilation.messages.items by severity (ERROR → WARN → INFO)", async () => {
+    const encoded = encodeProjectPath(projectId);
+    // Backend returns items in id-ascending order — WARNs first, then ERRORs.
+    const fixture: ProjectStatusView = {
+      projectId,
+      branch: "master",
+      compileState: "errors",
+      compilation: {
+        messages: {
+          items: [
+            { id: 1, summary: "WARN_FIRST", severity: "WARN" },
+            { id: 2, summary: "INFO_SECOND", severity: "INFO" },
+            { id: 3, summary: "ERROR_THIRD", severity: "ERROR" },
+            { id: 4, summary: "WARN_FOURTH", severity: "WARN" },
+            { id: 5, summary: "ERROR_FIFTH", severity: "ERROR" },
+          ],
+          total: 5, errors: 2, warnings: 2,
+        },
+        modules: { total: 1, compiled: 0 },
+        tests: { total: 0 },
+      },
+    };
+    mockAxios.onGet(`/projects/${encoded}/status`).reply(200, fixture);
+
+    const result = await executeTool(
+      "openl_project_status",
+      { projectId, response_format: "json" },
+      client,
+    );
+    const text = result.content[0].text;
+    // ERRORs should appear before WARNs/INFO in the serialized output.
+    const errorThirdAt = text.indexOf("ERROR_THIRD");
+    const errorFifthAt = text.indexOf("ERROR_FIFTH");
+    const warnFirstAt = text.indexOf("WARN_FIRST");
+    const infoSecondAt = text.indexOf("INFO_SECOND");
+    expect(errorThirdAt).toBeGreaterThan(-1);
+    expect(errorFifthAt).toBeGreaterThan(-1);
+    expect(errorThirdAt).toBeLessThan(warnFirstAt);
+    expect(errorFifthAt).toBeLessThan(warnFirstAt);
+    expect(warnFirstAt).toBeLessThan(infoSecondAt);
+  });
+
+  it("should filter compilation.messages.items by severity when 'severity' is passed", async () => {
+    const encoded = encodeProjectPath(projectId);
+    const fixture: ProjectStatusView = {
+      projectId,
+      branch: "master",
+      compileState: "errors",
+      compilation: {
+        messages: {
+          items: [
+            { id: 1, summary: "WARN_X", severity: "WARN" },
+            { id: 2, summary: "ERROR_X", severity: "ERROR" },
+            { id: 3, summary: "INFO_X", severity: "INFO" },
+          ],
+          total: 3, errors: 1, warnings: 1,
+        },
+        modules: { total: 1, compiled: 0 },
+        tests: { total: 0 },
+      },
+    };
+    mockAxios.onGet(`/projects/${encoded}/status`).reply(200, fixture);
+
+    const result = await executeTool(
+      "openl_project_status",
+      { projectId, severity: ["ERROR"], response_format: "json" },
+      client,
+    );
+    const text = result.content[0].text;
+    expect(text).toContain("ERROR_X");
+    expect(text).not.toContain("WARN_X");
+    expect(text).not.toContain("INFO_X");
+  });
+
+  it("should cap items with maxMessages after sorting", async () => {
+    const encoded = encodeProjectPath(projectId);
+    const fixture: ProjectStatusView = {
+      projectId,
+      branch: "master",
+      compileState: "errors",
+      compilation: {
+        messages: {
+          items: [
+            { id: 1, summary: "WARN_A", severity: "WARN" },
+            { id: 2, summary: "ERROR_B", severity: "ERROR" },
+            { id: 3, summary: "WARN_C", severity: "WARN" },
+            { id: 4, summary: "ERROR_D", severity: "ERROR" },
+          ],
+          total: 4, errors: 2, warnings: 2,
+        },
+        modules: { total: 1, compiled: 0 },
+        tests: { total: 0 },
+      },
+    };
+    mockAxios.onGet(`/projects/${encoded}/status`).reply(200, fixture);
+
+    const result = await executeTool(
+      "openl_project_status",
+      { projectId, maxMessages: 2, response_format: "json" },
+      client,
+    );
+    const text = result.content[0].text;
+    // After sort: [ERROR_B, ERROR_D, WARN_A, WARN_C]. maxMessages=2 keeps the first two.
+    expect(text).toContain("ERROR_B");
+    expect(text).toContain("ERROR_D");
+    expect(text).not.toContain("WARN_A");
+    expect(text).not.toContain("WARN_C");
+  });
+
+  it("should short-circuit openl_project_status wait=true when the initial state is already terminal", async () => {
+    // When the very first HTTP fetch returns a terminal compileState, waitForCompilation
+    // returns immediately without ever opening a STOMP subscription.
+    const encoded = encodeProjectPath(projectId);
+    const fixture: ProjectStatusView = {
+      projectId: { repository: "design", projectName: "insurance-rules" },
+      branch: "main",
+      compileState: "errors",
+      compilation: {
+        messages: {
+          items: [{ id: 7, summary: "Datatype 'Foo' not found", severity: "ERROR" }],
+          total: 1,
+          errors: 1,
+          warnings: 0,
+        },
+        modules: { total: 1, compiled: 0 },
+        tests: { total: 0 },
+      },
+    };
+    mockAxios.onGet(`/projects/${encoded}/status`).reply(200, fixture);
+
+    const result = await executeTool(
+      "openl_project_status",
+      { projectId, wait: true, response_format: "json" },
+      client,
+    );
+    expect(result.content[0].text).toContain("\"errors\"");
+    expect(result.content[0].text).toContain("Datatype 'Foo' not found");
+    // Exactly one HTTP fetch — terminal short-circuit means no race-close fetch, no STOMP.
+    const statusCalls = mockAxios.history.get.filter((req) => req.url?.endsWith("/status"));
+    expect(statusCalls).toHaveLength(1);
+  });
+
+  it("should apply the ok-state items trim when wait=true short-circuits with compileState=ok", async () => {
+    const encoded = encodeProjectPath(projectId);
+    const fixture: ProjectStatusView = {
+      projectId: { repository: "design", projectName: "insurance-rules" },
+      branch: "main",
+      compileState: "ok",
+      compilation: {
+        messages: {
+          items: [{ id: 1, summary: "INFO_SHOULD_BE_TRIMMED", severity: "INFO" }],
+          total: 1,
+          errors: 0,
+          warnings: 0,
+        },
+        modules: { total: 3, compiled: 3, compiledModules: ["A", "B", "C"] },
+        tests: { total: 4 },
+      },
+    };
+    mockAxios.onGet(`/projects/${encoded}/status`).reply(200, fixture);
+
+    const result = await executeTool(
+      "openl_project_status",
+      { projectId, wait: true, response_format: "json" },
+      client,
+    );
+    expect(result.content[0].text).toContain("\"ok\"");
+    expect(result.content[0].text).not.toContain("INFO_SHOULD_BE_TRIMMED");
+    expect(result.content[0].text).toContain("\"compiled\": 3");
+  });
+
   it("should execute openl_open_project", async () => {
     const encoded = encodeProjectPath(projectId);
     mockAxios.onGet(`/projects/${encoded}`).reply(200, {

@@ -94,9 +94,10 @@ class OpenLMCPServer {
       })),
     }));
 
-    // Handle tool execution
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      const result = await executeTool(request.params.name, request.params.arguments, this.client);
+    // Handle tool execution. `extra` carries the SDK request context (progressToken,
+    // per-session sendNotification, AbortSignal) that long-running tools need.
+    this.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+      const result = await executeTool(request.params.name, request.params.arguments, this.client, extra);
       return result as any; // Type cast needed due to MCP SDK generic return type
     });
 

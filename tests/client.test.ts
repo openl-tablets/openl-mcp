@@ -249,6 +249,36 @@ describe("OpenLClient", () => {
       });
     });
 
+    describe("getSessionCookie", () => {
+      it("returns null before any HTTP call has captured a Set-Cookie", () => {
+        expect(client.getSessionCookie()).toBeNull();
+      });
+
+      it("returns the JSESSIONID value extracted from a response Set-Cookie header", async () => {
+        // The cookie interceptor parses single-string or array forms of set-cookie.
+        mockAxios.onGet("/repos").reply(
+          200,
+          [],
+          { "set-cookie": "JSESSIONID=abc123def; Path=/; HttpOnly" },
+        );
+        await client.listRepositories();
+        expect(client.getSessionCookie()).toBe("abc123def");
+      });
+
+      it("survives subsequent responses that don't include a new cookie", async () => {
+        mockAxios.onGet("/repos").reply(
+          200,
+          [],
+          { "set-cookie": "JSESSIONID=stay-put; Path=/" },
+        );
+        await client.listRepositories();
+        // A second call without set-cookie should leave the stored value alone.
+        mockAxios.onGet("/repos").reply(200, []);
+        await client.listRepositories(false);
+        expect(client.getSessionCookie()).toBe("stay-put");
+      });
+    });
+
     describe("getProjectStatus", () => {
       const projectId = "design-AutoInsurance";
       const encodedProjectId = encodeURIComponent(projectId);
