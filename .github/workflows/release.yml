@@ -2,16 +2,16 @@
 #
 # Manually triggered via the Actions UI from the `main` branch. The workflow
 # is the only intended way to cut a release: it lint+tests+builds, bumps
-# package.json on a release-prep branch, opens a PR, admin-merges it back
-# into main, tags the merge commit, and FINALLY publishes to npm.
+# package.json, commits + pushes directly to main, tags, and FINALLY
+# publishes to npm.
 #
-# Order matters: npm publish is the LAST step on purpose. The git state on
-# main is fully consistent (commit + tag pushed) before any irreversible
+# Order matters: `npm publish` is the LAST step on purpose. The git state
+# on main is fully consistent (commit + tag pushed) before any irreversible
 # npm operation happens. Recovery semantics:
-#   - PR/merge fails       → no npm, no tag, no commit. Clean retry.
-#   - Tag push fails       → commit on main, no tag, no npm. Create tag
-#                            manually, then re-run `npm publish` from the
-#                            tagged commit.
+#   - Commit push fails    → no npm, no tag, no commit. Clean retry.
+#   - Tag push fails       → commit on main, no tag, no npm. Create the
+#                            tag manually, then re-run `npm publish` from
+#                            the tagged commit.
 #   - npm publish fails    → commit + tag on main, version not on npm.
 #                            Re-run `npm publish` manually from the tagged
 #                            checkout. The version number is NOT burned.
@@ -26,15 +26,18 @@
 #             Organization:       openl-tablets
 #             Repository:         openl-mcp
 #             Workflow filename:  release.yml
-# - git:  RELEASE_TOKEN repo secret — a PAT (or GitHub App token) belonging
-#         to a user/app with the admin role on this repo, so it can bypass
-#         the "Copilot review for default branch" ruleset via
-#         `gh pr merge --admin`. The default GITHUB_TOKEN does not qualify.
-#         Required fine-grained PAT permissions:
+# - git:  GitHub App `openl-tablets-release` (or equivalent) installed on
+#         this repo and added to the "Copilot review for default branch"
+#         ruleset bypass list. The workflow mints a short-lived (~1h)
+#         installation token at runtime via `actions/create-github-app-token`
+#         and uses it for the direct push to main.
+#         Required repo secrets:
+#           APP_ID           — the GitHub App's numeric ID
+#           APP_PRIVATE_KEY  — contents of the App's .pem private key
+#         Required App permissions (Repository):
 #           Contents: Read and write
-#           Pull requests: Read and write
 #           Workflows: Read and write
-#         (or a classic PAT with the `repo` and `workflow` scopes).
+#           Metadata: Read-only (auto)
 
 name: Release (npm)
 
@@ -51,10 +54,9 @@ on:
           - minor
           - major
 
-# Serialize releases — two parallel runs would race on `npm version`, the
-# release-prep branch name, and the npm publish. We don't cancel an
-# in-progress run because cancelling mid-publish would leave inconsistent
-# state.
+# Serialize releases — two parallel runs would race on `npm version` and
+# `npm publish`. Don't cancel in-progress: cancelling mid-publish would
+# leave inconsistent state.
 concurrency:
   group: release-npm
   cancel-in-progress: false
@@ -65,8 +67,7 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write       # tag push
-      pull-requests: write  # open + admin-merge release PR
+      contents: write       # tag + main push (via App token)
       id-token: write       # npm provenance via OIDC
 
     steps:
@@ -76,18 +77,27 @@ jobs:
           echo "::error::Releases can only be cut from 'main' (got '${{ github.ref_name }}')."
           exit 1
 
+      # Mint a short-lived (~1h) installation token from the release App.
+      # The App is in the ruleset bypass list, so this token can push to
+      # main directly without going through a PR.
+      - name: Mint App installation token
+        id: app
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: Configure git identity
         run: |
-          git config --global user.name "OpenL Tablets"
-          git config --global user.email "openltablets@gmail.com"
+          # Use the App's bot identity so the commit shows up as
+          # "<app-slug>[bot]" in the GitHub UI and is attributable.
+          git config --global user.name "${{ steps.app.outputs.app-slug }}[bot]"
+          git config --global user.email "${{ steps.app.outputs.app-slug }}[bot]@users.noreply.github.com"
 
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          # RELEASE_TOKEN must be a PAT (or GitHub App token) owned by a
-          # repo admin — bypasses the ruleset on the default branch when
-          # merging the release PR with --admin and when pushing the tag.
-          token: ${{ secrets.RELEASE_TOKEN }}
+          token: ${{ steps.app.outputs.token }}
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -121,51 +131,27 @@ jobs:
           echo "Next version: ${NEW_VERSION}"
           echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Create release-prep branch and open PR
-        id: pr
+      # Direct push to main via the App's bypass on the ruleset. If main
+      # moved during the build (rare but possible), bail out loudly rather
+      # than silently rebasing the release commit over unknown changes.
+      - name: Commit bump and push to main
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           VERSION: ${{ steps.bump.outputs.version }}
           BASE: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          BRANCH="release-prep/${VERSION}"
-          git checkout -b "$BRANCH"
           git add package.json package-lock.json
           git commit -m "Release ${VERSION}"
-          git push origin "$BRANCH"
-
-          PR_URL=$(gh pr create \
-            --title "Release ${VERSION}" \
-            --body "Automated version bump for npm release **${VERSION}**.
-
-          This PR was opened by the \`release.yml\` workflow and will be
-          admin-merged immediately. The merge commit is then tagged
-          \`${VERSION}\` and published to npm." \
-            --base "$BASE" \
-            --head "$BRANCH")
-          echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
-          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
-
-      # Squash-merge with --admin so the PR satisfies the
-      # "Changes must be made through a pull request" rule structurally,
-      # while the admin token bypasses required reviews (Copilot review).
-      - name: Admin-merge release PR
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-        run: gh pr merge --admin --squash --delete-branch "${{ steps.pr.outputs.pr_url }}"
-
-      - name: Fast-forward to merge commit
-        env:
-          BASE: ${{ github.ref_name }}
-        run: |
           git fetch origin "$BASE"
-          git checkout "$BASE"
-          git reset --hard "origin/$BASE"
+          if ! git merge-base --is-ancestor "origin/${BASE}" HEAD; then
+            echo "::error::'${BASE}' moved during the release run; refusing to rebase. Retry the workflow."
+            exit 1
+          fi
+          git push origin "HEAD:${BASE}"
 
-      # Tag the squash-merge commit (now HEAD of main) and push the tag
-      # BEFORE npm publish. This way, if anything below fails, the git
-      # state is already consistent and recoverable.
+      # Tag the release commit (now HEAD of main) and push the tag
+      # BEFORE npm publish. If anything below fails, git state stays
+      # consistent and recoverable.
       - name: Tag release commit and push tag
         env:
           VERSION: ${{ steps.bump.outputs.version }}
@@ -173,7 +159,7 @@ jobs:
           git tag -a "$VERSION" -m "Release $VERSION"
           git push origin "refs/tags/$VERSION"
 
-      # README swap is done after the merge so the npm-specific README is
+      # README swap is done after the push so the npm-specific README is
       # not committed to main. It only ends up in the npm tarball.
       - name: Use npm-specific README for the package tarball
         run: cp README.npm.md README.md
