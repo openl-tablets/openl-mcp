@@ -11,7 +11,8 @@
     "dist/",
     "prompts/",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "README.cli.md"
   ],
   "repository": {
     "type": "git",

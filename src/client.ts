@@ -147,6 +147,31 @@ export class OpenLClient {
     return this.authManager.getAuthMethod();
   }
 
+  /**
+   * Get the current JSESSIONID cookie value (without the `JSESSIONID=` prefix).
+   *
+   * Used by the CLI `--cookie-jar` flag to persist server-side session state
+   * across separate `npx` invocations — required for session-coupled flows
+   * like trace (`startTrace` stores trace state on the server keyed by
+   * JSESSIONID; subsequent `getTraceNodes`/`getTraceNodeDetails` calls must
+   * present the same cookie). Returns `null` when no session has been
+   * established yet.
+   */
+  public getSessionCookie(): string | null {
+    return this.jsessionId;
+  }
+
+  /**
+   * Restore a previously captured JSESSIONID so subsequent requests reuse
+   * an existing server-side session. Pair with `getSessionCookie()` after
+   * a request to round-trip the session through a file or other store.
+   *
+   * @param value - JSESSIONID value (without the `JSESSIONID=` prefix), or `null` to clear
+   */
+  public setSessionCookie(value: string | null): void {
+    this.jsessionId = value;
+  }
+
   // =============================================================================
   // Repository Management
   // =============================================================================

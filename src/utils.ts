@@ -182,6 +182,25 @@ export function isAxiosError(error: unknown): error is import("axios").AxiosErro
 }
 
 /**
+ * Parse an environment variable string as a boolean using common truthy
+ * conventions. Accepts (case-insensitive, with surrounding whitespace
+ * trimmed): "1", "true", "yes", "on", "y". Anything else — including
+ * undefined, empty string, "0", "false", "no", "off" — is treated as
+ * false.
+ *
+ * This lets users set flags however they prefer (`FOO=1`, `FOO=true`,
+ * `FOO=yes`, …) without us having to pick one in stone.
+ *
+ * @param value - Raw env var value (e.g. `process.env.MY_FLAG`)
+ * @returns true if value matches a truthy convention; false otherwise
+ */
+export function parseBoolEnv(value: string | undefined): boolean {
+  if (value === undefined) return false;
+  const v = value.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on" || v === "y";
+}
+
+/**
  * Validate timeout value
  *
  * @param timeout - Timeout value to validate

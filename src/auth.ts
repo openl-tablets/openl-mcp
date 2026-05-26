@@ -9,12 +9,13 @@
 import { AxiosInstance, InternalAxiosRequestConfig } from "axios";
 import type * as Types from "./types.js";
 import { HEADERS } from "./constants.js";
-import { extractApiErrorInfo } from "./utils.js";
+import { extractApiErrorInfo, parseBoolEnv } from "./utils.js";
 
 /**
- * Check if debug logging is enabled (via environment variable)
+ * Check if debug logging is enabled (via environment variable).
+ * Accepts any truthy value: 1, true, yes, on, y (case-insensitive).
  */
-const DEBUG_AUTH = process.env.DEBUG_AUTH === "true" || process.env.DEBUG === "true";
+const DEBUG_AUTH = parseBoolEnv(process.env.DEBUG_AUTH) || parseBoolEnv(process.env.DEBUG);
 
 /**
  * Cache of logged authentication configs to prevent duplicate logging
@@ -128,7 +129,13 @@ export class AuthenticationManager {
 
     // Create a unique key for this auth config to prevent duplicate logging
     const authConfigKey = `${this.config.baseUrl || ''}:${this.config.personalAccessToken ? 'PAT' : this.config.username ? 'Basic' : 'None'}`;
-    const shouldLogAuth = !authHeaderAlreadySet && !loggedAuthConfigs.has(authConfigKey);
+    // In CLI mode, suppress informational [Auth] lines so they don't pollute
+    // shell pipelines (and don't leak username when passed via --user).
+    // Set by src/cli.ts via OPENL_CLI_QUIET; accepts any truthy value
+    // (1/true/yes/on). Genuine error logs (e.g. 401) are NOT gated and
+    // continue to surface.
+    const quietMode = parseBoolEnv(process.env.OPENL_CLI_QUIET);
+    const shouldLogAuth = !authHeaderAlreadySet && !loggedAuthConfigs.has(authConfigKey) && !quietMode;
 
     // Add authentication based on method priority:
     // 1. Personal Access Token
