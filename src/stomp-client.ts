@@ -18,6 +18,19 @@ import WebSocket from "ws";
 
 import type * as Types from "./types.js";
 
+/**
+ * Opt-in verbose STOMP wire logging. Set `DEBUG_STOMP=true` on the container
+ * to trace WebSocket URL construction, CONNECT/CONNECTED events, SUBSCRIBE
+ * frames, every inbound frame, reconnect attempts, and disconnect causes on
+ * stderr. Errors are always logged.
+ */
+const DEBUG = process.env.DEBUG_STOMP === "true";
+
+function debug(message: string, context?: Record<string, unknown>): void {
+  if (!DEBUG) return;
+  console.error(`[STOMP] ${message}`, context ? JSON.stringify(context) : "");
+}
+
 export interface SubscribeProjectStatusOpts {
   /** Studio base URL (e.g. `http://host.docker.internal:8080/rest`). The `/rest` segment is stripped before appending `/ws`. */
   studioBaseUrl: string;
@@ -33,6 +46,15 @@ export interface SubscribeProjectStatusOpts {
   onError?: (error: Error) => void;
   /** Aborting deactivates the underlying STOMP client. */
   signal?: AbortSignal;
+  /**
+   * Milliseconds to wait before reconnecting after a disconnect. Default 0
+   * (no reconnect) preserves the per-call wait-flow behavior. Long-lived
+   * subscriptions (the `openl://status/...` resource) pass a positive value
+   * — typically 5000 — so transient WS drops don't kill the subscription.
+   * On reconnect, the SUBSCRIBE frame is re-sent automatically inside
+   * `onConnect`, so the upstream caller does not need to re-subscribe.
+   */
+  reconnectDelay?: number;
 }
 
 export interface Subscription {
@@ -52,16 +74,24 @@ export async function subscribeProjectStatus(
 ): Promise<Subscription> {
   const wsUrl = deriveWsUrl(opts.studioBaseUrl);
   const destination = buildDestination(opts.projectId, opts.branch);
+  debug("subscribe.config", {
+    wsUrl,
+    destination,
+    reconnectDelay: opts.reconnectDelay ?? 0,
+    cookiePrefix: opts.cookieHeader.substring(0, 24) + "…",
+  });
 
   const client = new Client({
-    webSocketFactory: () =>
+    webSocketFactory: () => {
+      debug("ws.connecting", { wsUrl });
       // Node's `ws` accepts a `headers` option on construction; the browser
       // WebSocket does not. The `IStompSocket` interface is structurally
       // compatible — cast through `unknown` to satisfy the SDK's type.
-      new WebSocket(wsUrl, {
+      return new WebSocket(wsUrl, {
         headers: { Cookie: opts.cookieHeader },
-      }) as unknown as WebSocket,
-    reconnectDelay: 0,
+      }) as unknown as WebSocket;
+    },
+    reconnectDelay: opts.reconnectDelay ?? 0,
     heartbeatIncoming: 10_000,
     heartbeatOutgoing: 10_000,
   });
@@ -70,6 +100,7 @@ export async function subscribeProjectStatus(
     let connected = false;
 
     const abortHandler = (): void => {
+      debug("abort.received → deactivating", { destination });
       void client.deactivate();
     };
     opts.signal?.addEventListener("abort", abortHandler, { once: true });
@@ -79,8 +110,13 @@ export async function subscribeProjectStatus(
     };
 
     client.onConnect = () => {
+      debug("stomp.connected → sending SUBSCRIBE", { destination });
       try {
         client.subscribe(destination, (frame: IMessage) => {
+          debug("frame.received", {
+            destination,
+            bytes: frame.body?.length ?? 0,
+          });
           try {
             const parsed = JSON.parse(frame.body) as Types.ProjectStatusView;
             opts.onMessage(parsed);
@@ -95,8 +131,10 @@ export async function subscribeProjectStatus(
         connected = true;
         resolve({
           close: async () => {
+            debug("close.requested → deactivating", { destination });
             cleanup();
             await client.deactivate();
+            debug("close.done", { destination });
           },
         });
       } catch (err) {
@@ -110,9 +148,14 @@ export async function subscribeProjectStatus(
       }
     };
 
+    client.onDisconnect = () => {
+      debug("stomp.disconnected", { destination, willReconnect: (opts.reconnectDelay ?? 0) > 0 });
+    };
+
     client.onStompError = (frame: IFrame) => {
       const message = frame.headers["message"] ?? "STOMP error";
       const err = new Error(`STOMP error: ${message}`);
+      debug("stomp.error", { destination, message, connected });
       if (!connected) {
         cleanup();
         reject(err);
@@ -127,6 +170,7 @@ export async function subscribeProjectStatus(
         event instanceof Error
           ? event
           : new Error(`WebSocket error: ${String((event as { message?: string }).message ?? event)}`);
+      debug("ws.error", { wsUrl, error: err.message, connected });
       if (!connected) {
         cleanup();
         reject(err);
@@ -160,11 +204,13 @@ export function buildDestination(projectId: string, branch?: string): string {
  *
  * - Scheme: `http`→`ws`, `https`→`wss`.
  * - Path: append `/ws` to the existing `/rest` API root, yielding `/rest/ws`.
- *   Living under `/rest/**` puts the STOMP handshake inside the REST security
- *   filter chain (Basic auth, PAT auth, session creation) — the path under
- *   which the studio UI currently mounts the endpoint (`/web/ws`) is
- *   intentionally `permitAll` with no Basic/PAT filter, making it unusable
- *   for headless clients without a pre-existing session cookie.
+ *   This puts the STOMP handshake inside the REST security filter chain
+ *   (httpBasic / PAT / session creation), so the authenticated principal
+ *   from the request gets propagated to the WS session — required for
+ *   multi-user mode subscribes to `/user/topic/...` destinations to be
+ *   authorized. The studio UI itself uses `/web/ws` (the legacy `permitAll`
+ *   path), which works for single-user mode but breaks STOMP-side
+ *   authorization in multi-user mode.
  */
 export function deriveWsUrl(httpBaseUrl: string): string {
   const url = new URL(httpBaseUrl);
