@@ -724,6 +724,17 @@ export async function runCli(options: RunCliOptions): Promise<number> {
       return EXIT_CODES.USAGE;
     }
 
+    // Unknown tool is a user-typed-wrong-name case → EX_USAGE (consistent
+    // with the `<tool> --help` path which also returns USAGE for unknown
+    // tools). Without this pre-check, the error would surface from
+    // executeTool as an MCP error and classify as GENERIC (1).
+    if (!getAllTools().some((t) => t.name === parsed.toolName)) {
+      stderr.write(
+        `Error: Unknown tool: ${parsed.toolName}\n\nRun --list-tools to see available tools.\n`,
+      );
+      return EXIT_CODES.USAGE;
+    }
+
     // Cookie-jar: restore JSESSIONID from previous invocation so
     // session-coupled flows (trace) work across separate `npx` calls.
     if (parsed.cookieJarPath) {

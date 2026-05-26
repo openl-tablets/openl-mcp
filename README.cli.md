@@ -69,7 +69,7 @@ npx -y openl-mcp-server openl_list_projects \
 
 ## Invocation
 
-```
+```text
 openl-mcp-server <tool-name> [args] [flags]
 openl-mcp-server --help
 openl-mcp-server --list-tools

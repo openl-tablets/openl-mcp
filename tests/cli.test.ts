@@ -459,8 +459,11 @@ describe("CLI", () => {
         let written = "";
         try {
           written = await readFile(jarPath, "utf-8");
-        } catch {
-          /* ENOENT is fine */
+        } catch (error) {
+          // ENOENT is the expected outcome here (no jar written because
+          // the stateless endpoint didn't set a session cookie). Anything
+          // else — permissions, I/O — should surface as a test failure.
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
         }
         expect(written).toBe("");
       } finally {
@@ -550,7 +553,7 @@ describe("CLI", () => {
       expect(h.getStderr()).toContain("only one of");
     });
 
-    it("returns GENERIC (1) for unknown tool name (tool dispatch error)", async () => {
+    it("returns EX_USAGE (64) for unknown tool name", async () => {
       const { client } = createMockClient();
       const h = createHarness();
       const code = await runCli({
@@ -561,9 +564,11 @@ describe("CLI", () => {
         stderr: h.stderr,
         clientFactory: () => client,
       });
-      // Unknown-tool surfaces from executeTool (MCP error); not a CLI parse
-      // error, so classifyError → GENERIC (1).
-      expect(code).toBe(EXIT_CODES.GENERIC);
+      // Unknown tool is a "user typed the wrong name" case — same category
+      // as a typo'd flag — so the runCli pre-checks the registry before
+      // dispatching to executeTool and returns EX_USAGE (consistent with
+      // the `<tool> --help` path for the same error).
+      expect(code).toBe(EXIT_CODES.USAGE);
       expect(h.getStderr()).toContain("Unknown tool");
     });
 
@@ -662,13 +667,17 @@ describe("CLI", () => {
       const cited = new Set(h.getStdout().match(/openl_[a-z_]+/g) ?? []);
       // --list-tools dump → array of registered tool definitions
       const listH = createHarness();
-      await runCli({
+      const listCode = await runCli({
         argv: ["--list-tools"],
         env: {},
         stdin: listH.stdin,
         stdout: listH.stdout,
         stderr: listH.stderr,
       });
+      // Guard against the second invocation silently failing — without this,
+      // a broken --list-tools could still leave partial JSON that parses
+      // and the regression check would pass for the wrong reason.
+      expect(listCode).toBe(EXIT_CODES.OK);
       const registered = new Set(
         (JSON.parse(listH.getStdout()) as Array<{ name: string }>).map((t) => t.name),
       );
