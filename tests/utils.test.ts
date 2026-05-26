@@ -13,6 +13,7 @@ import {
   extractErrorDetails,
   parseProjectId,
   createProjectId,
+  parseBoolEnv,
 } from "../src/utils.js";
 import { AxiosError } from "axios";
 
@@ -538,6 +539,38 @@ describe("utils", () => {
 
       const stringified = safeStringify(circular);
       expect(stringified).toContain("[Circular]");
+    });
+  });
+
+  describe("parseBoolEnv", () => {
+    it.each([
+      ["1"],
+      ["true"],
+      ["TRUE"],
+      ["True"],
+      ["yes"],
+      ["YES"],
+      ["on"],
+      ["y"],
+      ["  1  "], // surrounding whitespace
+      [" true\n"], // trailing newline
+    ])("returns true for %p", (input) => {
+      expect(parseBoolEnv(input)).toBe(true);
+    });
+
+    it.each([
+      [undefined],
+      [""],
+      ["0"],
+      ["false"],
+      ["FALSE"],
+      ["no"],
+      ["off"],
+      ["n"],
+      ["random"],
+      ["2"], // only "1" is truthy, not other numbers
+    ])("returns false for %p", (input) => {
+      expect(parseBoolEnv(input)).toBe(false);
     });
   });
 });

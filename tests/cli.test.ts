@@ -6,14 +6,14 @@
  * so it integrates with the existing axios-mock-adapter setup.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "@jest/globals";
+import { afterEach, describe, expect, it } from "@jest/globals";
 import MockAdapter from "axios-mock-adapter";
 import { Readable, Writable } from "node:stream";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { runCli } from "../src/cli.js";
+import { EXIT_CODES, runCli } from "../src/cli.js";
 import { OpenLClient } from "../src/client.js";
 import type { OpenLConfig } from "../src/types.js";
 import { mockRepositories } from "./mocks/openl-api-mocks.js";
@@ -470,7 +470,7 @@ describe("CLI", () => {
   });
 
   describe("error handling", () => {
-    it("returns 1 and helpful message when OPENL_BASE_URL is missing", async () => {
+    it("returns EX_CONFIG (78) when OPENL_BASE_URL is missing", async () => {
       const h = createHarness();
       const code = await runCli({
         argv: ["openl_list_repositories", "{}"],
@@ -479,11 +479,11 @@ describe("CLI", () => {
         stdout: h.stdout,
         stderr: h.stderr,
       });
-      expect(code).toBe(1);
+      expect(code).toBe(EXIT_CODES.CONFIG);
       expect(h.getStderr()).toContain("OPENL_BASE_URL");
     });
 
-    it("returns 1 when no auth method is configured", async () => {
+    it("returns EX_CONFIG (78) when no auth method is configured", async () => {
       const h = createHarness();
       const code = await runCli({
         argv: ["openl_list_repositories", "{}"],
@@ -492,11 +492,11 @@ describe("CLI", () => {
         stdout: h.stdout,
         stderr: h.stderr,
       });
-      expect(code).toBe(1);
+      expect(code).toBe(EXIT_CODES.CONFIG);
       expect(h.getStderr()).toContain("Authentication required");
     });
 
-    it("returns 1 on unknown flag", async () => {
+    it("returns EX_USAGE (64) on unknown flag", async () => {
       const h = createHarness();
       const code = await runCli({
         argv: ["--bogus"],
@@ -505,11 +505,11 @@ describe("CLI", () => {
         stdout: h.stdout,
         stderr: h.stderr,
       });
-      expect(code).toBe(1);
+      expect(code).toBe(EXIT_CODES.USAGE);
       expect(h.getStderr()).toContain("Unknown flag");
     });
 
-    it("returns 1 when tool name is missing", async () => {
+    it("returns EX_USAGE (64) when tool name is missing", async () => {
       const h = createHarness();
       const code = await runCli({
         argv: ['{"response_format":"json"}'],
@@ -518,11 +518,11 @@ describe("CLI", () => {
         stdout: h.stdout,
         stderr: h.stderr,
       });
-      expect(code).toBe(1);
+      expect(code).toBe(EXIT_CODES.USAGE);
       expect(h.getStderr()).toContain("tool name is required");
     });
 
-    it("returns 1 and reports parse error on malformed JSON", async () => {
+    it("returns EX_DATAERR (65) on malformed JSON args", async () => {
       const { client } = createMockClient();
       const h = createHarness();
       const code = await runCli({
@@ -533,11 +533,11 @@ describe("CLI", () => {
         stderr: h.stderr,
         clientFactory: () => client,
       });
-      expect(code).toBe(1);
+      expect(code).toBe(EXIT_CODES.DATAERR);
       expect(h.getStderr()).toContain("Failed to parse tool arguments as JSON");
     });
 
-    it("returns 1 when more than one args source is provided", async () => {
+    it("returns EX_USAGE (64) when more than one args source is provided", async () => {
       const h = createHarness();
       const code = await runCli({
         argv: ["openl_list_repositories", "{}", "--stdin"],
@@ -546,11 +546,11 @@ describe("CLI", () => {
         stdout: h.stdout,
         stderr: h.stderr,
       });
-      expect(code).toBe(1);
+      expect(code).toBe(EXIT_CODES.USAGE);
       expect(h.getStderr()).toContain("only one of");
     });
 
-    it("returns 1 for unknown tool name", async () => {
+    it("returns GENERIC (1) for unknown tool name (tool dispatch error)", async () => {
       const { client } = createMockClient();
       const h = createHarness();
       const code = await runCli({
@@ -561,11 +561,13 @@ describe("CLI", () => {
         stderr: h.stderr,
         clientFactory: () => client,
       });
-      expect(code).toBe(1);
+      // Unknown-tool surfaces from executeTool (MCP error); not a CLI parse
+      // error, so classifyError → GENERIC (1).
+      expect(code).toBe(EXIT_CODES.GENERIC);
       expect(h.getStderr()).toContain("Unknown tool");
     });
 
-    it("returns 1 when --base-url is invalid", async () => {
+    it("returns EX_CONFIG (78) when --base-url is invalid", async () => {
       const h = createHarness();
       const code = await runCli({
         argv: ["openl_list_repositories", "{}", "--base-url", "not-a-url"],
@@ -574,8 +576,126 @@ describe("CLI", () => {
         stdout: h.stdout,
         stderr: h.stderr,
       });
-      expect(code).toBe(1);
+      expect(code).toBe(EXIT_CODES.CONFIG);
       expect(h.getStderr()).toContain("Invalid base URL");
+    });
+  });
+
+  describe("--version", () => {
+    it("prints version and exits 0 with no config", async () => {
+      const h = createHarness();
+      const code = await runCli({
+        argv: ["--version"],
+        env: {},
+        stdin: h.stdin,
+        stdout: h.stdout,
+        stderr: h.stderr,
+      });
+      expect(code).toBe(EXIT_CODES.OK);
+      expect(h.getStdout()).toMatch(/openl-mcp-server \d+\.\d+\.\d+/);
+      expect(h.getStderr()).toBe("");
+    });
+
+    it("supports the -V short form", async () => {
+      const h = createHarness();
+      const code = await runCli({
+        argv: ["-V"],
+        env: {},
+        stdin: h.stdin,
+        stdout: h.stdout,
+        stderr: h.stderr,
+      });
+      expect(code).toBe(EXIT_CODES.OK);
+      expect(h.getStdout()).toMatch(/openl-mcp-server \d+\.\d+\.\d+/);
+    });
+  });
+
+  describe("tool-specific --help", () => {
+    it("renders schema details when a known tool is passed with --help", async () => {
+      const h = createHarness();
+      const code = await runCli({
+        argv: ["openl_list_repositories", "--help"],
+        env: {},
+        stdin: h.stdin,
+        stdout: h.stdout,
+        stderr: h.stderr,
+      });
+      expect(code).toBe(EXIT_CODES.OK);
+      const out = h.getStdout();
+      expect(out).toContain("openl_list_repositories");
+      expect(out).toContain("Arguments:");
+      expect(out).toContain("response_format");
+    });
+
+    it("returns EX_USAGE (64) for unknown tool with --help", async () => {
+      const h = createHarness();
+      const code = await runCli({
+        argv: ["openl_fake_tool_xyz", "--help"],
+        env: {},
+        stdin: h.stdin,
+        stdout: h.stdout,
+        stderr: h.stderr,
+      });
+      expect(code).toBe(EXIT_CODES.USAGE);
+      expect(h.getStderr()).toContain("Unknown tool");
+    });
+  });
+
+  describe("documentation consistency", () => {
+    /**
+     * Defends against the class of bug where help text or README examples
+     * reference a tool that's been disabled or renamed. Extracts every
+     * `openl_*` token from the rendered global help and asserts each is
+     * actually registered.
+     */
+    it("every openl_* tool name in --help refers to a registered tool", async () => {
+      const h = createHarness();
+      const code = await runCli({
+        argv: ["--help"],
+        env: {},
+        stdin: h.stdin,
+        stdout: h.stdout,
+        stderr: h.stderr,
+      });
+      expect(code).toBe(EXIT_CODES.OK);
+
+      const cited = new Set(h.getStdout().match(/openl_[a-z_]+/g) ?? []);
+      // --list-tools dump → array of registered tool definitions
+      const listH = createHarness();
+      await runCli({
+        argv: ["--list-tools"],
+        env: {},
+        stdin: listH.stdin,
+        stdout: listH.stdout,
+        stderr: listH.stderr,
+      });
+      const registered = new Set(
+        (JSON.parse(listH.getStdout()) as Array<{ name: string }>).map((t) => t.name),
+      );
+
+      const missing = [...cited].filter((name) => !registered.has(name));
+      expect(missing).toEqual([]);
+    });
+  });
+
+  describe("--help grouping", () => {
+    it("groups tools by category in --help output", async () => {
+      const h = createHarness();
+      const code = await runCli({
+        argv: ["--help"],
+        env: {},
+        stdin: h.stdin,
+        stdout: h.stdout,
+        stderr: h.stderr,
+      });
+      expect(code).toBe(EXIT_CODES.OK);
+      const out = h.getStdout();
+      // Spot-check each category header is rendered
+      expect(out).toContain("Repository:");
+      expect(out).toContain("Project:");
+      expect(out).toContain("Rules & Tables:");
+      expect(out).toContain("Trace (BETA):");
+      expect(out).toContain("Deployment:");
     });
   });
 });
