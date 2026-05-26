@@ -18,6 +18,7 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { OpenLClient } from './client.js';
+import { ResourceSubscriptionManager } from './resource-subscriptions.js';
 import { getAllTools, executeTool, registerAllTools } from './tool-handlers.js';
 import { sanitizeError, safeStringify } from './utils.js';
 import type * as Types from './types.js';
@@ -30,6 +31,8 @@ import {
   ReadResourceRequestSchema,
   ListPromptsRequestSchema,
   GetPromptRequestSchema,
+  SubscribeRequestSchema,
+  UnsubscribeRequestSchema,
   ErrorCode,
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
@@ -151,7 +154,10 @@ async function initializeMCPServer(): Promise<void> {
       {
         capabilities: {
           tools: {},
-          resources: {},
+          // `subscribe: true` advertises support for resources/subscribe +
+          // notifications/resources/updated (wired for the `openl://status/...`
+          // resource via STOMP — see resource-subscriptions.ts).
+          resources: { subscribe: true },
           prompts: {},
         },
       }
@@ -198,6 +204,13 @@ async function initializeMCPServer(): Promise<void> {
         uri: "openl://projects/{projectId}",
         name: "OpenL Project Details",
         description: "Get details for a specific project",
+        mimeType: "application/json",
+      },
+      {
+        uri: "openl://status/{projectId}/{branch}",
+        name: "OpenL Project Status",
+        description:
+          "Post-compilation project status: compile state, diagnostics, pending changes. Branch segment is optional. Supports resources/subscribe — emits notifications/resources/updated whenever the studio publishes a status change on its STOMP topic.",
         mimeType: "application/json",
       },
       {
@@ -257,7 +270,11 @@ const streamableHttpTransports: Record<string, StreamableHTTPServerTransport> = 
  * @param server - MCP server instance
  * @param client - OpenL client for this session
  */
-function setupSessionHandlers(server: Server, client: OpenLClient): void {
+function setupSessionHandlers(
+  server: Server,
+  client: OpenLClient,
+  subscriptions: ResourceSubscriptionManager,
+): void {
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: getAllTools().map(({ name, title, description, inputSchema, annotations }) => ({
       name,
@@ -294,6 +311,13 @@ function setupSessionHandlers(server: Server, client: OpenLClient): void {
         mimeType: "application/json",
       },
       {
+        uri: "openl://status/{projectId}/{branch}",
+        name: "OpenL Project Status",
+        description:
+          "Post-compilation project status: compile state, diagnostics, pending changes. Branch segment is optional (omit for non-branch repositories and repository 'local'). Supports resources/subscribe — emits notifications/resources/updated whenever the studio publishes a status change on its STOMP topic.",
+        mimeType: "application/json",
+      },
+      {
         uri: "openl://deployments",
         name: "OpenL Deployments",
         description: "All deployment repositories and deployed projects",
@@ -304,6 +328,27 @@ function setupSessionHandlers(server: Server, client: OpenLClient): void {
 
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     return handleResourceRead(request.params.uri, client);
+  });
+
+  // resources/subscribe — for `openl://status/...` URIs, opens a STOMP
+  // subscription against the studio's status topic and routes inbound frames
+  // to notifications/resources/updated on this session's transport.
+  server.setRequestHandler(SubscribeRequestSchema, async (request) => {
+    try {
+      await subscriptions.subscribe(request.params.uri);
+    } catch (err) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `Failed to subscribe to ${request.params.uri}: ${sanitizeError(err)}`,
+      );
+    }
+    return {};
+  });
+
+  // resources/unsubscribe — idempotent per spec.
+  server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
+    await subscriptions.unsubscribe(request.params.uri);
+    return {};
   });
 
   server.setRequestHandler(ListPromptsRequestSchema, async () => ({
@@ -338,7 +383,10 @@ function setupSessionHandlers(server: Server, client: OpenLClient): void {
  * @param client - OpenL client for this session
  * @returns Configured MCP server instance
  */
-function createSessionServer(client: OpenLClient): Server {
+function createSessionServer(client: OpenLClient): {
+  server: Server;
+  subscriptions: ResourceSubscriptionManager;
+} {
   const sessionServer = new Server(
     {
       name: SERVER_INFO.NAME,
@@ -347,17 +395,26 @@ function createSessionServer(client: OpenLClient): Server {
     {
       capabilities: {
         tools: {},
-        resources: {},
+        // `subscribe: true` enables resources/subscribe + notifications/resources/updated.
+        resources: { subscribe: true },
         prompts: {},
       },
     }
   );
 
+  // Per-session subscription manager — owns the session's STOMP connections
+  // and dispatches doorbell notifications via this session's `Server` instance
+  // so they target only the originating transport.
+  const subscriptions = new ResourceSubscriptionManager(
+    client,
+    (uri) => sessionServer.sendResourceUpdated({ uri }),
+  );
+
   // Register tools and setup handlers
   registerAllTools(sessionServer, client);
-  setupSessionHandlers(sessionServer, client);
+  setupSessionHandlers(sessionServer, client, subscriptions);
 
-  return sessionServer;
+  return { server: sessionServer, subscriptions };
 }
 
 /**
@@ -460,6 +517,19 @@ async function handleResourceRead(
         break;
       }
 
+      case "status": {
+        if (!path) {
+          throw new McpError(ErrorCode.InvalidRequest, `Project ID is required: ${uri}`);
+        }
+        const statusMatch = path.match(/^([^/]+)(?:\/(.+))?$/);
+        if (!statusMatch) {
+          throw new McpError(ErrorCode.InvalidRequest, `Invalid status URI: ${uri}`);
+        }
+        const [, statusProjectId, statusBranch] = statusMatch;
+        data = await client.getProjectStatus(statusProjectId, statusBranch);
+        break;
+      }
+
       default:
         throw new McpError(ErrorCode.InvalidRequest, `Unknown resource type: ${resourceType}`);
     }
@@ -520,7 +590,7 @@ const handleSSE = async (req: Request, res: Response): Promise<Response | void> 
     const client = getClientForSession(sessionId, configParams);
     
     // Create a new MCP server instance for this session with the specific client
-    const sessionServer = createSessionServer(client);
+    const { server: sessionServer, subscriptions } = createSessionServer(client);
 
     // Determine messages endpoint path based on request path
     // If request came via /sse (nginx proxy), use /messages, otherwise use /mcp/messages
@@ -532,6 +602,9 @@ const handleSSE = async (req: Request, res: Response): Promise<Response | void> 
     res.on('close', () => {
       delete sseTransports[transportSessionId];
       delete clientsBySession[sessionId];
+      // Tear down any STOMP subscriptions this session opened — otherwise
+      // the studio would be left with dangling WS sessions.
+      void subscriptions.closeAll();
     });
 
     await sessionServer.connect(transport);
@@ -599,7 +672,7 @@ const handleStreamableHttp = async (req: Request, res: Response): Promise<Respon
       transport = streamableHttpTransports[sessionId];
     } else if (!sessionId && isInitializeRequest(req.body)) {
       // New initialization request - create session-specific MCP server with the client
-      const sessionServer = createSessionServer(client);
+      const { server: sessionServer, subscriptions } = createSessionServer(client);
 
       transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => sessionClientId,
@@ -615,6 +688,8 @@ const handleStreamableHttp = async (req: Request, res: Response): Promise<Respon
           delete streamableHttpTransports[transport.sessionId];
           delete clientsBySession[transport.sessionId];
         }
+        // Tear down STOMP subscriptions owned by this session.
+        void subscriptions.closeAll();
       };
 
       // Connect session server to transport
