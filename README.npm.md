@@ -62,6 +62,24 @@ Add to `claude_desktop_config.json`:
 
 For Cursor and other clients, see the [MCP Connection Guide](https://github.com/openl-tablets/openl-mcp/blob/main/docs/setup/mcp-connection-guide.md).
 
+## Use as a CLI (direct API calls, no MCP client)
+
+The same binary can invoke any `openl_*` tool directly from the shell — useful for scripting, CI, and ad-hoc debugging without setting up an MCP client. Output defaults to JSON so it pipes cleanly into `jq`.
+
+```bash
+# Quick discovery (no config needed)
+npx -y openl-mcp-server --help
+npx -y openl-mcp-server --list-tools
+
+# Single call
+OPENL_BASE_URL=<host> OPENL_PERSONAL_ACCESS_TOKEN=<pat> \
+  npx -y openl-mcp-server openl_list_repositories | jq
+```
+
+**See [`README.cli.md`](https://github.com/openl-tablets/openl-mcp/blob/main/README.cli.md)** for the full CLI guide: configuration, all flags (`--base-url`, `--token`, `--user`, `--password`, `--timeout`, `--client-document-id`, `--cookie-jar`), argument-passing modes (`@file.json`, `--stdin`), session handling for trace flows, recipes, exit codes, Windows notes, and troubleshooting.
+
+When run **without** arguments the binary keeps its default behavior and starts the MCP server on stdio.
+
 ## What you get
 
 - **25 active tools** for repositories, projects, rules tables, tests, and deployments (all prefixed `openl_`)

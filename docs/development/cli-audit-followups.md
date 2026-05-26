@@ -256,6 +256,46 @@ Tracks items identified in the `EPBDS-16027` CLI audit (May 2026) that were **no
 
 ---
 
+## 🟢 P2.20a — Fix or replace `.github/workflows/ci.yml`
+
+**Problem.** The current workflow has `working-directory: mcp-server` and `paths: ['mcp-server/**']`, but the repository has `package.json` at the root (no `mcp-server/` subdirectory). The workflow has **never run** on this repo per maintainer confirmation. Any new test we add (including the 30 new CLI tests added in `EPBDS-16027`) is verified locally only — there's no automated gate on PRs.
+
+**Sketch.**
+- Drop the `mcp-server/` prefix from both `paths` filters and the `working-directory: mcp-server` default.
+- Or, if `mcp-server/` is the intended layout (and the maintainers plan to restructure), align repo layout to match.
+- Verify by pushing a small change to a `claude/**` branch and checking the Actions tab.
+
+```yaml
+on:
+  push:
+    branches: [ main, develop, 'claude/**' ]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+
+jobs:
+  test:
+    # remove `defaults.run.working-directory`
+    ...
+```
+
+**Estimate.** ~5 min YAML edit + 1 verification push. **~15 min total.**
+
+**Note.** May depend on whether there's a parallel CI system (Jenkins, GitLab CI) running tests for this repo. Confirm with maintainers before touching.
+
+---
+
 ## 🟢 P2.20 — `npm publish --provenance` (SLSA L2)
 
 **Problem.** Supply-chain attestation isn't enforced in our release workflow. `npm publish --provenance` from GitHub Actions produces a signed Sigstore attestation linking the tarball to the source commit + workflow run. Shows green checkmark on npmjs.com.
@@ -300,7 +340,7 @@ Suggested grouping for tickets:
 | **CLI session & config** | P2.9 + P2.15 | ~4.5 hours |
 | **CLI hardening** | P2.11 + P2.14 + P2.16 | ~4 hours |
 | **CLI tooling** | P2.12 + P2.17 + P2.18 + P2.19 | ~5 hours |
-| **Release security** | P2.20 | ~30 min |
+| **Release security** | P2.20a + P2.20 | ~45 min |
 
 ---
 

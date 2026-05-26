@@ -92,32 +92,25 @@ You can invoke the binary three ways:
 
 CLI mode can list every tool and dump every input schema without any credentials — useful for exploring or generating bindings.
 
-### `--help`
+### `--help` (global) and `--version`
 
-Prints usage, all flags, and a one-line description for every tool:
+Prints usage, all flags, and tools grouped by category (Repository / Project / Rules & Tables / Trace / Version Control / Deployment):
 
 ```bash
 npx -y openl-mcp-server --help
+npx -y openl-mcp-server --version    # or -V — prints "openl-mcp-server X.Y.Z"
 ```
 
-Sample output (truncated):
+### `<tool> --help` (per-tool)
 
-```text
-openl-mcp-server v1.0.0 — CLI mode
+For detailed help on a specific tool — title, description, every argument with type / required / enum / description, and example invocations:
 
-Usage:
-  openl-mcp <tool-name> [<json-args> | @file.json | --stdin] [flags]
-  openl-mcp --list-tools
-  openl-mcp --help
-
-…
-
-Available tools (31):
-  openl_append_table                         Add new rows/fields to an existing table…
-  openl_cancel_trace                         Cancel ongoing trace execution…
-  openl_close_project                        Close a project. If the project has unsaved…
-  …
+```bash
+npx -y openl-mcp-server openl_update_table --help
+npx -y openl-mcp-server openl_append_table --help
 ```
+
+Output includes the input-schema breakdown rendered for humans (use `--list-tools | jq` for the full machine-readable JSON Schema).
 
 ### `--list-tools`
 
@@ -125,7 +118,7 @@ Dumps a JSON array of every tool's metadata and **complete JSON Schema** for inp
 
 ```bash
 npx -y openl-mcp-server --list-tools \
-  | jq '.[] | select(.name == "openl_execute_rule") | .inputSchema'
+  | jq '.[] | select(.name == "openl_update_table") | .inputSchema'
 ```
 
 ---
@@ -203,22 +196,17 @@ npx -y openl-mcp-server openl_list_projects '{"status":"OPENED","limit":10}'
 
 ### 2. `@file.json`
 
-Best for **complex payloads** — `openl_update_table` (full table view), `openl_execute_rule` (nested input data), `openl_append_table` (discriminated union by table type):
+Best for **complex payloads** — `openl_update_table` (full table view), `openl_append_table` (discriminated union by table type), `openl_save_project` (project commit with structured comment):
 
 ```bash
-cat > /tmp/exec.json <<'EOF'
+cat > /tmp/save.json <<'EOF'
 {
   "projectId": "design:insurance:hash123",
-  "ruleName": "calculatePremium",
-  "inputData": {
-    "driverType": "SAFE",
-    "age": 30,
-    "vehicleValue": 25000
-  }
+  "comment": "Update CA premium rates for Q3"
 }
 EOF
 
-npx -y openl-mcp-server openl_execute_rule @/tmp/exec.json
+npx -y openl-mcp-server openl_save_project @/tmp/save.json
 ```
 
 ### 3. `--stdin`
@@ -231,8 +219,8 @@ jq -n --arg id "$PROJECT_ID" '{projectId:$id, response_format:"json"}' \
   | npx -y openl-mcp-server openl_get_project --stdin
 
 # Or via heredoc
-npx -y openl-mcp-server openl_execute_rule --stdin <<'EOF'
-{"projectId":"…", "ruleName":"calc", "inputData":{"x":1}}
+npx -y openl-mcp-server openl_save_project --stdin <<'EOF'
+{"projectId":"…", "comment":"saved from CI"}
 EOF
 ```
 
@@ -304,7 +292,7 @@ rm $JAR   # optional — the next start_trace will overwrite
 
 - **First call on a fresh path:** `ENOENT` is silently treated as "no prior session"; the call proceeds normally.
 - **Stateless tools (list/get/update/...):** the server doesn't issue a session cookie, so the file isn't created or modified. You can freely pass `--cookie-jar` to stateless tools without side effects.
-- **File permissions:** the jar is written with `0600` (owner-only). Treat the file like any other credential.
+- **File permissions:** the jar is written with `0600` (owner-only) on POSIX systems. **Windows** ignores Unix file modes — on NTFS the cookie file inherits the parent directory's ACL. Avoid placing the jar in world-readable directories on Windows.
 - **Read failures** (other than `ENOENT`) emit a warning to stderr and continue with a fresh session.
 - **Write failures** emit a warning but don't fail the tool call — the API response has already arrived.
 
@@ -350,16 +338,13 @@ npx -y openl-mcp-server openl_save_project @<(jq -n \
   '{projectId:$id, comment:$msg}')
 ```
 
-### Execute a rule and check a specific result field
+### Fetch a project's tables and find one by kind
 
 ```bash
-RESULT=$(jq -n --arg id "$PROJECT_ID" \
-  '{projectId:$id, ruleName:"calculatePremium", inputData:{age:30}}' \
-  | npx -y openl-mcp-server openl_execute_rule --stdin)
+TABLES=$(npx -y openl-mcp-server openl_list_tables \
+  "{\"projectId\":\"$PROJECT_ID\"}")
 
-echo "$RESULT" | jq -e '.result.premium > 0' \
-  && echo "OK" \
-  || echo "BAD: $RESULT"
+echo "$TABLES" | jq '.data[] | select(.kind=="SimpleRules") | .name'
 ```
 
 ### Run all tests in a project, exit non-zero on failure
@@ -413,12 +398,19 @@ EOF
 
 ## Exit codes
 
-| Code | Meaning |
-|---|---|
-| `0` | Tool executed successfully |
-| `1` | Anything else — bad arguments, missing config, tool error, HTTP error, JSON parse failure, etc. |
+The CLI follows BSD [`sysexits.h`](https://man7.org/linux/man-pages/man3/sysexits.h.3head.html) conventions so CI/CD scripts can distinguish *don't-retry* failures (bad args) from *might-retry* failures (API down):
 
-The CLI does not currently distinguish error categories with different exit codes. Inspect stderr for context. If you need to discriminate, look at the JSON tool result (when `response_format=json` and the tool succeeded but returned a logical error).
+| Code | Name | Meaning |
+|---|---|---|
+| `0` | `EX_OK` | Tool executed successfully |
+| `1` | `EX_GENERIC` | Unclassified failure (e.g. tool-handler error) |
+| `64` | `EX_USAGE` | Bad CLI arguments — unknown flag, missing tool name, multiple arg sources |
+| `65` | `EX_DATAERR` | Bad input data — malformed JSON in inline / `@file` / `--stdin` |
+| `69` | `EX_UNAVAILABLE` | Server/network unavailable — `ECONNREFUSED`, `ETIMEDOUT`, 5xx |
+| `77` | `EX_NOPERM` | Authentication / authorization failure — 401, 403 |
+| `78` | `EX_CONFIG` | Missing or invalid configuration — no `OPENL_BASE_URL`, no auth, bad URL |
+
+Inspect stderr for the human-readable error message; the exit code categorises programmatically.
 
 ---
 
@@ -516,3 +508,4 @@ You probably overrode `response_format`. Default in CLI is `json`. Inspect with 
 - [Usage Examples (MCP mode)](docs/guides/examples.md) — prompt-based examples for Claude Desktop / Cursor.
 - [Authentication Guide](docs/guides/authentication.md) — PAT setup and SSO scenarios.
 - [Troubleshooting](docs/guides/troubleshooting.md) — general troubleshooting (applies to both modes).
+- [CLI Audit Follow-ups](docs/development/cli-audit-followups.md) — backlog of deferred CLI improvements (P1/P2/P3) with rationale and effort estimates.
