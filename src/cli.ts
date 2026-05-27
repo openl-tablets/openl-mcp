@@ -93,7 +93,7 @@ export class CliError extends Error {
  * `error.code`) bubble up as `ECONNREFUSED`/`ETIMEDOUT`/`ENOTFOUND` in the
  * message. Anything we can't classify falls back to GENERIC.
  */
-function classifyError(error: unknown): number {
+export function classifyError(error: unknown): number {
   if (error instanceof CliError) return error.exitCode;
   const msg = error instanceof Error ? error.message : String(error);
 
@@ -101,13 +101,15 @@ function classifyError(error: unknown): number {
   if (/\b(ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ECONNRESET|EHOSTUNREACH|ENETUNREACH)\b/.test(msg)) {
     return EXIT_CODES.UNAVAILABLE;
   }
-  // HTTP auth failure → NOPERM
-  if (/\b(401|403)\b/.test(msg) && /Unauthorized|Forbidden|status code/i.test(msg)) {
-    return EXIT_CODES.NOPERM;
-  }
-  // HTTP service errors 5xx → UNAVAILABLE
-  if (/status code 5\d\d\b/.test(msg)) {
-    return EXIT_CODES.UNAVAILABLE;
+
+  // Extract the HTTP status code and classify by it. The OpenL client wraps
+  // API errors as "OpenL Studio API error (NNN): ..."; axios also emits
+  // "Request failed with status code NNN". Match whichever form is present.
+  const statusMatch = msg.match(/\((\d{3})\)/) ?? msg.match(/status code (\d{3})/i);
+  if (statusMatch) {
+    const status = Number(statusMatch[1]);
+    if (status === 401 || status === 403) return EXIT_CODES.NOPERM; // auth/permission
+    if (status >= 500 && status <= 599) return EXIT_CODES.UNAVAILABLE; // server down/unhealthy
   }
   return EXIT_CODES.GENERIC;
 }

@@ -13,7 +13,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { EXIT_CODES, runCli } from "../src/cli.js";
+import { CliError, EXIT_CODES, classifyError, runCli } from "../src/cli.js";
 import { OpenLClient } from "../src/client.js";
 import type { OpenLConfig } from "../src/types.js";
 import { mockRepositories } from "./mocks/openl-api-mocks.js";
@@ -799,6 +799,137 @@ describe("CLI", () => {
       expect(out).toContain("Rules & Tables:");
       expect(out).toContain("Trace (BETA):");
       expect(out).toContain("Deployment:");
+    });
+  });
+
+  describe("classifyError", () => {
+    it("returns the exitCode carried by a CliError", () => {
+      expect(classifyError(new CliError("bad config", EXIT_CODES.CONFIG))).toBe(EXIT_CODES.CONFIG);
+      expect(classifyError(new CliError("bad data", EXIT_CODES.DATAERR))).toBe(EXIT_CODES.DATAERR);
+    });
+
+    it.each([
+      "connect ECONNREFUSED 127.0.0.1:8080",
+      "ETIMEDOUT",
+      "getaddrinfo ENOTFOUND studio.example.com",
+      "EAI_AGAIN dns lookup failed",
+      "read ECONNRESET",
+      "connect EHOSTUNREACH",
+      "connect ENETUNREACH",
+    ])("maps network error %p to EX_UNAVAILABLE (69)", (msg) => {
+      expect(classifyError(new Error(msg))).toBe(EXIT_CODES.UNAVAILABLE);
+    });
+
+    it.each([
+      // Wrapped form: "OpenL Studio API error (NNN): ..."
+      "OpenL Studio API error (401): Unauthorized [GET /repos]",
+      "OpenL Studio API error (403): Forbidden [POST /projects]",
+      // Raw axios form
+      "Request failed with status code 401",
+      "Request failed with status code 403",
+    ])("maps auth failure %p to EX_NOPERM (77)", (msg) => {
+      expect(classifyError(new Error(msg))).toBe(EXIT_CODES.NOPERM);
+    });
+
+    it.each([
+      "OpenL Studio API error (500): Internal Server Error [GET /repos]",
+      "OpenL Studio API error (503): Service Unavailable",
+      "Request failed with status code 502",
+    ])("maps 5xx %p to EX_UNAVAILABLE (69)", (msg) => {
+      expect(classifyError(new Error(msg))).toBe(EXIT_CODES.UNAVAILABLE);
+    });
+
+    it("treats 4xx that isn't 401/403 (e.g. 404) as GENERIC (1)", () => {
+      expect(classifyError(new Error("OpenL Studio API error (404): Not Found"))).toBe(EXIT_CODES.GENERIC);
+    });
+
+    it("falls back to GENERIC (1) for unclassifiable errors", () => {
+      expect(classifyError(new Error("something unexpected happened"))).toBe(EXIT_CODES.GENERIC);
+      expect(classifyError("a bare string error")).toBe(EXIT_CODES.GENERIC);
+      expect(classifyError(undefined)).toBe(EXIT_CODES.GENERIC);
+    });
+
+    it("does not treat a bare '401' without HTTP context as auth failure", () => {
+      // "processed 401 records" has no (NNN) status nor "status code NNN",
+      // so it must not be misread as an auth failure.
+      expect(classifyError(new Error("processed 401 records"))).toBe(EXIT_CODES.GENERIC);
+    });
+  });
+
+  describe("classifyError end-to-end through runCli", () => {
+    it("maps a 401 API response to EX_NOPERM (77)", async () => {
+      const { client, mock: m } = createMockClient();
+      mock = m;
+      m.onGet("/repos").reply(401, { message: "Unauthorized" });
+
+      const h = createHarness();
+      const code = await runCli({
+        argv: ["openl_list_repositories"],
+        env: ENV_OK,
+        stdin: h.stdin,
+        stdout: h.stdout,
+        stderr: h.stderr,
+        clientFactory: () => client,
+      });
+      expect(code).toBe(EXIT_CODES.NOPERM);
+    });
+
+    it("maps a 500 API response to EX_UNAVAILABLE (69)", async () => {
+      const { client, mock: m } = createMockClient();
+      mock = m;
+      m.onGet("/repos").reply(500, { message: "Internal Server Error" });
+
+      const h = createHarness();
+      const code = await runCli({
+        argv: ["openl_list_repositories"],
+        env: ENV_OK,
+        stdin: h.stdin,
+        stdout: h.stdout,
+        stderr: h.stderr,
+        clientFactory: () => client,
+      });
+      expect(code).toBe(EXIT_CODES.UNAVAILABLE);
+    });
+  });
+
+  describe("argument parsing edge cases", () => {
+    it("errors when a value-taking flag is missing its value", async () => {
+      const h = createHarness();
+      const code = await runCli({
+        argv: ["openl_list_repositories", "--base-url"], // no value follows
+        env: {},
+        stdin: h.stdin,
+        stdout: h.stdout,
+        stderr: h.stderr,
+      });
+      expect(code).toBe(EXIT_CODES.USAGE);
+      expect(h.getStderr()).toContain("requires a value");
+    });
+
+    it("rejects an invalid --timeout value", async () => {
+      const h = createHarness();
+      const code = await runCli({
+        argv: ["openl_list_repositories", "--timeout", "not-a-number"],
+        env: ENV_OK,
+        stdin: h.stdin,
+        stdout: h.stdout,
+        stderr: h.stderr,
+      });
+      expect(code).toBe(EXIT_CODES.USAGE);
+      expect(h.getStderr()).toContain("Invalid --timeout");
+    });
+
+    it("rejects an invalid OPENL_TIMEOUT env value (EX_CONFIG)", async () => {
+      const h = createHarness();
+      const code = await runCli({
+        argv: ["openl_list_repositories"],
+        env: { ...ENV_OK, OPENL_TIMEOUT: "-5" },
+        stdin: h.stdin,
+        stdout: h.stdout,
+        stderr: h.stderr,
+      });
+      expect(code).toBe(EXIT_CODES.CONFIG);
+      expect(h.getStderr()).toContain("Invalid OPENL_TIMEOUT");
     });
   });
 });
