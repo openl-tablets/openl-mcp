@@ -162,11 +162,11 @@ The OpenL Studio API supports two methods; the CLI accepts either.
 
 ```bash
 # Via env
-OPENL_PERSONAL_ACCESS_TOKEN=openl_pat_abc123 \
+OPENL_PERSONAL_ACCESS_TOKEN=<your-token> \
   npx -y openl-mcp-server openl_list_repositories
 
 # Via flag
-npx -y openl-mcp-server openl_list_repositories --token openl_pat_abc123
+npx -y openl-mcp-server openl_list_repositories --token <your-token>
 ```
 
 Generate a PAT in OpenL Studio under **User Settings → Personal Access Tokens**.
@@ -175,11 +175,11 @@ Generate a PAT in OpenL Studio under **User Settings → Personal Access Tokens*
 
 ```bash
 # Via env
-OPENL_USERNAME=admin OPENL_PASSWORD=admin \
+OPENL_USERNAME=<your-username> OPENL_PASSWORD=<your-password> \
   npx -y openl-mcp-server openl_list_repositories
 
 # Via flag
-npx -y openl-mcp-server openl_list_repositories --user admin --password admin
+npx -y openl-mcp-server openl_list_repositories --user <your-username> --password <your-password>
 ```
 
 > **Security note.** When you pass `--password` or `--token` on the command line, the value is visible in process listings (`ps aux`). Prefer env vars for shared/multi-user hosts.
@@ -518,7 +518,7 @@ Set the env var or pass `--base-url`. `--help` and `--list-tools` don't require 
 
 ### `Error: Authentication required …`
 
-Set either `OPENL_PERSONAL_ACCESS_TOKEN` or both `OPENL_USERNAME`/`OPENL_PASSWORD`. The CLI doesn't accept anonymous access (some OpenL endpoints do allow it, but the API client requires credentials up front).
+Set either `OPENL_PERSONAL_ACCESS_TOKEN` (or `--token`) or both `OPENL_USERNAME`/`OPENL_PASSWORD` (or `--user`/`--password`). If your server permits unauthenticated access, pass `--anonymous` to skip the credential requirement — see [Anonymous access](#anonymous-access---anonymous).
 
 ### `Error: Failed to parse tool arguments as JSON: …`
 
@@ -526,7 +526,7 @@ Your JSON literal is malformed. Common causes: missing quotes on keys, trailing 
 
 ### `Error: Unknown tool: …`
 
-Typo in the tool name, or you're targeting a disabled tool. Run `--list-tools` to see what's available. Disabled tools: `openl_upload_file`, `openl_download_file`, `openl_validate_project`, `openl_get_project_errors`, `openl_test_project`, `openl_compare_versions` (pending API support).
+Either a typo in the tool name, or you're targeting a temporarily disabled tool. Run `--list-tools` (or `--help`) to see the exact set currently available — that's the source of truth. A few tools are commented out in the registry pending API/implementation fixes; if a tool you expect is missing, it's likely one of those.
 
 ### `Error: MCP error -32603: OpenL Studio API error …`
 
@@ -545,7 +545,7 @@ You're calling the two operations in **separate processes** without `--cookie-ja
 
 ### Output isn't valid JSON
 
-You probably overrode `response_format`. Default in CLI is `json`. Inspect with `… | head -1` to see what the first character is.
+The CLI defaults to **markdown**, not JSON. To get JSON (e.g. for `jq`), pass `response_format:"json"` in the tool args. See [Scripting & JSON extraction](#scripting--json-extraction).
 
 ---
 
@@ -554,7 +554,7 @@ You probably overrode `response_format`. Default in CLI is `json`. Inspect with 
 - **No subcommand-per-tool yet.** Today the CLI is "tool name + JSON" — no `openl-cli list-projects --repository foo --status OPENED` style. The JSON-in-argv approach is universal (handles every input schema, including discriminated unions and `Record<string, any>`) but verbose. Subcommand UX is a possible future enhancement.
 - **No persistent sessions beyond `--cookie-jar`.** Other request-scoped state (HTTP/2 connection pooling, redirect cache) doesn't carry over between `npx` invocations. Not usually a problem.
 - **Stateful flows fan out.** A "save then close" macro is two CLI calls. If you need transaction-like behavior, drive the flow from a script that reacts to each result (or use Claude Desktop with the MCP server).
-- **Disabled tools.** Six tools are temporarily disabled pending fixes (listed under Troubleshooting). CLI exposes the same active set as MCP mode.
+- **Disabled tools.** A few tools are commented out in the registry pending API/implementation fixes, so they appear in neither `--list-tools` nor MCP mode. The CLI exposes exactly the same active set as the MCP server — run `--list-tools` for the current list.
 
 ---
 
