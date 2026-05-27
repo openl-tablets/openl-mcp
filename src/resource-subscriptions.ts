@@ -191,6 +191,23 @@ export class ResourceSubscriptionManager {
       },
     });
 
+    // Re-check after the await chain above. Two concurrent subscribe() calls
+    // for the same URI can both pass the early `has(uri)` guard (lines 116-120)
+    // before either of them awaits `getProjectStatus + subscribeImpl`. Without
+    // this guard, both would `set()` and the second would overwrite the first,
+    // leaking the first STOMP subscription with no reference left to close it.
+    // On race loss: tear down the freshly-opened STOMP so the studio isn't
+    // left with a dangling WS session.
+    if (this.subscriptions.has(uri)) {
+      debug("subscribe.race.discarded", { uri });
+      await stomp.close().catch((err) => {
+        console.error(
+          `[ResourceSub] close failed for discarded race-loser ${uri}: ${sanitizeError(err)}`,
+        );
+      });
+      return;
+    }
+
     this.subscriptions.set(uri, { uri, stomp });
     debug("subscribe.opened", { uri, totalSubscriptions: this.subscriptions.size });
   }

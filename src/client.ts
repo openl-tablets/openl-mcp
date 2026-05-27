@@ -256,29 +256,45 @@ export class OpenLClient {
   }
 
   /**
-   * Map repository name to repository ID
-   * 
-   * This function allows users to work with repository names (user-friendly)
-   * while the server uses repository IDs internally for API calls.
-   * 
-   * @param repositoryName - Repository name (e.g., "Design Repository")
-   * @returns Repository ID (e.g., "design-repo")
-   * @throws Error if repository name not found
+   * Resolve a user-supplied repository identifier (id OR display name,
+   * case-insensitive) to the canonical repository id used by the OpenL REST
+   * API. This is the contract advertised by the tool descriptions in
+   * `tools.ts` / `tool-handlers.ts` — LLMs tend to pass whichever of the two
+   * fields they see first in `openl_list_repositories()` output, sometimes
+   * with case drift, so we accept both forms.
+   *
+   * Match order (most specific first to avoid surprises when an id and a
+   * name happen to collide):
+   *   1. Exact id match
+   *   2. Exact name match
+   *   3. Case-insensitive id match
+   *   4. Case-insensitive name match
+   *
+   * @param repositoryIdOrName - Repository id (e.g. "design") or display name
+   *   (e.g. "Design Repository"); either is accepted, case-insensitively.
+   * @returns Canonical repository id (e.g., "design")
+   * @throws Error if no repository matches in any of the four checks
    */
-  async getRepositoryIdByName(repositoryName: string): Promise<string> {
+  async getRepositoryIdByName(repositoryIdOrName: string): Promise<string> {
     const repositories = await this.listRepositories();
-    const repository = repositories.find(r => r.name === repositoryName);
 
-    if (!repository) {
-      const availableNames = repositories.map(r => r.name).join(", ");
-      throw new Error(
-        `Repository with name "${repositoryName}" not found. ` +
-        `Available repositories: ${availableNames || "none"}. ` +
-        `Use openl_list_repositories() to see all available repositories.`
-      );
-    }
+    const exactId = repositories.find(r => r.id === repositoryIdOrName);
+    if (exactId) return exactId.id;
+    const exactName = repositories.find(r => r.name === repositoryIdOrName);
+    if (exactName) return exactName.id;
 
-    return repository.id;
+    const needle = repositoryIdOrName.toLowerCase();
+    const ciId = repositories.find(r => r.id.toLowerCase() === needle);
+    if (ciId) return ciId.id;
+    const ciName = repositories.find(r => r.name.toLowerCase() === needle);
+    if (ciName) return ciName.id;
+
+    const available = repositories.map(r => `${r.id} (${r.name})`).join(", ");
+    throw new Error(
+      `Repository "${repositoryIdOrName}" not found. ` +
+      `Available repositories: ${available || "none"}. ` +
+      `Use openl_list_repositories() to see all available repositories.`
+    );
   }
 
   /**
