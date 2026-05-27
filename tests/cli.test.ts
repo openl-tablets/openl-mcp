@@ -685,6 +685,38 @@ describe("CLI", () => {
       const missing = [...cited].filter((name) => !registered.has(name));
       expect(missing).toEqual([]);
     });
+
+    /**
+     * Defends against the Zod `.optional().default()` ordering trap: that
+     * chain makes `z.toJSONSchema()` mark a field as required in the output
+     * schema even though it's optional for input. Defaulted pagination /
+     * options fields must never appear in a tool's `required` array, or
+     * agents reading the schema will think they're mandatory.
+     */
+    it("does not mark defaulted optional fields (limit/offset/failures/unpaged) as required", async () => {
+      const listH = createHarness();
+      const code = await runCli({
+        argv: ["--list-tools"],
+        env: {},
+        stdin: listH.stdin,
+        stdout: listH.stdout,
+        stderr: listH.stderr,
+      });
+      expect(code).toBe(EXIT_CODES.OK);
+
+      const tools = JSON.parse(listH.getStdout()) as Array<{
+        name: string;
+        inputSchema: { required?: string[] };
+      }>;
+      const defaultedOptionals = ["limit", "offset", "failures", "unpaged"];
+      const offenders = tools
+        .map((t) => ({
+          name: t.name,
+          bad: (t.inputSchema.required ?? []).filter((r) => defaultedOptionals.includes(r)),
+        }))
+        .filter((t) => t.bad.length > 0);
+      expect(offenders).toEqual([]);
+    });
   });
 
   describe("--help grouping", () => {
