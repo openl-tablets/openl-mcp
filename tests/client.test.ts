@@ -123,6 +123,39 @@ describe("OpenLClient", () => {
         expect(result).toEqual([]);
       });
     });
+
+    describe("getRepositoryIdByName (id-or-name, case-insensitive)", () => {
+      const repos: Repository[] = [
+        { id: "design", name: "Design Repository" },
+        { id: "production", name: "Production Repository" },
+      ];
+
+      beforeEach(() => {
+        mockAxios.onGet("/repos").reply(200, repos);
+      });
+
+      it("resolves exact id", async () => {
+        expect(await client.getRepositoryIdByName("design")).toBe("design");
+      });
+
+      it("resolves exact display name", async () => {
+        expect(await client.getRepositoryIdByName("Design Repository")).toBe("design");
+      });
+
+      it("resolves case-insensitive id", async () => {
+        expect(await client.getRepositoryIdByName("DESIGN")).toBe("design");
+      });
+
+      it("resolves case-insensitive display name", async () => {
+        expect(await client.getRepositoryIdByName("design repository")).toBe("design");
+      });
+
+      it("throws with a helpful message listing id + name pairs when no match", async () => {
+        await expect(client.getRepositoryIdByName("ghost")).rejects.toThrow(
+          /Repository "ghost" not found.*design \(Design Repository\), production \(Production Repository\)/,
+        );
+      });
+    });
   });
 
   describe("Project Management", () => {

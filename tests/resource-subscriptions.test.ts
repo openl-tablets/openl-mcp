@@ -166,6 +166,30 @@ describe("ResourceSubscriptionManager.subscribe", () => {
     expect(m.size).toBe(1);
   });
 
+  it("closes the race-loser STOMP when two subscribes for the same URI run concurrently", async () => {
+    // Both calls share scripted fetches; the await-chain interleaves before
+    // either inserts into the tracking map. Without the post-await re-check,
+    // the second `set()` would overwrite the first and leak its STOMP.
+    const client = makeClient([
+      makeStatus({ branch: "main" }),
+      makeStatus({ branch: "main" }),
+    ]);
+    const m = new ResourceSubscriptionManager(client, sendUpdated, stomp.subscribe);
+
+    const [a, b] = await Promise.all([
+      m.subscribe("openl://status/proj/main"),
+      m.subscribe("openl://status/proj/main"),
+    ]);
+    expect(a).toBeUndefined();
+    expect(b).toBeUndefined();
+
+    // Both subscribeImpl invocations ran (no early-exit caught them), but only
+    // one survived in the map; the loser was closed inline.
+    expect(stomp.subscribe).toHaveBeenCalledTimes(2);
+    expect(m.size).toBe(1);
+    expect(stomp.liveCount()).toBe(1);
+  });
+
   it("supports multiple distinct subscriptions on the same session", async () => {
     const client = makeClient([
       makeStatus({ branch: "main" }),

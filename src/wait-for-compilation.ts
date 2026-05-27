@@ -154,8 +154,20 @@ export async function waitForCompilation(
     return await new Promise<Types.ProjectStatusView>((resolve, reject) => {
       resolveTerminal = resolve;
 
+      // Forward-declared so the timeout callback (which runs after the
+      // synchronous setup completes) can reference it for symmetric cleanup
+      // with the wrapper / terminal-frame paths.
+      let abortHandler: (() => void) | null = null;
+
       const timer = setTimeout(() => {
         resolveTerminal = null;
+        // Mirror the wrapper's cleanup: detach our listener from the caller's
+        // AbortSignal so it isn't kept alive for the lifetime of the caller's
+        // controller. (`once: true` would self-remove on fire, but the signal
+        // never aborts in the happy-timeout path.)
+        if (abortHandler) {
+          options.signal?.removeEventListener("abort", abortHandler);
+        }
         resolve(lastSeen);
       }, timeoutMs);
       // Don't keep the Node event loop alive just because of this timer.
@@ -163,7 +175,7 @@ export async function waitForCompilation(
         (timer as unknown as { unref: () => void }).unref();
       }
 
-      const abortHandler = (): void => {
+      abortHandler = (): void => {
         clearTimeout(timer);
         resolveTerminal = null;
         reject(abortError());
@@ -174,7 +186,9 @@ export async function waitForCompilation(
       const originalResolve = resolveTerminal;
       resolveTerminal = (status) => {
         clearTimeout(timer);
-        options.signal?.removeEventListener("abort", abortHandler);
+        if (abortHandler) {
+          options.signal?.removeEventListener("abort", abortHandler);
+        }
         originalResolve?.(status);
       };
     });

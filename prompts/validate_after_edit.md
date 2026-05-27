@@ -30,7 +30,7 @@ After any edit to a table or rule (`openl_update_table`, `openl_append_table`, `
 
 ## Response shape (relevant fields)
 
-```
+```json
 {
   compileState: "idle" | "compiling" | "ok" | "warnings" | "errors",
   compilation: {

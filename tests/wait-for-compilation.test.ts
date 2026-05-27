@@ -187,6 +187,28 @@ describe("waitForCompilation", () => {
     expect(stomp.closeSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("detaches the abort listener from the caller's signal after a timeout-resolve", async () => {
+    // Long-lived AbortControllers (e.g. session-scoped) would otherwise keep our
+    // listener attached after the wait completes; verify the timeout path cleans up.
+    const { client } = makeClient([makeStatus("compiling"), makeStatus("compiling")]);
+    const controller = new AbortController();
+    const removeSpy = jest.spyOn(controller.signal, "removeEventListener");
+
+    const result = await waitForCompilation(
+      client,
+      "p1",
+      "main",
+      { timeoutMs: 20, signal: controller.signal },
+      stomp.subscribe,
+    );
+    expect(result.compileState).toBe("compiling");
+    expect(removeSpy).toHaveBeenCalledWith("abort", expect.any(Function));
+
+    // Aborting after the timeout-resolve must not throw or surface anywhere —
+    // the listener is gone, so the post-settlement reject() can't fire.
+    expect(() => controller.abort()).not.toThrow();
+  });
+
   it("rejects with AbortError when the signal fires mid-wait and tears down the subscription", async () => {
     const { client } = makeClient([makeStatus("compiling"), makeStatus("compiling")]);
     const controller = new AbortController();
