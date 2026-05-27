@@ -572,6 +572,35 @@ describe("CLI", () => {
       expect(h.getStderr()).toContain("Unknown tool");
     });
 
+    it("prefers EX_USAGE over EX_CONFIG for an unknown tool with no config", async () => {
+      // A typo'd tool with missing OPENL_BASE_URL/auth must still report the
+      // typo (USAGE) — the unknown-tool check runs before config building, so
+      // the config error doesn't mask the more actionable usage error.
+      const h = createHarness();
+      const code = await runCli({
+        argv: ["openl_typo_tool"],
+        env: {}, // no base url, no auth
+        stdin: h.stdin,
+        stdout: h.stdout,
+        stderr: h.stderr,
+      });
+      expect(code).toBe(EXIT_CODES.USAGE);
+      expect(h.getStderr()).toContain("Unknown tool");
+    });
+
+    it("prefers EX_USAGE (missing tool name) over EX_CONFIG with no config", async () => {
+      const h = createHarness();
+      const code = await runCli({
+        argv: ['{"foo":"bar"}'], // JSON arg but no tool name
+        env: {}, // no config either
+        stdin: h.stdin,
+        stdout: h.stdout,
+        stderr: h.stderr,
+      });
+      expect(code).toBe(EXIT_CODES.USAGE);
+      expect(h.getStderr()).toContain("tool name is required");
+    });
+
     it("returns EX_CONFIG (78) when --base-url is invalid", async () => {
       const h = createHarness();
       const code = await runCli({

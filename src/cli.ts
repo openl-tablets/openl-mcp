@@ -701,6 +701,30 @@ export async function runCli(options: RunCliOptions): Promise<number> {
     return EXIT_CODES.OK;
   }
 
+  // Tool-name validation is a USAGE concern and needs neither config nor the
+  // network — run it *before* buildConfig so a typo'd tool returns EX_USAGE
+  // even when OPENL_BASE_URL/auth are also missing (otherwise the config
+  // error would mask the typo). A stub client satisfies the registry
+  // signature; the real client is wired in below for execution.
+  ensureToolsRegistered(
+    new OpenLClient({ baseUrl: "http://localhost", username: "_", password: "_" }),
+  );
+
+  if (!parsed.toolName) {
+    stderr.write(`Error: tool name is required\n\nRun with --help for usage.\n`);
+    return EXIT_CODES.USAGE;
+  }
+
+  // Unknown tool is a user-typed-wrong-name case → EX_USAGE (consistent with
+  // the `<tool> --help` path). Without this pre-check, the error would surface
+  // from executeTool as an MCP error and misclassify as GENERIC (1).
+  if (!getAllTools().some((t) => t.name === parsed.toolName)) {
+    stderr.write(
+      `Error: Unknown tool: ${parsed.toolName}\n\nRun --list-tools to see available tools.\n`,
+    );
+    return EXIT_CODES.USAGE;
+  }
+
   const restoreQuiet = setQuietMode();
   const restoreEnv = applyEnvOverrides(parsed.overrides);
 
@@ -716,23 +740,6 @@ export async function runCli(options: RunCliOptions): Promise<number> {
       );
     }
     const client = (options.clientFactory ?? ((c) => new OpenLClient(c)))(config);
-    ensureToolsRegistered(client);
-
-    if (!parsed.toolName) {
-      stderr.write(`Error: tool name is required\n\nRun with --help for usage.\n`);
-      return EXIT_CODES.USAGE;
-    }
-
-    // Unknown tool is a user-typed-wrong-name case → EX_USAGE (consistent
-    // with the `<tool> --help` path which also returns USAGE for unknown
-    // tools). Without this pre-check, the error would surface from
-    // executeTool as an MCP error and classify as GENERIC (1).
-    if (!getAllTools().some((t) => t.name === parsed.toolName)) {
-      stderr.write(
-        `Error: Unknown tool: ${parsed.toolName}\n\nRun --list-tools to see available tools.\n`,
-      );
-      return EXIT_CODES.USAGE;
-    }
 
     // Cookie-jar: restore JSESSIONID from previous invocation so
     // session-coupled flows (trace) work across separate `npx` calls.
