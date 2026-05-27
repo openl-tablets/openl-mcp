@@ -2,7 +2,9 @@
 
 `openl-mcp-server` is primarily an [MCP](https://modelcontextprotocol.io/) server for Claude Desktop, Cursor, and other LLM clients. The **same binary** also doubles as a command-line tool for direct API calls — useful when you want to script OpenL Studio operations, integrate into CI/CD, or debug a single tool invocation from your shell without spinning up an MCP client.
 
-Internally, CLI mode reuses the same tool registry, Zod input validation, response formatters, and error handling as the MCP server: anything Claude can do through MCP, you can do from a shell.
+CLI mode is **agent-first**: the primary consumer is an LLM agent that shells out to the binary (the human operator is the secondary audience). That shapes the defaults — output is **markdown** by default (LLMs parse it more naturally and token-efficiently than escaped JSON), and discovery is split into a human-readable catalog (`--help`) and a machine-readable schema dump (`--list-tools`).
+
+Internally, CLI mode reuses the same tool registry, Zod input validation, response formatters, and error handling as the MCP server: anything Claude can do through MCP, you can do from a shell — with identical tool surface, titles, and schemas.
 
 ---
 
@@ -50,16 +52,17 @@ The two modes are **mutually exclusive per process**: invoking the binary with a
 
 ```bash
 # 1. Discovery — works without any config
-npx -y openl-mcp-server --help
-npx -y openl-mcp-server --list-tools | jq '.[].name'
+npx -y openl-mcp-server --help                          # human catalog (titles)
+npx -y openl-mcp-server --list-tools | jq '.[].name'    # machine-readable
 
-# 2. Single call with env-based config
+# 2. Single call with env-based config (markdown by default)
 export OPENL_BASE_URL=https://studio.example.com
 export OPENL_PERSONAL_ACCESS_TOKEN=openl_pat_…
-npx -y openl-mcp-server openl_list_repositories | jq
+npx -y openl-mcp-server openl_list_repositories
 
-# 3. Or pass everything as flags (one-off, no env pollution)
+# 3. Add response_format=json when you want to pipe into jq
 npx -y openl-mcp-server openl_list_projects \
+  '{"response_format":"json"}' \
   --base-url https://studio.example.com \
   --token openl_pat_… \
   | jq '.data[] | {name, status}'
@@ -90,11 +93,19 @@ You can invoke the binary three ways:
 
 ## Discovery
 
-CLI mode can list every tool and dump every input schema without any credentials — useful for exploring or generating bindings.
+Discovery is deliberately split by audience — all three work without credentials:
+
+| Command | Audience | Output |
+|---|---|---|
+| `--help` | human (operator configuring the agent) | usage + flags + catalog of tool **titles** grouped by category |
+| `<tool> --help` | human + agent | that tool's full description + argument schema |
+| `--list-tools` | **agent** (programmatic introspection) | JSON array — `name` / `title` / `description` / `inputSchema` |
+
+`--list-tools` is the CLI's equivalent of MCP's `tools/list`: an agent that shells out instead of speaking the MCP protocol uses it to discover capabilities and their input schemas.
 
 ### `--help` (global) and `--version`
 
-Prints usage, all flags, and tools grouped by category (Repository / Project / Rules & Tables / Trace / Version Control / Deployment):
+Prints usage, all flags, and a human-readable catalog of tool **titles** grouped by category (Repository / Project / Rules & Tables / Trace / Version Control / Deployment). The titles (e.g. `List Repositories`, `Update Table`) keep the catalog scannable — use `<tool> --help` for the full description of any one tool.
 
 ```bash
 npx -y openl-mcp-server --help
@@ -103,7 +114,7 @@ npx -y openl-mcp-server --version    # or -V — prints "openl-mcp-server X.Y.Z"
 
 ### `<tool> --help` (per-tool)
 
-For detailed help on a specific tool — title, description, every argument with type / required / enum / description, and example invocations:
+For detailed help on a specific tool — title, full description, every argument with type / required / enum / description, and example invocations:
 
 ```bash
 npx -y openl-mcp-server openl_update_table --help
@@ -114,7 +125,7 @@ Output includes the input-schema breakdown rendered for humans (use `--list-tool
 
 ### `--list-tools`
 
-Dumps a JSON array of every tool's metadata and **complete JSON Schema** for inputs. Pipe through `jq` to filter, or use as a source for code generation:
+Dumps a JSON array of every tool's metadata and **complete JSON Schema** for inputs. This is the agent-facing discovery endpoint. Pipe through `jq` to filter, or use as a source for code generation:
 
 ```bash
 npx -y openl-mcp-server --list-tools \
@@ -238,15 +249,16 @@ npx -y openl-mcp-server openl_list_repositories '{}'
 
 ## Output format
 
-CLI mode defaults `response_format` to `"json"` so output pipes cleanly into `jq`. The MCP-stdio default is `"markdown"` for LLM readability; CLI is different.
-
-Override per-call by including `response_format` in your args:
+CLI mode defaults `response_format` to **`markdown`** — the same default as the MCP server. This is the agent-first choice: an LLM agent shelling out to the CLI consumes markdown more naturally than escaped JSON. When you want machine-parseable output (e.g. piping into `jq`), pass `response_format: "json"` explicitly.
 
 ```bash
-# Default (JSON)
-npx -y openl-mcp-server openl_list_projects | jq
+# Default — markdown (agent-readable)
+npx -y openl-mcp-server openl_list_projects
 
-# Force markdown (human-readable summary)
+# Machine-parseable JSON for jq pipelines
+npx -y openl-mcp-server openl_list_projects '{"response_format":"json"}' | jq
+
+# Concise markdown summary
 npx -y openl-mcp-server openl_list_projects '{"response_format":"markdown_concise"}'
 
 # Detailed markdown (best for printing)
@@ -254,7 +266,7 @@ npx -y openl-mcp-server openl_get_project \
   '{"projectId":"…", "response_format":"markdown_detailed"}'
 ```
 
-Supported formats: `json`, `markdown`, `markdown_concise`, `markdown_detailed`.
+Supported formats: `markdown` (default), `json`, `markdown_concise`, `markdown_detailed`.
 
 The tool's text payload is written **as-is** to stdout. A trailing newline is added if missing so shell substitutions behave predictably.
 
@@ -323,9 +335,11 @@ The value is added as a header to every HTTP request the CLI makes during that i
 
 ### List projects with status `OPENED`, project name only
 
+When piping into `jq`, request JSON explicitly (markdown is the default):
+
 ```bash
 npx -y openl-mcp-server openl_list_projects \
-  '{"status":"OPENED","limit":100}' \
+  '{"status":"OPENED","limit":100,"response_format":"json"}' \
   | jq '.data[].name'
 ```
 
@@ -342,7 +356,7 @@ npx -y openl-mcp-server openl_save_project @<(jq -n \
 
 ```bash
 TABLES=$(npx -y openl-mcp-server openl_list_tables \
-  "{\"projectId\":\"$PROJECT_ID\"}")
+  "{\"projectId\":\"$PROJECT_ID\",\"response_format\":\"json\"}")
 
 echo "$TABLES" | jq '.data[] | select(.kind=="SimpleRules") | .name'
 ```
@@ -365,14 +379,14 @@ trap 'rm -f $JAR' EXIT
 npx -y openl-mcp-server openl_start_trace --cookie-jar $JAR \
   '{"projectId":"…","tableId":"calcPremium_42"}'
 
-# Get root nodes
+# Get root nodes (json for jq processing)
 ROOTS=$(npx -y openl-mcp-server openl_get_trace_nodes --cookie-jar $JAR \
-  '{"projectId":"…"}')
+  '{"projectId":"…","response_format":"json"}')
 
 # For each root, fetch details
 echo "$ROOTS" | jq -r '.data[].id' | while read -r nodeId; do
   npx -y openl-mcp-server openl_get_trace_node_details --cookie-jar $JAR \
-    "{\"projectId\":\"…\",\"nodeId\":$nodeId}" \
+    "{\"projectId\":\"…\",\"nodeId\":$nodeId,\"response_format\":\"json\"}" \
     | jq '{nodeId, result}'
 done
 

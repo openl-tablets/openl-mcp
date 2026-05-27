@@ -64,16 +64,20 @@ For Cursor and other clients, see the [MCP Connection Guide](https://github.com/
 
 ## Use as a CLI (direct API calls, no MCP client)
 
-The same binary can invoke any `openl_*` tool directly from the shell — useful for scripting, CI, and ad-hoc debugging without setting up an MCP client. Output defaults to JSON so it pipes cleanly into `jq`.
+The same binary can invoke any `openl_*` tool directly from the shell — useful for scripting, CI, and ad-hoc debugging without setting up an MCP client. CLI mode is **agent-first**: output defaults to markdown (LLM-friendly, same as the MCP server); pass `response_format: "json"` when you want to pipe into `jq`.
 
 ```bash
 # Quick discovery (no config needed)
-npx -y openl-mcp-server --help
-npx -y openl-mcp-server --list-tools
+npx -y openl-mcp-server --help          # human catalog (tool titles)
+npx -y openl-mcp-server --list-tools    # machine-readable JSON (name/title/schema)
 
-# Single call
+# Single call (markdown by default)
 OPENL_BASE_URL=<host> OPENL_PERSONAL_ACCESS_TOKEN=<pat> \
-  npx -y openl-mcp-server openl_list_repositories | jq
+  npx -y openl-mcp-server openl_list_repositories
+
+# JSON for jq pipelines
+OPENL_BASE_URL=<host> OPENL_PERSONAL_ACCESS_TOKEN=<pat> \
+  npx -y openl-mcp-server openl_list_repositories '{"response_format":"json"}' | jq
 ```
 
 **See [`README.cli.md`](https://github.com/openl-tablets/openl-mcp/blob/main/README.cli.md)** for the full CLI guide: configuration, all flags (`--base-url`, `--token`, `--user`, `--password`, `--timeout`, `--client-document-id`, `--cookie-jar`), argument-passing modes (`@file.json`, `--stdin`), session handling for trace flows, recipes, exit codes, Windows notes, and troubleshooting.

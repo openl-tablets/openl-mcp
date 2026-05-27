@@ -397,24 +397,19 @@ async function saveCookieJar(
 }
 
 /**
- * Default `response_format` to `"json"` in CLI mode when the caller didn't
- * specify one, so output pipes cleanly into `jq` and other JSON tools. The
- * MCP-stdio default (markdown) stays unchanged — this only affects the CLI
- * entry point. Users can override by passing `response_format` explicitly
- * in their JSON args.
+ * CLI mode is **agent-first**: the primary consumer is an LLM agent that
+ * shells out to this binary, and LLMs read markdown more naturally (and more
+ * token-efficiently) than escaped JSON. So the CLI inherits the same default
+ * `response_format` as the MCP server — markdown — by NOT overriding it here.
+ *
+ * Callers (human or agent) who want machine-parseable output pass
+ * `response_format: "json"` explicitly, e.g. for piping into `jq`.
+ *
+ * Kept as a single documented seam: if the CLI's format policy ever needs to
+ * diverge from the handler default again, change it here only.
  */
 function applyDefaultResponseFormat(args: unknown): unknown {
-  if (args === undefined || args === null) {
-    return { response_format: "json" };
-  }
-  if (typeof args !== "object" || Array.isArray(args)) {
-    // Non-object args — leave as-is; tool's schema will validate.
-    return args;
-  }
-  if ("response_format" in (args as Record<string, unknown>)) {
-    return args;
-  }
-  return { ...(args as Record<string, unknown>), response_format: "json" };
+  return args;
 }
 
 /**
@@ -549,8 +544,11 @@ function renderToolHelp(toolName: string): string | null {
  * category for readability (Repository / Project / Rules / Trace / ...).
  */
 function renderHelp(): string {
-  // Group tools by category, then render each section
-  const byCategory = new Map<string, Array<{ name: string; description: string }>>();
+  // Group tools by category, then render each section. The listing shows the
+  // human-readable title (not the description) so the catalog stays scannable;
+  // `<tool> --help` gives the full description + schema, and `--list-tools`
+  // gives the machine-readable JSON.
+  const byCategory = new Map<string, Array<{ name: string; title: string }>>();
   for (const t of getAllTools()) {
     const cat = categoryOf(t.name);
     let bucket = byCategory.get(cat);
@@ -558,7 +556,7 @@ function renderHelp(): string {
       bucket = [];
       byCategory.set(cat, bucket);
     }
-    bucket.push({ name: t.name, description: t.description });
+    bucket.push({ name: t.name, title: t.title ?? "" });
   }
   const sections: string[] = [];
   for (const cat of CATEGORY_ORDER) {
@@ -567,7 +565,7 @@ function renderHelp(): string {
     items.sort((a, b) => a.name.localeCompare(b.name));
     sections.push(`${cat}:`);
     for (const t of items) {
-      sections.push(`  ${t.name.padEnd(42)} ${truncate(t.description, 80)}`);
+      sections.push(`  ${t.name.padEnd(42)} ${t.title}`);
     }
     sections.push("");
   }
@@ -605,12 +603,17 @@ function renderHelp(): string {
     `large structured JSON — pass it via @file.json or --stdin rather than`,
     `inline. On Windows cmd, prefer @file.json (single quotes won't work).`,
     ``,
-    `Output: CLI mode defaults response_format to "json" (pipe-friendly).`,
-    `Override by including "response_format" in your args, e.g.`,
-    `  '{"response_format":"markdown_concise"}'.`,
+    `Output: defaults to markdown (agent-friendly, same as the MCP server).`,
+    `For machine-parseable output, pass "response_format":"json" in args:`,
+    `  npx -y openl-mcp-server openl_list_repositories '{"response_format":"json"}' | jq`,
+    ``,
+    `Discovery:`,
+    `  --help                      human-readable: this catalog of tool titles`,
+    `  <tool> --help               human-readable: full description + arg schema`,
+    `  --list-tools                machine-readable: JSON (name/title/description/schema)`,
     ``,
     `Examples:`,
-    `  npx -y openl-mcp-server openl_list_repositories '{"response_format":"json"}'`,
+    `  npx -y openl-mcp-server openl_list_repositories`,
     `  echo '{"projectId":"p","comment":"fix CA rates"}' | \\`,
     `    npx -y openl-mcp-server openl_save_project --stdin`,
     ``,
@@ -618,10 +621,6 @@ function renderHelp(): string {
     tools,
     ``,
   ].join("\n");
-}
-
-function truncate(s: string, n: number): string {
-  return s.length <= n ? s : `${s.slice(0, n - 1)}…`;
 }
 
 /**
