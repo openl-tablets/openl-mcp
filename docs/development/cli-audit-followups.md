@@ -207,22 +207,25 @@ Tracks items identified in the `EPBDS-16027` CLI audit (May 2026) that were **no
 
 ---
 
-## 🟢 P2.17 — Child-process integration tests
+## ✅ P2.17 — Child-process integration tests — DONE
 
-**Problem.** Our 29 CLI tests are all in-process (driving `runCli` directly). They miss:
-- Shebang/permission issues on Linux
-- Actual `npm bin` wiring
-- Real stdin/stdout/stderr stream behavior (not Writable mocks)
-- EPIPE in practice (verified manually but not under CI)
+**Done in `EPBDS-16027`.** Added `tests/cli-spawn.test.ts` (6 tests) spawning the
+built `dist/index.js` via `node:child_process` (no extra dep). Covers:
+- CLI-mode dispatch: `--version`, `--help`, typo'd tool → EX_USAGE (64), valid
+  tool with no config → EX_CONFIG (78) via the CLI loader.
+- MCP-mode dispatch: no-args routes to the stdio MCP path (asserted via the
+  MCP loader's distinct "environment variable is required" message).
+- EPIPE: closing stdout's read end early doesn't crash the process (exit 0,
+  no EPIPE on stderr).
+- Implicitly exercises shebang / `bin` wiring / real stream behavior.
 
-**Best practice.** Layer in 2–3 cheap smoke tests via [`execa`](https://github.com/sindresorhus/execa) that spawn the built `dist/index.js` and assert on captured output.
+`beforeAll` rebuilds `dist/` only when it's older than `src/index.ts` /
+`src/cli.ts`, so CI (build-before-test) and fresh local builds skip the rebuild.
 
-**Sketch.**
-- Add `tests/cli-spawn.test.ts` (or under `tests/integration/`).
-- `it('emits --version through child process')` etc.
-- ~3 tests covering: `--version`, `--help`, `--list-tools | head -1` (EPIPE smoke).
-
-**Estimate.** ~50 lines + execa dep (or use `node:child_process`). **~1 hour.**
+> Note: child-process tests don't move `index.ts`'s coverage number — the
+> spawned process isn't instrumented by jest. Their value is catching real
+> entry-point regressions (dispatch routing, EPIPE, bin wiring) that
+> in-process tests can't.
 
 ---
 
@@ -339,7 +342,7 @@ Suggested grouping for tickets:
 | **CLI UX polish** | P1.4 + P1.7 + P1.8 + P2.10 | ~4 hours |
 | **CLI session & config** | P2.9 + P2.15 | ~4.5 hours |
 | **CLI hardening** | P2.11 + P2.14 + P2.16 | ~4 hours |
-| **CLI tooling** | P2.12 + P2.17 + P2.18 + P2.19 | ~5 hours |
+| **CLI tooling** | P2.12 + P2.18 + P2.19 (P2.17 done) | ~4 hours |
 | **Release security** | P2.20a + P2.20 | ~45 min |
 
 ---
