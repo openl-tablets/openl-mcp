@@ -148,6 +148,7 @@ The CLI reads configuration from environment variables. Every variable has a mat
 | `OPENL_TIMEOUT` | `--timeout <ms>` | no | `30000` | Per-request HTTP timeout |
 | `OPENL_CLIENT_DOCUMENT_ID` | `--client-document-id <id>` | no | — | Request tracking header (audit) |
 | — | `--cookie-jar <path>` | no | — | Persist JSESSIONID between calls (trace) |
+| — | `--anonymous` | no | off | Skip the auth requirement for servers that permit unauthenticated access |
 
 Precedence: **CLI flag > environment variable > default**.
 
@@ -183,13 +184,28 @@ npx -y openl-mcp-server openl_list_repositories --user admin --password admin
 
 > **Security note.** When you pass `--password` or `--token` on the command line, the value is visible in process listings (`ps aux`). Prefer env vars for shared/multi-user hosts.
 
+### Anonymous access (`--anonymous`)
+
+By default the CLI treats each invocation as one principal that must authenticate, and **fails fast** if no credentials are configured — this catches the common "forgot to set creds" mistake with a clear message instead of a later `401`.
+
+If your OpenL Studio server permits unauthenticated access, pass `--anonymous` to skip that gate. The client then sends no `Authorization` header (any credentials that *are* present are still used):
+
+```bash
+# Server allows anonymous reads — no creds needed
+OPENL_BASE_URL=https://studio.example.com \
+  npx -y openl-mcp-server openl_list_repositories --anonymous
+```
+
+`--anonymous` only relaxes the credential requirement; `OPENL_BASE_URL` is still required. A server that *does* require auth will respond `401`, which the CLI reports with exit code `77` (`EX_NOPERM`).
+
 ### Validation
 
-If neither auth method is configured, the CLI fails fast with a clear message before making any HTTP requests:
+If no auth method is configured (and `--anonymous` is not passed), the CLI fails fast with a clear message before making any HTTP request:
 
 ```text
 Error: Authentication required: set OPENL_PERSONAL_ACCESS_TOKEN (or --token),
-or both OPENL_USERNAME/OPENL_PASSWORD (or --user/--password)
+or both OPENL_USERNAME/OPENL_PASSWORD (or --user/--password). Pass --anonymous
+if the server allows unauthenticated access.
 ```
 
 ---

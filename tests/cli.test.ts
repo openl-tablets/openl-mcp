@@ -497,6 +497,39 @@ describe("CLI", () => {
       });
       expect(code).toBe(EXIT_CODES.CONFIG);
       expect(h.getStderr()).toContain("Authentication required");
+      // The error should point users at the escape hatch.
+      expect(h.getStderr()).toContain("--anonymous");
+    });
+
+    it("--anonymous bypasses the auth gate (no creds → request proceeds)", async () => {
+      const { client, mock: m } = createMockClient();
+      mock = m;
+      m.onGet("/repos").reply(200, mockRepositories);
+
+      const h = createHarness();
+      const code = await runCli({
+        argv: ["openl_list_repositories", "--anonymous"],
+        env: { OPENL_BASE_URL: "http://localhost:8080" }, // base URL only, no auth
+        stdin: h.stdin,
+        stdout: h.stdout,
+        stderr: h.stderr,
+        clientFactory: () => client,
+      });
+      expect(code).toBe(EXIT_CODES.OK);
+      expect(h.getStdout()).toContain("Design Repository");
+    });
+
+    it("still requires OPENL_BASE_URL even with --anonymous", async () => {
+      const h = createHarness();
+      const code = await runCli({
+        argv: ["openl_list_repositories", "--anonymous"],
+        env: {}, // no base URL
+        stdin: h.stdin,
+        stdout: h.stdout,
+        stderr: h.stderr,
+      });
+      expect(code).toBe(EXIT_CODES.CONFIG);
+      expect(h.getStderr()).toContain("OPENL_BASE_URL");
     });
 
     it("returns EX_USAGE (64) on unknown flag", async () => {

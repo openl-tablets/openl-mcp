@@ -139,6 +139,7 @@ interface ParsedArgs {
   showHelp: boolean;
   showVersion: boolean;
   listTools: boolean;
+  anonymous: boolean;
   cookieJarPath?: string;
   overrides: {
     baseUrl?: string;
@@ -161,6 +162,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     showHelp: false,
     showVersion: false,
     listTools: false,
+    anonymous: false,
     overrides: {},
     errors: [],
   };
@@ -191,6 +193,9 @@ function parseArgs(argv: string[]): ParsedArgs {
         break;
       case "--stdin":
         result.useStdin = true;
+        break;
+      case "--anonymous":
+        result.anonymous = true;
         break;
       case "--base-url":
         result.overrides.baseUrl = takeValue(i, arg);
@@ -310,6 +315,7 @@ async function resolveToolArgs(
 function buildConfig(
   env: NodeJS.ProcessEnv,
   overrides: ParsedArgs["overrides"],
+  allowAnonymous = false,
 ): Types.OpenLConfig {
   const baseUrl = overrides.baseUrl ?? env.OPENL_BASE_URL;
   if (!baseUrl) {
@@ -327,10 +333,17 @@ function buildConfig(
   const password = overrides.password ?? env.OPENL_PASSWORD;
   const personalAccessToken = overrides.token ?? env.OPENL_PERSONAL_ACCESS_TOKEN;
 
-  if (!personalAccessToken && !(username && password)) {
+  // By default a CLI invocation represents one principal who must authenticate,
+  // so we fail fast on missing credentials (this catches the common "forgot to
+  // set creds" mistake with a clear message instead of a later 401). The
+  // `--anonymous` flag opts out for servers that permit unauthenticated access:
+  // the gate is skipped and, if no creds are supplied, the client sends no
+  // Authorization header. Any creds that *are* present are still used.
+  if (!allowAnonymous && !personalAccessToken && !(username && password)) {
     throw new Error(
       "Authentication required: set OPENL_PERSONAL_ACCESS_TOKEN (or --token), " +
-        "or both OPENL_USERNAME/OPENL_PASSWORD (or --user/--password)",
+        "or both OPENL_USERNAME/OPENL_PASSWORD (or --user/--password). " +
+        "Pass --anonymous if the server allows unauthenticated access.",
     );
   }
 
@@ -598,6 +611,8 @@ function renderHelp(): string {
     `  --client-document-id <id>   OPENL_CLIENT_DOCUMENT_ID (audit/tracking)`,
     `  --cookie-jar <path>         persist JSESSIONID between calls (needed`,
     `                              for trace flow across separate npx runs)`,
+    `  --anonymous                 allow running without credentials (for`,
+    `                              servers that permit unauthenticated access)`,
     ``,
     `Tip: complex tools (openl_update_table, openl_append_table, …) take`,
     `large structured JSON — pass it via @file.json or --stdin rather than`,
@@ -731,7 +746,7 @@ export async function runCli(options: RunCliOptions): Promise<number> {
   try {
     let config: Types.OpenLConfig;
     try {
-      config = buildConfig(env, parsed.overrides);
+      config = buildConfig(env, parsed.overrides, parsed.anonymous);
     } catch (error) {
       // Config errors (missing OPENL_BASE_URL, no auth, bad URL) → EX_CONFIG
       throw new CliError(
