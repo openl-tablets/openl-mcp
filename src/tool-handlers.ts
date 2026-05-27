@@ -126,7 +126,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_list_repositories",
-    title: "List Repositories",
+    title: "List Design Repositories",
     version: "1.0.0",
     description:
       "List all design repositories in OpenL Studio. Returns repository information including 'id' (internal identifier) and 'name' (display name). Use the 'name' field when working with repositories in other tools. Example: if response contains {id: 'design-repo', name: 'Design Repository'}, use 'Design Repository' (the name) in other tools like list_projects(repository: 'Design Repository').",
@@ -176,7 +176,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_list_branches",
-    title: "List Branches",
+    title: "List Git Branches",
     version: "1.0.0",
     description:
       "List all Git branches in a repository. Returns branch names and metadata (current branch, commit info). Use this to see available branches before switching or comparing versions. Use repository name (not ID) - e.g., 'Design Repository' instead of 'design-repo'.",
@@ -372,7 +372,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_get_project",
-    title: "Get Project",
+    title: "Get Project Details",
     version: "1.0.0",
     description:
       "Get comprehensive project information including details, modules, dependencies, and metadata. Returns full project structure, configuration, and status.",
@@ -407,7 +407,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_open_project",
-    title: "Open Project",
+    title: "Open Project for Editing",
     version: "1.0.0",
     description:
       "Open a project for editing. Supports opening on specific branches or viewing specific Git revisions. Use this before making changes to project tables or rules.",
@@ -477,7 +477,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_save_project",
-    title: "Save Project",
+    title: "Save Project to Git",
     version: "1.0.0",
     description:
       "Save project changes to Git. Works only when project status is EDITING (after opening and making changes). Requires comment (used as revision/commit message). Creates a new revision and transitions project to OPENED. Optional closeAfterSave: true saves and closes in one request. Use after update_table, append_table, or other edits. Does not work for repository 'local'. Validates project before saving if validation endpoint is available.",
@@ -737,7 +737,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_list_tables",
-    title: "List Tables",
+    title: "List Project Tables",
     version: "1.0.0",
     description: "List all tables/rules in a project with optional filters for type, name, and file. Returns table metadata including 'tableId' (the 'id' field) which is required for calling get_table(), update_table(), append_table(), or run_project_tests(). Use the 'tableId' field from the response to reference specific tables in other API calls.",
     inputSchema: schemas.z.toJSONSchema(schemas.listTablesSchema) as Record<string, unknown>,
@@ -854,7 +854,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_get_table",
-    title: "Get Table",
+    title: "Get Table Structure & Data",
     version: "1.0.0",
     description:
       "Get detailed information about a specific table/rule. By default returns a parsed table structure with signature, conditions, actions, dimension properties, and row data. Set raw=true to get an unparsed 2D cell matrix (RawTableView) instead — useful for unknown/custom table types or preserving exact cell layout. Note: raw output cannot be passed directly to openl_update_table (which expects the parsed form).",
@@ -892,7 +892,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_update_table",
-    title: "Update Table",
+    title: "Replace Entire Table",
     version: "1.0.0",
     description:
       "Replace the ENTIRE table structure with a modified version. Use for MODIFYING existing rows, DELETING rows, REORDERING rows, or STRUCTURAL changes. CRITICAL: Must send the FULL table structure (not just modified fields). DO NOT use for simple additions - use append_table instead. Required workflow: 1) Call get_table() to retrieve complete structure, 2) Modify the returned object, 3) Pass the ENTIRE modified object to update_table().",
@@ -932,7 +932,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_append_table",
-    title: "Append Table",
+    title: "Append Rows/Fields to Table",
     version: "1.0.0",
     description:
       "Add new rows/fields to an existing table (additions only). Payload by type: Datatype→fields, SimpleRules/SmartRules→rules, SimpleSpreadsheet→steps, Vocabulary→values, RawSource→rows. For modifying, deleting, or reordering use update_table instead.",
@@ -1002,7 +1002,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_create_project_table",
-    title: "Create Project Table",
+    title: "Create New Table",
     version: "1.0.0",
     description:
       "Create a new table/rule in OpenL project using BETA API (Create New Project Table). This is the recommended tool for creating new OpenL tables programmatically. Use cases: Create Rules (decision tables), Spreadsheet tables, Datatype definitions, Test tables, or other table types. Requires moduleName (existing project module name) and complete table structure (EditableTableView). The table structure must include at least tableType, kind, name, plus type-specific data (rules/headers for Rules tables, rows for Spreadsheet, fields for Datatype). id is optional for create requests. Use get_table() on an existing table as a reference for the structure. This tool uses the Create New Project Table (BETA) API endpoint.",
@@ -1057,7 +1057,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_list_deployments",
-    title: "List Deployments",
+    title: "List Active Deployments",
     version: "1.0.0",
     description:
       "List all active deployments across production environments. Returns deployment names, repositories, versions, and status information.",
@@ -1107,7 +1107,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_deploy_project",
-    title: "Deploy Project",
+    title: "Deploy Project to Production",
     version: "1.0.0",
     description:
       "Deploy a project to production environment. Publishes rules to a deployment repository for runtime execution. Use production repository name (not ID) - e.g., 'Production Deployment' instead of 'production-deploy'.",
@@ -1211,7 +1211,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_start_trace",
-    title: "Start Trace",
+    title: "Start Rule Trace",
     version: "1.0.0",
     description:
       "Start trace execution for a table. Trace is asynchronous (returns 202 Accepted). For regular rules: provide inputJson with { params: {...}, runtimeContext?: {...} }. For test tables: use testRanges (e.g. '1-3,5'). After starting, use openl_get_trace_nodes to retrieve results; if you get 409 Conflict, trace is still running—wait and retry.",
@@ -1253,7 +1253,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_get_trace_nodes",
-    title: "Get Trace Nodes",
+    title: "Get Trace Tree Nodes",
     version: "1.0.0",
     description:
       "Get trace node children (or root nodes if nodeId omitted). Requires trace to be completed (409 Conflict if still running). Use openl_start_trace first, then poll this until it returns nodes.",
@@ -1330,7 +1330,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_get_trace_parameter",
-    title: "Get Trace Parameter",
+    title: "Get Trace Parameter Value",
     version: "1.0.0",
     description:
       "Get lazy-loaded parameter value. Use when a TraceParameterValue has lazy:true and parameterId set.",
@@ -1365,7 +1365,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_cancel_trace",
-    title: "Cancel Trace",
+    title: "Cancel Ongoing Trace",
     version: "1.0.0",
     description: "Cancel ongoing trace execution for a project.",
     inputSchema: schemas.z.toJSONSchema(schemas.cancelTraceSchema) as Record<string, unknown>,
@@ -1387,7 +1387,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_export_trace",
-    title: "Export Trace",
+    title: "Export Trace as Text",
     version: "1.0.0",
     description:
       "Export trace as plain text. Returns full trace content. Use release: true to clear trace from memory after export.",
@@ -1585,7 +1585,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_list_repository_features",
-    title: "List Design Repository Features",
+    title: "Get Repository Features",
     version: "1.0.0",
     description:
       "Get features supported by a design repository (branching, searchable, etc.). Use this to check if a repository supports specific features like branching before performing operations that depend on those features. Use repository name (not ID) - e.g., 'Design Repository' instead of 'design-repo'.",
@@ -1624,7 +1624,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_repository_project_revisions",
-    title: "List Design Repository Project Revisions",
+    title: "Get Project Revision History",
     version: "1.0.0",
     description:
       "Get revision history (commit history) of a project in a design repository. Returns list of revisions with commit hashes, authors, timestamps, and commit types. Supports pagination and filtering by branch and search term. Use repository name (not ID) - e.g., 'Design Repository' instead of 'design-repo'.",
@@ -1682,7 +1682,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_list_deploy_repositories",
-    title: "List Deploy Repositories",
+    title: "List Deployment Repositories",
     version: "1.0.0",
     description:
       "List all deployment repositories in OpenL Studio. Returns repository names, their types, and status information. Use this to discover all available deployment repositories before deploying projects.",
@@ -1776,7 +1776,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_list_project_local_changes",
-    title: "List Project Local Changes",
+    title: "List Local Change History",
     version: "1.0.0",
     description:
       "List local change history for a project. Returns list of workspace history items with versions, authors, timestamps, and comments. NOTE: Requires the project to be opened (openl_open_project first); not available for repository 'local' (local projects cannot be opened). Uses session-based project context; no projectId parameter.",
@@ -1809,7 +1809,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_restore_project_local_change",
-    title: "Restore Project Local Change",
+    title: "Restore Previous Local Version",
     version: "1.0.0",
     description:
       "Restore a project to a specified version from its local history. Use the historyId from openl_list_project_local_changes response. NOTE: Requires the project to be opened first; not available for repository 'local'. Uses session-based project context; no projectId parameter.",
@@ -1942,7 +1942,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_get_test_results",
-    title: "Get Test Results",
+    title: "Get Full Test Results",
     version: "1.0.0",
     description:
       "Get full test execution results with pagination support. Returns complete test execution summary including testCases array grouped by table. IMPORTANT: Pagination applies to test tables (not individual test cases). Each page returns test results aggregated by table (e.g., 'TestTable1' with 7 tests, 'TestTable2' with 8 tests). Supports filtering failures and pagination (page/offset/size). Use openl_start_project_tests() first to start test execution.",
@@ -2059,7 +2059,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
   registerTool({
     name: "openl_redeploy_project",
-    title: "Redeploy Project",
+    title: "Redeploy with New Version",
     version: "1.0.0",
     description:
       "Redeploy an existing deployment with a new project version. Use this to update a deployment with a newer version of the project or rollback to a previous version.",
