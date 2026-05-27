@@ -175,6 +175,27 @@ export class AuthenticationManager {
   }
 
   /**
+   * Build the `Authorization` header value this manager would set on outgoing
+   * HTTP requests, or `undefined` when no auth is configured. Useful for
+   * non-axios consumers (e.g. the STOMP WebSocket handshake) that need to
+   * send the same authentication scheme as REST.
+   *
+   * Priority matches `addAuthHeaders`: PAT > Basic > none.
+   */
+  public getAuthorizationHeader(): string | undefined {
+    if (this.config.personalAccessToken) {
+      return `Token ${this.config.personalAccessToken}`;
+    }
+    if (this.config.username && this.config.password) {
+      const encoded = Buffer.from(
+        `${this.config.username}:${this.config.password}`,
+      ).toString("base64");
+      return `Basic ${encoded}`;
+    }
+    return undefined;
+  }
+
+  /**
    * Get the current authentication method being used
    *
    * @returns Human-readable authentication method name

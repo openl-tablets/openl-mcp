@@ -223,6 +223,16 @@ export class OpenLClient {
     return this.authManager.getAuthMethod();
   }
 
+  /**
+   * Get the `Authorization` header value this client uses for REST. Exposed
+   * so non-axios consumers (e.g. the STOMP WebSocket handshake) can attach
+   * the same credentials — the studio's REST filter chain authenticates on
+   * the WS upgrade just like every other `/rest/*` request.
+   */
+  public getAuthorizationHeader(): string | undefined {
+    return this.authManager.getAuthorizationHeader();
+  }
+
   // =============================================================================
   // Repository Management
   // =============================================================================
