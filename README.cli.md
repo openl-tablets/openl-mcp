@@ -18,6 +18,7 @@ Internally, CLI mode reuses the same tool registry, Zod input validation, respon
 - [Authentication](#authentication)
 - [Passing tool arguments](#passing-tool-arguments)
 - [Output format](#output-format)
+- [Scripting & JSON extraction](#scripting--json-extraction)
 - [Session-coupled flows: `--cookie-jar`](#session-coupled-flows---cookie-jar)
 - [Request tracking: `--client-document-id`](#request-tracking---client-document-id)
 - [Recipes](#recipes)
@@ -33,14 +34,14 @@ Internally, CLI mode reuses the same tool registry, Zod input validation, respon
 
 Use CLI mode when:
 
-- You want to call **one** tool and pipe the result somewhere (`jq`, `grep`, another script).
+- **An LLM agent** drives operations by shelling out to the binary (the primary, agent-first case) — it reads the default markdown output directly, no JSON tooling needed.
 - You're building **CI/CD** automation (deploy a project, run tests, check status).
 - You're **debugging** a single API call without launching Claude Desktop / Cursor.
-- You want to **integrate** OpenL Studio into shell scripts, cron jobs, or Makefiles.
+- You want to **integrate** OpenL Studio into shell scripts, cron jobs, or Makefiles — extracting fields with `jq`/`grep` (request `response_format:"json"` for these; see [Scripting & JSON extraction](#scripting--json-extraction)).
 
 Use MCP mode (the default — pass no arguments) when:
 
-- An LLM client (Claude Desktop, Cursor) drives the session.
+- An MCP client (Claude Desktop, Cursor) drives the session over the MCP protocol.
 - You need **multi-turn** conversations where Claude chooses tools dynamically.
 - You're walking through a stateful flow that benefits from session continuity (although `--cookie-jar` covers most of this in CLI mode too — see below).
 
@@ -272,6 +273,31 @@ The tool's text payload is written **as-is** to stdout. A trailing newline is ad
 
 ---
 
+## Scripting & JSON extraction
+
+This section is for the **secondary audience** — human operators and CI/CD pipelines that extract specific fields. An LLM agent (the primary audience) reads the default markdown directly and never needs `jq`.
+
+The rule of thumb: **whenever you pipe into `jq`, request `response_format:"json"`** — otherwise `jq` receives markdown and fails.
+
+```bash
+# ✅ Correct — explicit json, then jq
+npx -y openl-mcp-server openl_list_projects '{"response_format":"json"}' \
+  | jq '.data[].name'
+
+# ❌ Wrong — default markdown isn't JSON, jq errors out
+npx -y openl-mcp-server openl_list_projects | jq '.data[].name'
+```
+
+The one exception is `--list-tools`, which is **always** JSON regardless of `response_format` (it's the machine-readable discovery endpoint):
+
+```bash
+npx -y openl-mcp-server --list-tools | jq '.[].name'
+```
+
+See [Recipes](#recipes) below for end-to-end scripting patterns.
+
+---
+
 ## Session-coupled flows: `--cookie-jar`
 
 A few OpenL Studio APIs — notably the **trace** family — store state on the server keyed by `JSESSIONID`. `openl_start_trace` doesn't return a trace ID; the server identifies the trace through the session cookie set in the response. Subsequent `openl_get_trace_nodes`, `openl_get_trace_node_details`, etc. must present the **same** cookie.
@@ -332,6 +358,8 @@ The value is added as a header to every HTTP request the CLI makes during that i
 ---
 
 ## Recipes
+
+Shell/CI patterns for the secondary (human/scripting) audience. They request `response_format:"json"` where output is piped into `jq` — see [Scripting & JSON extraction](#scripting--json-extraction).
 
 ### List projects with status `OPENED`, project name only
 
