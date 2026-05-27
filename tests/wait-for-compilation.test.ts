@@ -83,6 +83,7 @@ function makeClient(
     openProject,
     getBaseUrl: () => "http://localhost:8080/rest",
     getSessionCookie: () => "abc123",
+    getAuthorizationHeader: () => "Basic YWRtaW46YWRtaW4=",
   } as unknown as OpenLClient;
   return { client, getProjectStatus, getProject, switchBranch, openProject };
 }

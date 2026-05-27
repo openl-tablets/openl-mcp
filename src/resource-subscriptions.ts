@@ -152,6 +152,7 @@ export class ResourceSubscriptionManager {
     const stomp = await this.subscribeImpl({
       studioBaseUrl: this.client.getBaseUrl(),
       cookieHeader: `JSESSIONID=${cookie}`,
+      authorizationHeader: this.client.getAuthorizationHeader(),
       projectId: parsed.projectId,
       branch: branchForStomp,
       reconnectDelay: this.reconnectDelayMs,

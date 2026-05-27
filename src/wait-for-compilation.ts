@@ -136,6 +136,7 @@ export async function waitForCompilation(
     subscription = await subscribeImpl({
       studioBaseUrl: client.getBaseUrl(),
       cookieHeader: `JSESSIONID=${cookie}`,
+      authorizationHeader: client.getAuthorizationHeader(),
       projectId,
       branch: actualBranch,
       onMessage: handleMessage,

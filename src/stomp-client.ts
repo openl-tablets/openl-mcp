@@ -34,8 +34,25 @@ function debug(message: string, context?: Record<string, unknown>): void {
 export interface SubscribeProjectStatusOpts {
   /** Studio base URL (e.g. `http://host.docker.internal:8080/rest`). The `/rest` segment is stripped before appending `/ws`. */
   studioBaseUrl: string;
-  /** Full `Cookie` header value, e.g. `JSESSIONID=abc123`. Required — the studio authenticates STOMP via the HTTP session cookie. */
+  /**
+   * Full `Cookie` header value, e.g. `JSESSIONID=abc123`. Carries per-session
+   * state (compile registry, workspace) when the studio's REST chain saves a
+   * session — required so the same studio session services both the seed
+   * HTTP fetch and the WS-side subscription state.
+   */
   cookieHeader: string;
+  /**
+   * Optional `Authorization` header value to attach to the WS upgrade
+   * request (e.g. `"Basic YWRtaW46YWRtaW4="` or `"Token openl_pat_…"`).
+   * When present, the studio's REST filter chain authenticates the upgrade
+   * the same way it authenticates every `/rest/*` request — the resulting
+   * principal propagates to the WS session via Spring's
+   * `DefaultHandshakeHandler.determineUser`, which lets STOMP `SUBSCRIBE`
+   * frames on `/user/topic/...` pass `AuthorizationChannelInterceptor`'s
+   * `.authenticated()` check. Without it, the WS session is anonymous and
+   * subscribes to user-routed destinations are rejected.
+   */
+  authorizationHeader?: string;
   /** Already-decoded project identifier. URL-encoded here for the destination path. */
   projectId: string;
   /** Already-decoded branch name. Optional — when omitted, subscribes to the no-branch destination. */
@@ -83,13 +100,18 @@ export async function subscribeProjectStatus(
 
   const client = new Client({
     webSocketFactory: () => {
-      debug("ws.connecting", { wsUrl });
+      const headers: Record<string, string> = { Cookie: opts.cookieHeader };
+      if (opts.authorizationHeader) {
+        headers.Authorization = opts.authorizationHeader;
+      }
+      debug("ws.connecting", {
+        wsUrl,
+        hasAuthorization: Boolean(opts.authorizationHeader),
+      });
       // Node's `ws` accepts a `headers` option on construction; the browser
       // WebSocket does not. The `IStompSocket` interface is structurally
       // compatible — cast through `unknown` to satisfy the SDK's type.
-      return new WebSocket(wsUrl, {
-        headers: { Cookie: opts.cookieHeader },
-      }) as unknown as WebSocket;
+      return new WebSocket(wsUrl, { headers }) as unknown as WebSocket;
     },
     reconnectDelay: opts.reconnectDelay ?? 0,
     heartbeatIncoming: 10_000,
