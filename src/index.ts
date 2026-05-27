@@ -20,7 +20,9 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
+  CompleteRequestSchema,
   ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
   ListPromptsRequestSchema,
@@ -39,6 +41,11 @@ import { OpenLClient } from "./client.js";
 import { SERVER_INFO } from "./constants.js";
 import { PROMPTS, loadPromptContent, getPromptDefinition } from "./prompts-registry.js";
 import { registerAllTools, getAllTools, executeTool } from "./tool-handlers.js";
+import {
+  STATIC_RESOURCES,
+  RESOURCE_TEMPLATES,
+  handleCompleteRequest,
+} from "./resources-catalog.js";
 import { ResourceSubscriptionManager } from "./resource-subscriptions.js";
 import { safeStringify, sanitizeError } from "./utils.js";
 import type * as Types from "./types.js";
@@ -76,6 +83,9 @@ class OpenLMCPServer {
           // notifications/resources/updated for `openl://status/...` URIs.
           resources: { subscribe: true },
           prompts: {},
+          // Advertise `completion/complete` so clients offer inline
+          // suggestions for {projectId}/{branch} in resource templates.
+          completions: {},
         },
       }
     );
@@ -130,65 +140,27 @@ class OpenLMCPServer {
       return result as any; // Type cast needed due to MCP SDK generic return type
     });
 
-    // List available resources
+    // List available resources — concrete (non-parameterized) URIs only.
+    // Parameterized URIs live in `resources/templates/list` per the MCP spec
+    // (see resources-catalog.ts).
     this.server.setRequestHandler(ListResourcesRequestSchema, async () => ({
-      resources: [
-        {
-          uri: "openl://repositories",
-          name: "OpenL Repositories",
-          description: "All design repositories in OpenL Studio",
-          mimeType: "application/json",
-        },
-        {
-          uri: "openl://projects",
-          name: "OpenL Projects",
-          description: "All projects across all repositories",
-          mimeType: "application/json",
-        },
-        {
-          uri: "openl://projects/{projectId}",
-          name: "OpenL Project Details",
-          description: "Get details for a specific project (use projectId from openl_list_projects)",
-          mimeType: "application/json",
-        },
-        {
-          uri: "openl://projects/{projectId}/tables",
-          name: "Project Tables",
-          description: "List all tables in a project",
-          mimeType: "application/json",
-        },
-        {
-          uri: "openl://projects/{projectId}/tables/{tableId}",
-          name: "Table Details",
-          description: "Get details for a specific table",
-          mimeType: "application/json",
-        },
-        {
-          uri: "openl://projects/{projectId}/history",
-          name: "Project History",
-          description: "Get Git commit history for a project",
-          mimeType: "application/json",
-        },
-        {
-          uri: "openl://status/{projectId}/{branch}",
-          name: "OpenL Project Status",
-          description: "Post-compilation project status: compile state, diagnostics, pending changes. Branch segment is optional (omit for non-branch repositories and repository 'local').",
-          mimeType: "application/json",
-        },
-        {
-          uri: "openl://projects/{projectId}/files/{filePath}",
-          name: "Project File",
-          description: "Download a file from a project",
-          mimeType: "application/octet-stream",
-        },
-        {
-          uri: "openl://deployments",
-          name: "OpenL Deployments",
-          description: "All deployment repositories and deployed projects",
-          mimeType: "application/json",
-        },
-      ],
+      resources: STATIC_RESOURCES,
     }));
+
+    // List available resource templates — URIs with `{var}` placeholders. The
+    // client fills the variables (often with help from `completion/complete`)
+    // before issuing the resulting concrete URI to read/subscribe.
+    this.server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
+      resourceTemplates: RESOURCE_TEMPLATES,
+    }));
+
+    // Argument autocomplete for resource templates — answers "which projectIds
+    // exist?" / "which branches does this project have?" by hitting the OpenL
+    // backend. Backend errors are swallowed into the empty result so a slow
+    // studio doesn't surface as a red error in the picker.
+    this.server.setRequestHandler(CompleteRequestSchema, async (request) =>
+      handleCompleteRequest(this.client, request.params)
+    );
 
     // Handle resource reads
     this.server.setRequestHandler(ReadResourceRequestSchema, async (request) =>

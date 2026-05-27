@@ -26,7 +26,9 @@ import { SERVER_INFO } from './constants.js';
 import { PROMPTS, loadPromptContent, getPromptDefinition } from './prompts-registry.js';
 import {
   CallToolRequestSchema,
+  CompleteRequestSchema,
   ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
   ListPromptsRequestSchema,
@@ -36,6 +38,11 @@ import {
   ErrorCode,
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
+import {
+  STATIC_RESOURCES,
+  RESOURCE_TEMPLATES,
+  handleCompleteRequest,
+} from './resources-catalog.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -159,6 +166,9 @@ async function initializeMCPServer(): Promise<void> {
           // resource via STOMP — see resource-subscriptions.ts).
           resources: { subscribe: true },
           prompts: {},
+          // Advertise `completion/complete` so clients offer inline
+          // suggestions for {projectId}/{branch} in resource templates.
+          completions: {},
         },
       }
     );
@@ -187,40 +197,16 @@ async function initializeMCPServer(): Promise<void> {
   });
 
   mcpServer.setRequestHandler(ListResourcesRequestSchema, async () => ({
-    resources: [
-      {
-        uri: "openl://repositories",
-        name: "OpenL Repositories",
-        description: "All design repositories in OpenL Studio",
-        mimeType: "application/json",
-      },
-      {
-        uri: "openl://projects",
-        name: "OpenL Projects",
-        description: "All projects across all repositories",
-        mimeType: "application/json",
-      },
-      {
-        uri: "openl://projects/{projectId}",
-        name: "OpenL Project Details",
-        description: "Get details for a specific project",
-        mimeType: "application/json",
-      },
-      {
-        uri: "openl://status/{projectId}/{branch}",
-        name: "OpenL Project Status",
-        description:
-          "Post-compilation project status: compile state, diagnostics, pending changes. Branch segment is optional. Supports resources/subscribe — emits notifications/resources/updated whenever the studio publishes a status change on its STOMP topic.",
-        mimeType: "application/json",
-      },
-      {
-        uri: "openl://deployments",
-        name: "OpenL Deployments",
-        description: "All deployment repositories and deployed projects",
-        mimeType: "application/json",
-      },
-    ],
+    resources: STATIC_RESOURCES,
   }));
+
+  mcpServer.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
+    resourceTemplates: RESOURCE_TEMPLATES,
+  }));
+
+  mcpServer.setRequestHandler(CompleteRequestSchema, async (request) =>
+    handleCompleteRequest(getDefaultClientOrThrow(), request.params)
+  );
 
   // Handle resource reads
   mcpServer.setRequestHandler(ReadResourceRequestSchema, async (request) => {
@@ -291,40 +277,16 @@ function setupSessionHandlers(
   });
 
   server.setRequestHandler(ListResourcesRequestSchema, async () => ({
-    resources: [
-      {
-        uri: "openl://repositories",
-        name: "OpenL Repositories",
-        description: "All design repositories in OpenL Studio",
-        mimeType: "application/json",
-      },
-      {
-        uri: "openl://projects",
-        name: "OpenL Projects",
-        description: "All projects across all repositories",
-        mimeType: "application/json",
-      },
-      {
-        uri: "openl://projects/{projectId}",
-        name: "OpenL Project Details",
-        description: "Get details for a specific project",
-        mimeType: "application/json",
-      },
-      {
-        uri: "openl://status/{projectId}/{branch}",
-        name: "OpenL Project Status",
-        description:
-          "Post-compilation project status: compile state, diagnostics, pending changes. Branch segment is optional (omit for non-branch repositories and repository 'local'). Supports resources/subscribe — emits notifications/resources/updated whenever the studio publishes a status change on its STOMP topic.",
-        mimeType: "application/json",
-      },
-      {
-        uri: "openl://deployments",
-        name: "OpenL Deployments",
-        description: "All deployment repositories and deployed projects",
-        mimeType: "application/json",
-      },
-    ],
+    resources: STATIC_RESOURCES,
   }));
+
+  server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
+    resourceTemplates: RESOURCE_TEMPLATES,
+  }));
+
+  server.setRequestHandler(CompleteRequestSchema, async (request) =>
+    handleCompleteRequest(client, request.params)
+  );
 
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     return handleResourceRead(request.params.uri, client);
@@ -398,6 +360,8 @@ function createSessionServer(client: OpenLClient): {
         // `subscribe: true` enables resources/subscribe + notifications/resources/updated.
         resources: { subscribe: true },
         prompts: {},
+        // Per-session completion handler — backed by this session's OpenL client.
+        completions: {},
       },
     }
   );
