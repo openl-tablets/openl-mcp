@@ -30,8 +30,8 @@ export const ResponseFormat = z
 
 // Pagination parameters
 export const PaginationParams = z.object({
-  limit: z.number().int().positive().max(200).optional().default(50),
-  offset: z.number().int().nonnegative().optional().default(0),
+  limit: z.number().int().positive().max(200).default(50).optional(),
+  offset: z.number().int().nonnegative().default(0).optional(),
 });
 
 // Project ID: opaque backend identifier from openl_list_projects() response
@@ -65,10 +65,10 @@ export const projectStatusSchema = z.object({
   branch: branchNameSchema.optional().describe(
     "Optional branch name. When provided, must match the project's currently opened branch (the backend returns 409 on mismatch). Omit for repositories that do not support branches and for projects with repository 'local'."
   ),
-  wait: z.boolean().optional().default(false).describe(
+  wait: z.boolean().default(false).optional().describe(
     "When true, the tool subscribes to the studio's real-time status topic and blocks until compileState is terminal (ok/warnings/errors), emitting MCP progress notifications along the way. Use this immediately after an edit (openl_update_table/openl_append_table/openl_upload_file) to get the post-compile state in one call instead of polling. If the initial state is already terminal, returns immediately. Default false (one-shot snapshot)."
   ),
-  timeoutMs: z.number().int().positive().max(600000).optional().default(120000).describe(
+  timeoutMs: z.number().int().positive().max(600000).default(120000).optional().describe(
     "Max time in milliseconds to wait for compilation when wait=true. On expiry, the last-seen status is returned (no error). Default 120000 (2 minutes). Cap 600000 (10 minutes). Ignored when wait=false."
   ),
   severity: z.array(z.enum(["ERROR", "WARN", "INFO"])).optional().describe(
@@ -422,20 +422,20 @@ export const startProjectTestsSchema = z.object({
 
 export const getTestResultsSummarySchema = z.object({
   projectId: projectIdSchema,
-  failures: z.number().int().positive().optional().default(5).describe("Number of failed test units to include in the summary (default: 5, min: 1)"),
-  unpaged: z.boolean().optional().default(false).describe("Return all results without pagination"),
+  failures: z.number().int().positive().default(5).optional().describe("Number of failed test units to include in the summary (default: 5, min: 1)"),
+  unpaged: z.boolean().default(false).optional().describe("Return all results without pagination"),
   response_format: ResponseFormat.optional(),
 }).strict();
 
 export const getTestResultsSchema = z.object({
   projectId: projectIdSchema,
   failuresOnly: z.boolean().optional().describe("Show only failed tests (default: false)"),
-  failures: z.number().int().positive().optional().default(5).describe("Number of failed test units to include in the summary (default: 5, min: 1)"),
+  failures: z.number().int().positive().default(5).optional().describe("Number of failed test units to include in the summary (default: 5, min: 1)"),
   page: z.number().int().nonnegative().optional().describe("Page number (0-based). Mutually exclusive with offset"),
   offset: z.number().int().nonnegative().optional().describe("Offset for pagination. Mutually exclusive with page"),
   size: z.number().int().positive().optional().describe("Page size (number of results per page)"),
   limit: z.number().int().positive().max(200).optional().describe("Page size (alias for size, maps to size parameter)"),
-  unpaged: z.boolean().optional().default(false).describe("Return all results without pagination. Mutually exclusive with page, offset, size, and limit"),
+  unpaged: z.boolean().default(false).optional().describe("Return all results without pagination. Mutually exclusive with page, offset, size, and limit"),
   response_format: ResponseFormat.optional(),
 }).strict().refine(
   (data) => {
@@ -458,12 +458,12 @@ export const getTestResultsByTableSchema = z.object({
   projectId: projectIdSchema,
   tableId: tableIdSchema.describe("Table ID to filter test results for a specific table"),
   failuresOnly: z.boolean().optional().describe("Show only failed tests (default: false)"),
-  failures: z.number().int().positive().optional().default(5).describe("Number of failed test units to include in the summary (default: 5, min: 1)"),
+  failures: z.number().int().positive().default(5).optional().describe("Number of failed test units to include in the summary (default: 5, min: 1)"),
   page: z.number().int().nonnegative().optional().describe("Page number (0-based). Mutually exclusive with offset"),
   offset: z.number().int().nonnegative().optional().describe("Offset for pagination. Mutually exclusive with page"),
   size: z.number().int().positive().optional().describe("Page size (number of results per page)"),
   limit: z.number().int().positive().max(200).optional().describe("Page size (alias for size, maps to size parameter)"),
-  unpaged: z.boolean().optional().default(false).describe("Return all results without pagination. Mutually exclusive with page, offset, size, and limit"),
+  unpaged: z.boolean().default(false).optional().describe("Return all results without pagination. Mutually exclusive with page, offset, size, and limit"),
   response_format: ResponseFormat.optional(),
 }).strict().refine(
   (data) => {

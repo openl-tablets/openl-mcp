@@ -8,6 +8,7 @@ Built with MCP SDK v1.26+ featuring type-safe validation (Zod) and comprehensive
 
 - 🚀 [Quick Start](docs/getting-started/quick-start.md) - Get up and running in 5 minutes
 - ⚙️ [MCP Connection Guide](docs/setup/mcp-connection-guide.md) - Configure Claude Desktop, Cursor, or Docker
+- 🖥️ [CLI Guide](README.cli.md) - Use the same binary as a shell tool (no MCP client needed)
 - 📖 [Usage Examples](docs/guides/examples.md) - Learn how to use MCP tools
 - 🔐 [Authentication](docs/guides/authentication.md) - Authentication setup
 - 🐛 [Troubleshooting](docs/guides/troubleshooting.md) - Common issues and solutions
@@ -17,7 +18,9 @@ Built with MCP SDK v1.26+ featuring type-safe validation (Zod) and comprehensive
 
 The MCP server is published as an npm package: [`openl-mcp-server`](https://www.npmjs.com/package/openl-mcp-server) — stdio transport via `npx` for Claude Desktop / Cursor / VS Code.
 
-For details see [README.npm.md](README.npm.md).
+The same binary also doubles as a **CLI** for direct API calls without an MCP client (`npx -y openl-mcp-server <tool> '<json-args>'`) — see [README.cli.md](README.cli.md) for the full CLI guide.
+
+For npm package details see [README.npm.md](README.npm.md).
 
 ## Quick Start
 
@@ -157,6 +160,7 @@ openl-mcp/
 - [Debug Personal Access Token](docs/guides/debug-pat.md) - PAT debugging guide
 - 🚀 [Quick Start](docs/getting-started/quick-start.md) - Get up and running in 5 minutes
 - ⚙️ [MCP Connection Guide](docs/setup/mcp-connection-guide.md) - Configure Claude Desktop, Cursor, or Docker
+- 🖥️ [CLI Guide](README.cli.md) - Use the same binary as a shell tool (no MCP client needed)
 - 📖 [Usage Examples](docs/guides/examples.md) - Learn how to use MCP tools
 - 🔐 [Authentication](docs/guides/authentication.md) - Authentication setup
 - 🐛 [Troubleshooting](docs/guides/troubleshooting.md) - Common issues and solutions

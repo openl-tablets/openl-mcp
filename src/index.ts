@@ -512,10 +512,32 @@ export async function loadConfigFromEnv(): Promise<Types.OpenLConfig> {
 }
 
 /**
- * Main entry point
+ * Main entry point.
+ *
+ * Dispatches based on how the binary was invoked:
+ * - No CLI arguments → start MCP server on stdio (legacy behavior for
+ *   Claude Desktop / Cursor / other MCP clients).
+ * - Any CLI arguments → CLI mode (direct API invocation via `executeTool`).
+ *   See `src/cli.ts`.
  */
 async function main(): Promise<void> {
   try {
+    const cliArgs = process.argv.slice(2);
+    if (cliArgs.length > 0) {
+      // EPIPE handling: when our stdout is piped into something that exits
+      // early (`npx … | head -1`), the next write would throw EPIPE and crash
+      // the process. Treat it as a successful early termination — exit 0.
+      // See https://github.com/nodejs/node-v0.x-archive/issues/3211
+      process.stdout.on("error", (err: NodeJS.ErrnoException) => {
+        if (err.code === "EPIPE") process.exit(0);
+        throw err;
+      });
+
+      const { runCli } = await import("./cli.js");
+      const code = await runCli({ argv: cliArgs });
+      process.exit(code);
+    }
+
     const config = await loadConfigFromEnv();
     const server = new OpenLMCPServer(config);
     await server.start();

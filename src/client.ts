@@ -207,10 +207,17 @@ export class OpenLClient {
   }
 
   /**
-   * Current `JSESSIONID` captured from a prior HTTP response, or `null` if none has
-   * been seen yet. Exposed so the STOMP transport can reuse the same session for the
-   * WebSocket handshake (the studio authenticates STOMP via the HTTP session cookie,
-   * not via STOMP CONNECT headers).
+   * Current `JSESSIONID` captured from a prior HTTP response, or `null` if none
+   * has been seen yet. Two consumers rely on this:
+   *
+   * 1. The STOMP transport, which reuses the same session for the WebSocket
+   *    handshake (the studio authenticates STOMP via the HTTP session cookie,
+   *    not via STOMP CONNECT headers).
+   * 2. The CLI `--cookie-jar` flag, which round-trips this value through a file
+   *    so session-coupled flows (notably trace: `startTrace` stores state on
+   *    the server keyed by JSESSIONID; subsequent `getTraceNodes` /
+   *    `getTraceNodeDetails` calls must present the same cookie) work across
+   *    separate `npx` invocations.
    */
   public getSessionCookie(): string | null {
     return this.jsessionId;
@@ -221,6 +228,17 @@ export class OpenLClient {
    */
   public getAuthMethod(): string {
     return this.authManager.getAuthMethod();
+  }
+
+  /**
+   * Restore a previously captured JSESSIONID so subsequent requests reuse
+   * an existing server-side session. Pair with `getSessionCookie()` after
+   * a request to round-trip the session through a file or other store.
+   *
+   * @param value - JSESSIONID value (without the `JSESSIONID=` prefix), or `null` to clear
+   */
+  public setSessionCookie(value: string | null): void {
+    this.jsessionId = value;
   }
 
   /**
