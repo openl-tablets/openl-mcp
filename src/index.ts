@@ -20,11 +20,15 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
+  CompleteRequestSchema,
   ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
   ListPromptsRequestSchema,
   GetPromptRequestSchema,
+  SubscribeRequestSchema,
+  UnsubscribeRequestSchema,
   ErrorCode,
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
@@ -37,6 +41,12 @@ import { OpenLClient } from "./client.js";
 import { SERVER_INFO } from "./constants.js";
 import { PROMPTS, loadPromptContent, getPromptDefinition } from "./prompts-registry.js";
 import { registerAllTools, getAllTools, executeTool } from "./tool-handlers.js";
+import {
+  STATIC_RESOURCES,
+  RESOURCE_TEMPLATES,
+  handleCompleteRequest,
+} from "./resources-catalog.js";
+import { ResourceSubscriptionManager } from "./resource-subscriptions.js";
 import { safeStringify, sanitizeError } from "./utils.js";
 import type * as Types from "./types.js";
 
@@ -48,6 +58,7 @@ import type * as Types from "./types.js";
 class OpenLMCPServer {
   private server: Server;
   private client: OpenLClient;
+  private subscriptions: ResourceSubscriptionManager;
 
   /**
    * Create a new MCP server instance
@@ -67,8 +78,14 @@ class OpenLMCPServer {
       {
         capabilities: {
           tools: {},
-          resources: {},
+          // Declare `subscribe: true` so clients see the resource-subscription
+          // capability and start sending resources/subscribe + receiving
+          // notifications/resources/updated for `openl://status/...` URIs.
+          resources: { subscribe: true },
           prompts: {},
+          // Advertise `completion/complete` so clients offer inline
+          // suggestions for {projectId}/{branch} in resource templates.
+          completions: {},
         },
       }
     );
@@ -76,7 +93,29 @@ class OpenLMCPServer {
     // Initialize all tool handlers
     registerAllTools(this.server, this.client);
 
+    // Per-process subscription manager — stdio is single-session, so one
+    // manager is enough. The Server's `sendResourceUpdated` is bound to the
+    // single connected stdio transport.
+    this.subscriptions = new ResourceSubscriptionManager(
+      this.client,
+      (uri) => this.server.sendResourceUpdated({ uri }),
+    );
+
     this.setupHandlers();
+    this.setupShutdownHooks();
+  }
+
+  /**
+   * Tear down all STOMP subscriptions cleanly on process exit so the studio
+   * isn't left with dangling WS sessions.
+   */
+  private setupShutdownHooks(): void {
+    const shutdown = (signal: string): void => {
+      console.error(`[OpenLMCP] received ${signal}, closing ${this.subscriptions.size} subscription(s)…`);
+      void this.subscriptions.closeAll().finally(() => process.exit(0));
+    };
+    process.once("SIGINT", () => shutdown("SIGINT"));
+    process.once("SIGTERM", () => shutdown("SIGTERM"));
   }
 
   /**
@@ -94,70 +133,59 @@ class OpenLMCPServer {
       })),
     }));
 
-    // Handle tool execution
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      const result = await executeTool(request.params.name, request.params.arguments, this.client);
+    // Handle tool execution. `extra` carries the SDK request context (progressToken,
+    // per-session sendNotification, AbortSignal) that long-running tools need.
+    this.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+      const result = await executeTool(request.params.name, request.params.arguments, this.client, extra);
       return result as any; // Type cast needed due to MCP SDK generic return type
     });
 
-    // List available resources
+    // List available resources — concrete (non-parameterized) URIs only.
+    // Parameterized URIs live in `resources/templates/list` per the MCP spec
+    // (see resources-catalog.ts).
     this.server.setRequestHandler(ListResourcesRequestSchema, async () => ({
-      resources: [
-        {
-          uri: "openl://repositories",
-          name: "OpenL Repositories",
-          description: "All design repositories in OpenL Studio",
-          mimeType: "application/json",
-        },
-        {
-          uri: "openl://projects",
-          name: "OpenL Projects",
-          description: "All projects across all repositories",
-          mimeType: "application/json",
-        },
-        {
-          uri: "openl://projects/{projectId}",
-          name: "OpenL Project Details",
-          description: "Get details for a specific project (use projectId from openl_list_projects)",
-          mimeType: "application/json",
-        },
-        {
-          uri: "openl://projects/{projectId}/tables",
-          name: "Project Tables",
-          description: "List all tables in a project",
-          mimeType: "application/json",
-        },
-        {
-          uri: "openl://projects/{projectId}/tables/{tableId}",
-          name: "Table Details",
-          description: "Get details for a specific table",
-          mimeType: "application/json",
-        },
-        {
-          uri: "openl://projects/{projectId}/history",
-          name: "Project History",
-          description: "Get Git commit history for a project",
-          mimeType: "application/json",
-        },
-        {
-          uri: "openl://projects/{projectId}/files/{filePath}",
-          name: "Project File",
-          description: "Download a file from a project",
-          mimeType: "application/octet-stream",
-        },
-        {
-          uri: "openl://deployments",
-          name: "OpenL Deployments",
-          description: "All deployment repositories and deployed projects",
-          mimeType: "application/json",
-        },
-      ],
+      resources: STATIC_RESOURCES,
     }));
+
+    // List available resource templates — URIs with `{var}` placeholders. The
+    // client fills the variables (often with help from `completion/complete`)
+    // before issuing the resulting concrete URI to read/subscribe.
+    this.server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
+      resourceTemplates: RESOURCE_TEMPLATES,
+    }));
+
+    // Argument autocomplete for resource templates — answers "which projectIds
+    // exist?" / "which branches does this project have?" by hitting the OpenL
+    // backend. Backend errors are swallowed into the empty result so a slow
+    // studio doesn't surface as a red error in the picker.
+    this.server.setRequestHandler(CompleteRequestSchema, async (request) =>
+      handleCompleteRequest(this.client, request.params)
+    );
 
     // Handle resource reads
     this.server.setRequestHandler(ReadResourceRequestSchema, async (request) =>
       this.handleResourceRead(request.params.uri)
     );
+
+    // resources/subscribe — wire status URIs to STOMP-backed notifications.
+    // Other URIs are rejected by `ResourceSubscriptionManager.subscribe`.
+    this.server.setRequestHandler(SubscribeRequestSchema, async (request) => {
+      try {
+        await this.subscriptions.subscribe(request.params.uri);
+      } catch (err) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          `Failed to subscribe to ${request.params.uri}: ${sanitizeError(err)}`,
+        );
+      }
+      return {};
+    });
+
+    // resources/unsubscribe — idempotent per spec; missing URIs succeed silently.
+    this.server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
+      await this.subscriptions.unsubscribe(request.params.uri);
+      return {};
+    });
 
     // List available prompts
     this.server.setRequestHandler(ListPromptsRequestSchema, async () => ({
@@ -316,6 +344,19 @@ class OpenLMCPServer {
 
         case "deployments": {
           data = await this.client.listDeployments();
+          break;
+        }
+
+        case "status": {
+          if (!path) {
+            throw new McpError(ErrorCode.InvalidRequest, `Project ID is required: ${uri}`);
+          }
+          const statusMatch = path.match(/^([^\/]+)(?:\/(.+))?$/);
+          if (!statusMatch) {
+            throw new McpError(ErrorCode.InvalidRequest, `Invalid status URI: ${uri}`);
+          }
+          const [, statusProjectId, statusBranch] = statusMatch;
+          data = await this.client.getProjectStatus(statusProjectId, statusBranch);
           break;
         }
 

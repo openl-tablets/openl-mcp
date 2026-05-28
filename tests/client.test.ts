@@ -123,6 +123,39 @@ describe("OpenLClient", () => {
         expect(result).toEqual([]);
       });
     });
+
+    describe("getRepositoryIdByName (id-or-name, case-insensitive)", () => {
+      const repos: Repository[] = [
+        { id: "design", name: "Design Repository" },
+        { id: "production", name: "Production Repository" },
+      ];
+
+      beforeEach(() => {
+        mockAxios.onGet("/repos").reply(200, repos);
+      });
+
+      it("resolves exact id", async () => {
+        expect(await client.getRepositoryIdByName("design")).toBe("design");
+      });
+
+      it("resolves exact display name", async () => {
+        expect(await client.getRepositoryIdByName("Design Repository")).toBe("design");
+      });
+
+      it("resolves case-insensitive id", async () => {
+        expect(await client.getRepositoryIdByName("DESIGN")).toBe("design");
+      });
+
+      it("resolves case-insensitive display name", async () => {
+        expect(await client.getRepositoryIdByName("design repository")).toBe("design");
+      });
+
+      it("throws with a helpful message listing id + name pairs when no match", async () => {
+        await expect(client.getRepositoryIdByName("ghost")).rejects.toThrow(
+          /Repository "ghost" not found.*design \(Design Repository\), production \(Production Repository\)/,
+        );
+      });
+    });
   });
 
   describe("Project Management", () => {
@@ -246,6 +279,104 @@ describe("OpenLClient", () => {
         mockAxios.onGet(`/projects/${encodedProjectId}`).reply(404);
 
         await expect(client.getProject("invalid")).rejects.toThrow();
+      });
+    });
+
+    describe("getSessionCookie", () => {
+      it("returns null before any HTTP call has captured a Set-Cookie", () => {
+        expect(client.getSessionCookie()).toBeNull();
+      });
+
+      it("returns the JSESSIONID value extracted from a response Set-Cookie header", async () => {
+        // The cookie interceptor parses single-string or array forms of set-cookie.
+        mockAxios.onGet("/repos").reply(
+          200,
+          [],
+          { "set-cookie": "JSESSIONID=abc123def; Path=/; HttpOnly" },
+        );
+        await client.listRepositories();
+        expect(client.getSessionCookie()).toBe("abc123def");
+      });
+
+      it("survives subsequent responses that don't include a new cookie", async () => {
+        mockAxios.onGet("/repos").reply(
+          200,
+          [],
+          { "set-cookie": "JSESSIONID=stay-put; Path=/" },
+        );
+        await client.listRepositories();
+        // A second call without set-cookie should leave the stored value alone.
+        mockAxios.onGet("/repos").reply(200, []);
+        await client.listRepositories(false);
+        expect(client.getSessionCookie()).toBe("stay-put");
+      });
+    });
+
+    describe("getProjectStatus", () => {
+      const projectId = "design-AutoInsurance";
+      const encodedProjectId = encodeURIComponent(projectId);
+
+      const okFixture: Types.ProjectStatusView = {
+        projectId: { repository: "design", projectName: "AutoInsurance" },
+        branch: "main",
+        revision: "abc123",
+        compileState: "ok",
+        compilation: {
+          messages: { items: [], total: 0, errors: 0, warnings: 0 },
+          modules: { total: 1, compiled: 1, compiledModules: ["Main"] },
+          tests: { total: 5 },
+        },
+      };
+
+      const errorsFixture: Types.ProjectStatusView = {
+        projectId: { repository: "design", projectName: "AutoInsurance" },
+        branch: "main",
+        compileState: "errors",
+        compilation: {
+          messages: {
+            items: [
+              { id: 1, summary: "Datatype 'Driver' not found", severity: "ERROR" },
+              { id: 2, summary: "Unused field 'tmp'", severity: "WARN" },
+            ],
+            total: 2,
+            errors: 1,
+            warnings: 1,
+          },
+          modules: { total: 1, compiled: 0 },
+          tests: { total: 0 },
+        },
+      };
+
+      it("should fetch project status without branch parameter", async () => {
+        mockAxios.onGet(`/projects/${encodedProjectId}/status`).reply(200, okFixture);
+
+        const result = await client.getProjectStatus(projectId);
+        expect(result.compileState).toBe("ok");
+        expect(result.compilation?.modules.compiled).toBe(1);
+        // No query string sent when branch omitted
+        expect(mockAxios.history.get[0].params).toEqual({});
+      });
+
+      it("should pass branch as query parameter when provided", async () => {
+        mockAxios.onGet(`/projects/${encodedProjectId}/status`).reply((config) => {
+          if (config.params?.branch === "main") {
+            return [200, errorsFixture];
+          }
+          return [400, { message: "expected branch=main" }];
+        });
+
+        const result = await client.getProjectStatus(projectId, "main");
+        expect(result.compileState).toBe("errors");
+        expect(result.compilation?.messages.items).toHaveLength(2);
+        expect(mockAxios.history.get[0].params).toEqual({ branch: "main" });
+      });
+
+      it("should surface 409 when branch does not match the opened branch", async () => {
+        mockAxios.onGet(`/projects/${encodedProjectId}/status`).reply(409, {
+          message: "project.branch.mismatch.message",
+        });
+
+        await expect(client.getProjectStatus(projectId, "develop")).rejects.toThrow();
       });
     });
 

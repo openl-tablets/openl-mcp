@@ -13,6 +13,8 @@
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
+import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
+import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
 
 import { OpenLClient } from "./client.js";
 import * as schemas from "./schemas.js";
@@ -20,6 +22,7 @@ import { formatResponse, paginateResults } from "./formatters.js";
 import { validateResponseFormat, validatePagination } from "./validators.js";
 import { logger } from "./logger.js";
 import { isAxiosError, sanitizeError, extractApiErrorInfo, sanitizeJson } from "./utils.js";
+import { waitForCompilation } from "./wait-for-compilation.js";
 import type * as Types from "./types.js";
 
 /**
@@ -30,9 +33,20 @@ interface ToolResponse {
 }
 
 /**
+ * Per-request context the MCP SDK passes to request handlers. Carries the optional
+ * `progressToken` (under `_meta`), a `sendNotification` callback bound to the calling
+ * session's transport, and an `AbortSignal` that fires when the client cancels.
+ */
+export type ToolHandlerExtra = RequestHandlerExtra<ServerRequest, ServerNotification>;
+
+/**
  * Tool handler function type
  */
-type ToolHandler = (args: unknown, client: OpenLClient) => Promise<ToolResponse>;
+type ToolHandler = (
+  args: unknown,
+  client: OpenLClient,
+  extra?: ToolHandlerExtra,
+) => Promise<ToolResponse>;
 
 /**
  * Tool definition with MCP metadata
@@ -96,7 +110,8 @@ export function getAllTools(): Array<Omit<ToolDefinition, "handler">> {
 export async function executeTool(
   name: string,
   args: unknown,
-  client: OpenLClient
+  client: OpenLClient,
+  extra?: ToolHandlerExtra,
 ): Promise<ToolResponse> {
   const tool = toolHandlers.get(name);
   if (!tool) {
@@ -104,7 +119,7 @@ export async function executeTool(
   }
 
   try {
-    return await tool.handler(args, client);
+    return await tool.handler(args, client, extra);
   } catch (error: unknown) {
     throw handleToolError(error, name, args);
   }
@@ -129,7 +144,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "List Design Repositories",
     version: "1.0.0",
     description:
-      "List all design repositories in OpenL Studio. Returns repository information including 'id' (internal identifier) and 'name' (display name). Use the 'name' field when working with repositories in other tools. Example: if response contains {id: 'design-repo', name: 'Design Repository'}, use 'Design Repository' (the name) in other tools like list_projects(repository: 'Design Repository').",
+      "List all design repositories in OpenL Studio. Returns repository information including 'id' (internal identifier) and 'name' (display name). Use the 'name' field when working with repositories in other tools. Either the 'id' or 'name' is accepted by other tools (case-insensitive). The actual values are usually short tokens like 'design' — never invent values such as 'Design Repository' or 'design-repo'.",
     inputSchema: schemas.z.toJSONSchema(
       schemas.z
         .object({
@@ -179,7 +194,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "List Git Branches",
     version: "1.0.0",
     description:
-      "List all Git branches in a repository. Returns branch names and metadata (current branch, commit info). Use this to see available branches before switching or comparing versions. Use repository name (not ID) - e.g., 'Design Repository' instead of 'design-repo'.",
+      "List all Git branches in a repository. Returns branch names and metadata (current branch, commit info). Use this to see available branches before switching or comparing versions. Pass either the id or name from openl_list_repositories() — both are accepted (case-insensitive). Do not invent example values; call openl_list_repositories() first if not in context.",
     inputSchema: schemas.z.toJSONSchema(schemas.listBranchesSchema) as Record<string, unknown>,
     annotations: {
       readOnlyHint: true,
@@ -234,7 +249,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "List Projects",
     version: "1.0.0",
     description:
-      "List all projects with optional filters (repository, status, tags). Returns project names, status (OPENED/CLOSED), metadata, and a convenient 'projectId' field from API to use with other tools. For local-only projects, do not pass repository filter 'local' (it may fail); list projects without that filter and filter results by repository === 'local' client-side. For such projects, open/save/close do not work; table/rule/test tools work without opening. IMPORTANT: The 'projectId' is returned exactly as provided by the API and should be used without modification. Use repository name (not ID) - e.g., 'Design Repository' instead of 'design-repo'. Use this to discover and filter projects.",
+      "List all projects with optional filters (repository, status, tags). Returns project names, status (OPENED/CLOSED), metadata, and a convenient 'projectId' field from API to use with other tools. For local-only projects, do not pass repository filter 'local' (it may fail); list projects without that filter and filter results by repository === 'local' client-side. For such projects, open/save/close do not work; table/rule/test tools work without opening. IMPORTANT: The 'projectId' is returned exactly as provided by the API and should be used without modification. Pass either the id or name from openl_list_repositories() — both are accepted (case-insensitive). Do not invent example values; call openl_list_repositories() first if not in context. Use this to discover and filter projects.",
     inputSchema: schemas.z.toJSONSchema(schemas.listProjectsSchema) as Record<string, unknown>,
     annotations: {
       readOnlyHint: true,
@@ -400,6 +415,85 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
       return {
         content: [{ type: "text", text: formattedResult }],
+      };
+    },
+  });
+
+  registerTool({
+    name: "openl_project_status",
+    title: "Get Project Status",
+    version: "1.0.0",
+    description:
+      "Get the post-compilation status of a project: compile state, diagnostics, pending changes, and module/test summary. Read-only — does not trigger compilation. When wait=true, blocks until compileState is terminal (ok/warnings/errors) and emits MCP progress notifications.",
+    inputSchema: schemas.z.toJSONSchema(schemas.projectStatusSchema) as Record<string, unknown>,
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: true,
+      idempotentHint: true,
+    },
+    handler: async (args, client, extra): Promise<ToolResponse> => {
+      const typedArgs = args as {
+        projectId: string;
+        branch?: string;
+        wait?: boolean;
+        timeoutMs?: number;
+        severity?: ("ERROR" | "WARN" | "INFO")[];
+        maxMessages?: number;
+        response_format?: "json" | "markdown" | "markdown_concise" | "markdown_detailed";
+      };
+
+      if (!typedArgs || !typedArgs.projectId) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          "Missing required argument: projectId. To find valid project IDs, use: openl_list_projects()"
+        );
+      }
+
+      const format = validateResponseFormat(typedArgs.response_format);
+
+      let status: Types.ProjectStatusView;
+      if (typedArgs.wait) {
+        const progressToken = extra?._meta?.progressToken;
+        const sendNotification = extra?.sendNotification;
+        const onProgress =
+          progressToken !== undefined && sendNotification
+            ? (snap: Types.ProjectStatusView) => {
+                // Notification failures are non-fatal — the wait still resolves on the
+                // next terminal STOMP frame regardless of whether the client received
+                // the progress update.
+                const params: {
+                  progressToken: string | number;
+                  progress: number;
+                  total?: number;
+                  message?: string;
+                } = {
+                  progressToken,
+                  progress: snap.compilation?.modules?.compiled ?? 0,
+                  message: progressMessage(snap),
+                };
+                const total = snap.compilation?.modules?.total;
+                if (typeof total === "number" && total > 0) {
+                  params.total = total;
+                }
+                void sendNotification({
+                  method: "notifications/progress",
+                  params,
+                }).catch(() => { /* ignore */ });
+              }
+            : undefined;
+        status = await waitForCompilation(client, typedArgs.projectId, typedArgs.branch, {
+          onProgress,
+          signal: extra?.signal,
+          timeoutMs: typedArgs.timeoutMs,
+        });
+      } else {
+        status = await client.getProjectStatus(typedArgs.projectId, typedArgs.branch);
+      }
+
+      const payload = shapeStatusResponse(status, typedArgs.severity, typedArgs.maxMessages);
+
+      return {
+        content: [{ type: "text", text: formatResponse(payload, format) }],
       };
     },
   });
@@ -1588,7 +1682,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "Get Repository Features",
     version: "1.0.0",
     description:
-      "Get features supported by a design repository (branching, searchable, etc.). Use this to check if a repository supports specific features like branching before performing operations that depend on those features. Use repository name (not ID) - e.g., 'Design Repository' instead of 'design-repo'.",
+      "Get features supported by a design repository (branching, searchable, etc.). Use this to check if a repository supports specific features like branching before performing operations that depend on those features. Pass either the id or name from openl_list_repositories() — both are accepted (case-insensitive). Do not invent example values; call openl_list_repositories() first if not in context.",
     inputSchema: schemas.z.toJSONSchema(schemas.getRepositoryFeaturesSchema) as Record<string, unknown>,
     annotations: {
       readOnlyHint: true,
@@ -1627,7 +1721,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "Get Project Revision History",
     version: "1.0.0",
     description:
-      "Get revision history (commit history) of a project in a design repository. Returns list of revisions with commit hashes, authors, timestamps, and commit types. Supports pagination and filtering by branch and search term. Use repository name (not ID) - e.g., 'Design Repository' instead of 'design-repo'.",
+      "Get revision history (commit history) of a project in a design repository. Returns list of revisions with commit hashes, authors, timestamps, and commit types. Supports pagination and filtering by branch and search term. Pass either the id or name from openl_list_repositories() — both are accepted (case-insensitive). Do not invent example values; call openl_list_repositories() first if not in context.",
     inputSchema: schemas.z.toJSONSchema(schemas.getProjectRevisionsSchema) as Record<string, unknown>,
     annotations: {
       readOnlyHint: true,
@@ -2113,6 +2207,88 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
  * @param toolArgs - Tool arguments that were passed (will be sanitized)
  * @returns McpError with enhanced context
  */
+/**
+ * Severity ordering for `compilation.messages.items`. Anything not recognised
+ * is sorted to the end so unknown severities can't push real ERRORs past a
+ * response-format truncation point.
+ */
+const SEVERITY_RANK: Record<string, number> = { ERROR: 0, WARN: 1, INFO: 2 };
+const UNKNOWN_SEVERITY_RANK = 99;
+
+function severityRank(severity: string | undefined): number {
+  if (!severity) return UNKNOWN_SEVERITY_RANK;
+  return SEVERITY_RANK[severity] ?? UNKNOWN_SEVERITY_RANK;
+}
+
+/**
+ * Apply the response-shaping rules for `openl_project_status`:
+ *
+ *  1. When `compileState === "ok"`, drop the noisy `items[]` list — counts and
+ *     module/test totals are preserved so the caller still sees compile-summary.
+ *  2. Otherwise, sort `items[]` by severity (ERROR → WARN → INFO) so the most
+ *     actionable diagnostics survive the response-format character truncation
+ *     (markdown does a dumb `.slice(0, 25000)` and the backend returns items in
+ *     id-ascending order — without this, ERRORs end up past the cutoff when a
+ *     project has many WARNs).
+ *  3. Optional `severity` filter narrows items to the requested severities.
+ *  4. Optional `maxMessages` caps the (already-sorted) items list.
+ */
+function shapeStatusResponse(
+  status: Types.ProjectStatusView,
+  severityFilter?: ("ERROR" | "WARN" | "INFO")[],
+  maxMessages?: number,
+): Types.ProjectStatusView {
+  if (!status.compilation?.messages) {
+    return status;
+  }
+  if (status.compileState === "ok") {
+    return {
+      ...status,
+      compilation: {
+        ...status.compilation,
+        messages: { ...status.compilation.messages, items: [] },
+      },
+    };
+  }
+  let items = [...(status.compilation.messages.items ?? [])];
+  items.sort((a, b) => severityRank(a.severity) - severityRank(b.severity));
+  if (severityFilter && severityFilter.length > 0) {
+    const allowed = new Set<string>(severityFilter);
+    items = items.filter((m) => m.severity !== undefined && allowed.has(m.severity));
+  }
+  if (typeof maxMessages === "number" && maxMessages > 0 && items.length > maxMessages) {
+    items = items.slice(0, maxMessages);
+  }
+  return {
+    ...status,
+    compilation: {
+      ...status.compilation,
+      messages: { ...status.compilation.messages, items },
+    },
+  };
+}
+
+/**
+ * Build a short human-readable progress message for `notifications/progress`
+ * from a status snapshot. The MCP client typically renders this next to the
+ * progress bar; keep it terse.
+ */
+function progressMessage(status: Types.ProjectStatusView): string {
+  if (status.compileState === "compiling") {
+    const m = status.compilation?.modules;
+    if (m && typeof m.total === "number" && m.total > 0) {
+      return `Compiling — ${m.compiled} / ${m.total} modules`;
+    }
+    return "Compiling…";
+  }
+  if (status.compileState === "idle") {
+    return "Waiting for compilation to start";
+  }
+  // Terminal states aren't normally emitted via onProgress (the wait resolves first),
+  // but include sensible labels just in case.
+  return `Compile state: ${status.compileState}`;
+}
+
 function handleToolError(error: unknown, toolName: string, toolArgs?: unknown): McpError {
   // Enhanced error handling with context
   if (isAxiosError(error)) {

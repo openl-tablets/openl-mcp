@@ -37,7 +37,7 @@ export const PaginationParams = z.object({
 // Project ID: opaque backend identifier from openl_list_projects() response
 export const projectIdSchema = z.string().describe("Project ID returned by backend. Use the exact 'projectId' value from openl_list_projects() response without modification or reformatting.");
 
-export const repositoryNameSchema = z.string().describe("Repository name (display name, not ID). Use the 'name' field from openl_list_repositories() response (e.g., if list_repositories returns {id: 'design-repo', name: 'Design Repository'}, use 'Design Repository' here, NOT 'design-repo').");
+export const repositoryNameSchema = z.string().describe("Repository identifier. Pass either the 'id' or the 'name' field from openl_list_repositories() — the tool accepts both (and is case-insensitive). DO NOT invent values like 'Design Repository' or 'design-repo'; the actual names are typically short tokens (e.g. 'Design'). Always call openl_list_repositories() first if you don't already have the value in context.");
 
 export const projectNameSchema = z.string().describe("Project name within the repository (e.g., 'InsuranceRules', 'AutoPremium', 'ClaimProcessing')");
 
@@ -57,6 +57,26 @@ export const listProjectsSchema = z.object({
 
 export const getProjectSchema = z.object({
   projectId: projectIdSchema,
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+export const projectStatusSchema = z.object({
+  projectId: projectIdSchema,
+  branch: branchNameSchema.optional().describe(
+    "Optional branch name. When provided, must match the project's currently opened branch (the backend returns 409 on mismatch). Omit for repositories that do not support branches and for projects with repository 'local'."
+  ),
+  wait: z.boolean().default(false).optional().describe(
+    "When true, the tool subscribes to the studio's real-time status topic and blocks until compileState is terminal (ok/warnings/errors), emitting MCP progress notifications along the way. Use this immediately after an edit (openl_update_table/openl_append_table/openl_upload_file) to get the post-compile state in one call instead of polling. If the initial state is already terminal, returns immediately. Default false (one-shot snapshot)."
+  ),
+  timeoutMs: z.number().int().positive().max(600000).default(120000).optional().describe(
+    "Max time in milliseconds to wait for compilation when wait=true. On expiry, the last-seen status is returned (no error). Default 120000 (2 minutes). Cap 600000 (10 minutes). Ignored when wait=false."
+  ),
+  severity: z.array(z.enum(["ERROR", "WARN", "INFO"])).optional().describe(
+    "Filter compilation.messages.items to only these severities. Useful when the project has many warnings and you want to isolate errors: pass severity: ['ERROR']. Default: all severities. Note: items are always sorted ERROR → WARN → INFO before any filter or truncation is applied, so errors are visible without this filter."
+  ),
+  maxMessages: z.number().int().positive().max(1000).optional().describe(
+    "Cap the number of items returned in compilation.messages.items. The list is sorted ERROR → WARN → INFO first so the most actionable items are preserved when capped. Pair with severity to bound very large diagnostic lists. Default: no cap (relies on the response-format character truncation)."
+  ),
   response_format: ResponseFormat.optional(),
 }).strict();
 

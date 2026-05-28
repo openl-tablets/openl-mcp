@@ -112,18 +112,36 @@ export interface TableProperty {
   description?: string;
 }
 
+/**
+ * Common fields shared by every concrete table view returned from
+ * `GET /projects/{id}/tables/{tableId}` (parsed) or sent on
+ * create/update. Mirrors the fields that appear on every subtype in the
+ * studio OpenAPI under `EditableTableView` discriminator (Datatype,
+ * SimpleRules, Spreadsheet, RawTableView, …): `id`, `tableType`, `kind`,
+ * `name`, `properties`, `pos`, `messages`. `file` and `signature`/`returnType`
+ * are present on the `SummaryTableView` side too — included here for
+ * convenience since the same TypeScript type is reused for list and detail.
+ *
+ * `id` is optional because create-table requests are allowed to omit it
+ * (the server assigns one).
+ */
 export interface EditableTableView {
   id?: string;
   tableType: TableType;
   kind: TableKind;
   name: string;
-  technicalName?: string;
+  /** Custom dimension/business properties (state, lob, effectiveDate, …). */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   properties?: Record<string, any>;
-  uri?: string;
-  isBusinessView?: boolean;
-  editable?: boolean;
+  /** Position of the table within the source file (e.g. cell address). */
+  pos?: string;
+  /** File the table is defined in. Populated on read; ignored on create. */
   file?: string;
+  /**
+   * Compilation messages attached to this table (errors / warnings / info).
+   * Read-only — server-populated; ignored on update/create.
+   */
+  messages?: DetailedMessageDescription[];
 }
 
 /** Append data to project table (OpenAPI 3.0.1) - polymorphic type based on tableType */
@@ -368,15 +386,33 @@ export type TableMetadata = SummaryTableView;
 /** Full table view with data (parsed form) */
 export type TableView = EditableTableView;
 
-/** Raw table cell with merge information */
+/**
+ * A single cell in a raw table view's 2D source matrix.
+ *
+ * Mirrors `RawTableCell` in the studio OpenAPI. `value` is typed as `unknown`
+ * because the backend serializes whatever JSON value the cell holds (string,
+ * number, boolean, null). `cell` is the A1-notation address (e.g. `B3`) and
+ * matches the cell address that compilation messages reference — absent for
+ * covered cells.
+ */
 export interface RawTableCell {
-  value?: string;
+  /** A1-notation cell address (e.g. `B3`). Read-only; absent for covered cells. */
+  cell?: string;
+  value?: unknown;
+  /** Number of columns this cell spans (>=2 when merging; absent otherwise). */
   colspan?: number;
+  /** Number of rows this cell spans (>=2 when merging; absent otherwise). */
   rowspan?: number;
+  /** True when this cell is masked by another cell's span. */
   covered?: boolean;
 }
 
-/** Raw table view as a 2D matrix of cells without parsing */
+/**
+ * Raw 2D view of a table — the un-parsed cell matrix used when `raw=true` on
+ * `openl_get_table`. Inherits the common `EditableTableView` fields (id, kind,
+ * name, properties, pos, messages) and adds the `source` matrix. Mirrors
+ * `RawTableView` in the studio OpenAPI (`tableType: "RawSource"`).
+ */
 export interface RawTableView extends EditableTableView {
   source: RawTableCell[][];
 }
@@ -796,6 +832,104 @@ export interface GetProjectHistoryResult {
   commits: ProjectHistoryCommit[];
   total: number;
   hasMore: boolean;
+}
+
+// =============================================================================
+// Project Status Types (post-compilation snapshot)
+// =============================================================================
+
+/**
+ * Project compilation state.
+ *
+ * Mirrors the backend's
+ * `org.openl.studio.projects.model.project.status.CompileState` enum, which
+ * is serialized as lowercase via `@JsonProperty` on each constant.
+ */
+export type CompileState = "idle" | "compiling" | "ok" | "warnings" | "errors";
+
+/** Source-location discriminator. Backend has `TableMessageSource` and `ModuleMessageSource` variants; intentionally typed loosely to avoid coupling. */
+export type MessageSource = Record<string, unknown>;
+
+/**
+ * Compilation message. The backend flattens `MessageDescription`
+ * (`id`/`summary`/`severity`) onto this type via `@JsonUnwrapped`, so those
+ * fields appear at the top level alongside `location` and `stacktrace`.
+ */
+export interface DetailedMessageDescription {
+  id?: number;
+  summary?: string;
+  severity?: "ERROR" | "WARN" | "INFO";
+  location?: MessageSource;
+  stacktrace?: boolean;
+}
+
+export interface CompilationMessages {
+  items: DetailedMessageDescription[];
+  total: number;
+  errors: number;
+  warnings: number;
+}
+
+export interface CompilationModules {
+  total: number;
+  compiled: number;
+  compiledModules?: string[];
+}
+
+export interface CompilationTests {
+  total: number;
+}
+
+export interface CompilationDetails {
+  messages: CompilationMessages;
+  modules: CompilationModules;
+  tests: CompilationTests;
+}
+
+export interface ProjectModifiedBy {
+  author?: string;
+  /** ISO-8601 timestamp serialized from `ZonedDateTime`. */
+  date?: string;
+}
+
+/**
+ * Wire-level change type as serialized by the studio. The Java
+ * `org.openl.studio.projects.model.project.status.ChangeType` enum is
+ * annotated with `@JsonProperty("added")` / `"modified"` / `"deleted"`, so
+ * the values on the wire are lowercase — matching how `CompileState` is
+ * serialized.
+ */
+export type FileChangeType = "added" | "modified" | "deleted";
+
+export interface FileChange {
+  /** `<projectRealPath>/<file>` (forward slashes), matching the merge API. */
+  path: string;
+  type: FileChangeType;
+}
+
+export interface PendingChanges {
+  total: number;
+  files: FileChange[];
+}
+
+/**
+ * Post-compilation project status returned by `GET /projects/{id}/status`.
+ *
+ * Named `ProjectStatusView` to avoid collision with the existing
+ * {@link ProjectStatus} string-enum that represents project lifecycle states
+ * (OPENED / CLOSED / EDITING / …).
+ */
+export interface ProjectStatusView {
+  projectId: ProjectId | string;
+  /** Present only for repositories that support branches. */
+  branch?: string;
+  revision?: string;
+  compileState: CompileState;
+  lastModifiedBy?: ProjectModifiedBy;
+  /** Omitted when no compilation has been registered yet (e.g. `compileState: "idle"`). */
+  compilation?: CompilationDetails;
+  /** Omitted when the working copy is clean. */
+  pendingChanges?: PendingChanges;
 }
 
 // =============================================================================

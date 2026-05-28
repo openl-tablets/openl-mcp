@@ -18,6 +18,7 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { OpenLClient } from './client.js';
+import { ResourceSubscriptionManager } from './resource-subscriptions.js';
 import { getAllTools, executeTool, registerAllTools } from './tool-handlers.js';
 import { sanitizeError, safeStringify } from './utils.js';
 import type * as Types from './types.js';
@@ -25,14 +26,23 @@ import { SERVER_INFO } from './constants.js';
 import { PROMPTS, loadPromptContent, getPromptDefinition } from './prompts-registry.js';
 import {
   CallToolRequestSchema,
+  CompleteRequestSchema,
   ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
   ListPromptsRequestSchema,
   GetPromptRequestSchema,
+  SubscribeRequestSchema,
+  UnsubscribeRequestSchema,
   ErrorCode,
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
+import {
+  STATIC_RESOURCES,
+  RESOURCE_TEMPLATES,
+  handleCompleteRequest,
+} from './resources-catalog.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -151,8 +161,14 @@ async function initializeMCPServer(): Promise<void> {
       {
         capabilities: {
           tools: {},
-          resources: {},
+          // `subscribe: true` advertises support for resources/subscribe +
+          // notifications/resources/updated (wired for the `openl://status/...`
+          // resource via STOMP — see resource-subscriptions.ts).
+          resources: { subscribe: true },
           prompts: {},
+          // Advertise `completion/complete` so clients offer inline
+          // suggestions for {projectId}/{branch} in resource templates.
+          completions: {},
         },
       }
     );
@@ -172,42 +188,25 @@ async function initializeMCPServer(): Promise<void> {
     })),
   }));
 
-  mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
+  mcpServer.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     // Get client from request context (session ID stored in transport)
     // For now, use default client - we'll update this to use session-specific clients
     const client = getDefaultClientOrThrow();
-    const result = await executeTool(request.params.name, request.params.arguments, client);
+    const result = await executeTool(request.params.name, request.params.arguments, client, extra);
     return result as any;
   });
 
   mcpServer.setRequestHandler(ListResourcesRequestSchema, async () => ({
-    resources: [
-      {
-        uri: "openl://repositories",
-        name: "OpenL Repositories",
-        description: "All design repositories in OpenL Studio",
-        mimeType: "application/json",
-      },
-      {
-        uri: "openl://projects",
-        name: "OpenL Projects",
-        description: "All projects across all repositories",
-        mimeType: "application/json",
-      },
-      {
-        uri: "openl://projects/{projectId}",
-        name: "OpenL Project Details",
-        description: "Get details for a specific project",
-        mimeType: "application/json",
-      },
-      {
-        uri: "openl://deployments",
-        name: "OpenL Deployments",
-        description: "All deployment repositories and deployed projects",
-        mimeType: "application/json",
-      },
-    ],
+    resources: STATIC_RESOURCES,
   }));
+
+  mcpServer.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
+    resourceTemplates: RESOURCE_TEMPLATES,
+  }));
+
+  mcpServer.setRequestHandler(CompleteRequestSchema, async (request) =>
+    handleCompleteRequest(getDefaultClientOrThrow(), request.params)
+  );
 
   // Handle resource reads
   mcpServer.setRequestHandler(ReadResourceRequestSchema, async (request) => {
@@ -257,7 +256,11 @@ const streamableHttpTransports: Record<string, StreamableHTTPServerTransport> = 
  * @param server - MCP server instance
  * @param client - OpenL client for this session
  */
-function setupSessionHandlers(server: Server, client: OpenLClient): void {
+function setupSessionHandlers(
+  server: Server,
+  client: OpenLClient,
+  subscriptions: ResourceSubscriptionManager,
+): void {
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: getAllTools().map(({ name, title, description, inputSchema, annotations }) => ({
       name,
@@ -268,42 +271,46 @@ function setupSessionHandlers(server: Server, client: OpenLClient): void {
     })),
   }));
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const result = await executeTool(request.params.name, request.params.arguments, client);
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    const result = await executeTool(request.params.name, request.params.arguments, client, extra);
     return result as any;
   });
 
   server.setRequestHandler(ListResourcesRequestSchema, async () => ({
-    resources: [
-      {
-        uri: "openl://repositories",
-        name: "OpenL Repositories",
-        description: "All design repositories in OpenL Studio",
-        mimeType: "application/json",
-      },
-      {
-        uri: "openl://projects",
-        name: "OpenL Projects",
-        description: "All projects across all repositories",
-        mimeType: "application/json",
-      },
-      {
-        uri: "openl://projects/{projectId}",
-        name: "OpenL Project Details",
-        description: "Get details for a specific project",
-        mimeType: "application/json",
-      },
-      {
-        uri: "openl://deployments",
-        name: "OpenL Deployments",
-        description: "All deployment repositories and deployed projects",
-        mimeType: "application/json",
-      },
-    ],
+    resources: STATIC_RESOURCES,
   }));
+
+  server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
+    resourceTemplates: RESOURCE_TEMPLATES,
+  }));
+
+  server.setRequestHandler(CompleteRequestSchema, async (request) =>
+    handleCompleteRequest(client, request.params)
+  );
 
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     return handleResourceRead(request.params.uri, client);
+  });
+
+  // resources/subscribe — for `openl://status/...` URIs, opens a STOMP
+  // subscription against the studio's status topic and routes inbound frames
+  // to notifications/resources/updated on this session's transport.
+  server.setRequestHandler(SubscribeRequestSchema, async (request) => {
+    try {
+      await subscriptions.subscribe(request.params.uri);
+    } catch (err) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `Failed to subscribe to ${request.params.uri}: ${sanitizeError(err)}`,
+      );
+    }
+    return {};
+  });
+
+  // resources/unsubscribe — idempotent per spec.
+  server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
+    await subscriptions.unsubscribe(request.params.uri);
+    return {};
   });
 
   server.setRequestHandler(ListPromptsRequestSchema, async () => ({
@@ -338,7 +345,10 @@ function setupSessionHandlers(server: Server, client: OpenLClient): void {
  * @param client - OpenL client for this session
  * @returns Configured MCP server instance
  */
-function createSessionServer(client: OpenLClient): Server {
+function createSessionServer(client: OpenLClient): {
+  server: Server;
+  subscriptions: ResourceSubscriptionManager;
+} {
   const sessionServer = new Server(
     {
       name: SERVER_INFO.NAME,
@@ -347,17 +357,28 @@ function createSessionServer(client: OpenLClient): Server {
     {
       capabilities: {
         tools: {},
-        resources: {},
+        // `subscribe: true` enables resources/subscribe + notifications/resources/updated.
+        resources: { subscribe: true },
         prompts: {},
+        // Per-session completion handler — backed by this session's OpenL client.
+        completions: {},
       },
     }
   );
 
+  // Per-session subscription manager — owns the session's STOMP connections
+  // and dispatches doorbell notifications via this session's `Server` instance
+  // so they target only the originating transport.
+  const subscriptions = new ResourceSubscriptionManager(
+    client,
+    (uri) => sessionServer.sendResourceUpdated({ uri }),
+  );
+
   // Register tools and setup handlers
   registerAllTools(sessionServer, client);
-  setupSessionHandlers(sessionServer, client);
+  setupSessionHandlers(sessionServer, client, subscriptions);
 
-  return sessionServer;
+  return { server: sessionServer, subscriptions };
 }
 
 /**
@@ -460,6 +481,19 @@ async function handleResourceRead(
         break;
       }
 
+      case "status": {
+        if (!path) {
+          throw new McpError(ErrorCode.InvalidRequest, `Project ID is required: ${uri}`);
+        }
+        const statusMatch = path.match(/^([^/]+)(?:\/(.+))?$/);
+        if (!statusMatch) {
+          throw new McpError(ErrorCode.InvalidRequest, `Invalid status URI: ${uri}`);
+        }
+        const [, statusProjectId, statusBranch] = statusMatch;
+        data = await client.getProjectStatus(statusProjectId, statusBranch);
+        break;
+      }
+
       default:
         throw new McpError(ErrorCode.InvalidRequest, `Unknown resource type: ${resourceType}`);
     }
@@ -520,7 +554,7 @@ const handleSSE = async (req: Request, res: Response): Promise<Response | void> 
     const client = getClientForSession(sessionId, configParams);
     
     // Create a new MCP server instance for this session with the specific client
-    const sessionServer = createSessionServer(client);
+    const { server: sessionServer, subscriptions } = createSessionServer(client);
 
     // Determine messages endpoint path based on request path
     // If request came via /sse (nginx proxy), use /messages, otherwise use /mcp/messages
@@ -532,6 +566,9 @@ const handleSSE = async (req: Request, res: Response): Promise<Response | void> 
     res.on('close', () => {
       delete sseTransports[transportSessionId];
       delete clientsBySession[sessionId];
+      // Tear down any STOMP subscriptions this session opened — otherwise
+      // the studio would be left with dangling WS sessions.
+      void subscriptions.closeAll();
     });
 
     await sessionServer.connect(transport);
@@ -599,7 +636,7 @@ const handleStreamableHttp = async (req: Request, res: Response): Promise<Respon
       transport = streamableHttpTransports[sessionId];
     } else if (!sessionId && isInitializeRequest(req.body)) {
       // New initialization request - create session-specific MCP server with the client
-      const sessionServer = createSessionServer(client);
+      const { server: sessionServer, subscriptions } = createSessionServer(client);
 
       transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => sessionClientId,
@@ -615,6 +652,8 @@ const handleStreamableHttp = async (req: Request, res: Response): Promise<Respon
           delete streamableHttpTransports[transport.sessionId];
           delete clientsBySession[transport.sessionId];
         }
+        // Tear down STOMP subscriptions owned by this session.
+        void subscriptions.closeAll();
       };
 
       // Connect session server to transport

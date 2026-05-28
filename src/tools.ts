@@ -61,7 +61,7 @@ export const TOOLS: ToolDefinition[] = [
   // =============================================================================
   {
     name: "openl_list_repositories",
-    description: "List all design repositories in OpenL Studio. Returns repository information including 'id' (internal identifier) and 'name' (display name). Use the 'name' field when working with repositories in other tools. Example: if response contains {id: 'design-repo', name: 'Design Repository'}, use 'Design Repository' (the name) in other tools like list_projects(repository: 'Design Repository').",
+    description: "List all design repositories in OpenL Studio. Returns repository information including 'id' (internal identifier) and 'name' (display name). Use the 'name' field when working with repositories in other tools. Either the 'id' or 'name' is accepted by other tools (case-insensitive). The actual values are usually short tokens like 'design' — never invent values such as 'Design Repository' or 'design-repo'.",
     inputSchema: schemas.z.toJSONSchema(schemas.z.object({
       response_format: schemas.ResponseFormat.optional(),
       limit: schemas.z.number().int().positive().max(200).default(50).optional(),
@@ -75,7 +75,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "openl_list_branches",
-    description: "List all Git branches in a repository. Returns branch names and metadata (current branch, commit info). Use this to see available branches before switching or comparing versions. Use repository name (not ID) - e.g., 'Design Repository' instead of 'design-repo'.",
+    description: "List all Git branches in a repository. Returns branch names and metadata (current branch, commit info). Use this to see available branches before switching or comparing versions. Pass either the id or name from openl_list_repositories() — both are accepted (case-insensitive). Do not invent example values; call openl_list_repositories() first if not in context.",
     inputSchema: schemas.z.toJSONSchema(schemas.listBranchesSchema) as Record<string, unknown>,
     _meta: {
       version: "1.0.0",
@@ -85,7 +85,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "openl_list_repository_features",
-    description: "Get features supported by a design repository (branching, searchable, etc.). Use this to check if a repository supports specific features like branching before performing operations that depend on those features. Use repository name (not ID) - e.g., 'Design Repository' instead of 'design-repo'.",
+    description: "Get features supported by a design repository (branching, searchable, etc.). Use this to check if a repository supports specific features like branching before performing operations that depend on those features. Pass either the id or name from openl_list_repositories() — both are accepted (case-insensitive). Do not invent example values; call openl_list_repositories() first if not in context.",
     inputSchema: schemas.z.toJSONSchema(schemas.getRepositoryFeaturesSchema) as Record<string, unknown>,
     _meta: {
       version: "1.0.0",
@@ -95,7 +95,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "openl_repository_project_revisions",
-    description: "Get revision history (commit history) of a project in a design repository. Returns list of revisions with commit hashes, authors, timestamps, and commit types. Supports pagination and filtering by branch and search term. Use repository name (not ID) - e.g., 'Design Repository' instead of 'design-repo'.",
+    description: "Get revision history (commit history) of a project in a design repository. Returns list of revisions with commit hashes, authors, timestamps, and commit types. Supports pagination and filtering by branch and search term. Pass either the id or name from openl_list_repositories() — both are accepted (case-insensitive). Do not invent example values; call openl_list_repositories() first if not in context.",
     inputSchema: schemas.z.toJSONSchema(schemas.getProjectRevisionsSchema) as Record<string, unknown>,
     _meta: {
       version: "1.0.0",
@@ -120,7 +120,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: "openl_list_projects",
     description:
-      "List all projects with optional filters (repository, status, tags). Returns project names, status (OPENED/CLOSED), metadata, and a convenient 'projectId' field from API to use with other tools. For local-only projects, do not pass repository filter 'local' (it may fail); list projects without that filter and filter results by repository === 'local' client-side. For such projects, open/save/close do not work; table/rule/test tools work without opening. IMPORTANT: The 'projectId' is returned exactly as provided by the API and should be used without modification. Use repository name (not ID) - e.g., 'Design Repository' instead of 'design-repo'. Use this to discover and filter projects.",
+      "List all projects with optional filters (repository, status, tags). Returns project names, status (OPENED/CLOSED), metadata, and a convenient 'projectId' field from API to use with other tools. For local-only projects, do not pass repository filter 'local' (it may fail); list projects without that filter and filter results by repository === 'local' client-side. For such projects, open/save/close do not work; table/rule/test tools work without opening. IMPORTANT: The 'projectId' is returned exactly as provided by the API and should be used without modification. Pass either the id or name from openl_list_repositories() — both are accepted (case-insensitive). Do not invent example values; call openl_list_repositories() first if not in context. Use this to discover and filter projects.",
     inputSchema: schemas.z.toJSONSchema(schemas.listProjectsSchema) as Record<string, unknown>,
     _meta: {
       version: "1.0.0",
@@ -132,6 +132,16 @@ export const TOOLS: ToolDefinition[] = [
     name: "openl_get_project",
     description: "Get comprehensive project information including details, modules, dependencies, and metadata. Returns full project structure, configuration, and status. Supports projects with repository 'local' (local-only projects; for them branches/revisions are not applicable). Use this to understand project organization before making changes.",
     inputSchema: schemas.z.toJSONSchema(schemas.getProjectSchema) as Record<string, unknown>,
+    _meta: {
+      version: "1.0.0",
+      category: TOOL_CATEGORIES.PROJECT,
+      requiresAuth: true,
+    },
+  },
+  {
+    name: "openl_project_status",
+    description: "Get the post-compilation status of a project: compile state (idle/compiling/ok/warnings/errors), diagnostics (errors and warnings with location and severity), pending file changes (added/modified/deleted), last-modified info, and module/test compilation summary. Read-only — does not trigger compilation; returns a snapshot of what the studio has already compiled in this session. Use after editing tables/rules to validate OpenL syntax and surface compilation errors so they can be fixed before saving. Works for all repositories including 'local'. The 'branch' parameter is optional and is validated against the project's currently opened branch when supplied; omit it for local and non-branch repositories. When 'wait: true', the tool subscribes to the studio's real-time status topic and blocks until compileState is terminal (ok/warnings/errors), emitting MCP progress notifications during the wait — call it immediately after an edit (openl_update_table/openl_append_table/openl_upload_file) to get the post-compile state in one call instead of polling. Default timeout 120000 ms; cap 600000. Diagnostic items in compilation.messages.items are always sorted ERROR → WARN → INFO so errors survive response truncation; use the 'severity' filter (e.g. ['ERROR']) to isolate specific severities when the project has many warnings, and 'maxMessages' to cap the list explicitly. See the 'validate_after_edit' prompt for the recommended workflow.",
+    inputSchema: schemas.z.toJSONSchema(schemas.projectStatusSchema) as Record<string, unknown>,
     _meta: {
       version: "1.0.0",
       category: TOOL_CATEGORIES.PROJECT,
