@@ -54,6 +54,8 @@ Always identify the expected vs actual outcome before tracing. Common issue type
 - Decision table returned an unexpected result or no result
 - A rule was skipped or matched incorrectly
 - A validation fired when it should not, or did not fire when it should
+- Result is mathematically correct given the inputs, but the inputs do not
+  represent what was entered on the upstream UI (mapping or integration defect)
 
 If the user provides a **ticket number from a tracking system (like Jira)**,
 fetch it first via the issue tracker MCP tool (if connected) to understand full
@@ -154,6 +156,55 @@ row matched). Do not assume null is always a bug.
   contributed the wrong value.
 - Read the relevant lookup tables to confirm what was returned and why.
 
+### Issue: result is technically correct but doesn't match the intended scenario
+
+The trace runs cleanly, the formula picks a valid branch, and the math is
+internally consistent — yet the result is wrong because the input JSON does
+not faithfully represent what was entered on the upstream UI. Suspect this
+when:
+
+- The result is off by an order of magnitude (10×, 100×, 1/10×, 1/100×).
+- A regression mismatch is segment-specific (e.g. child rate wrong, adult
+  rate fine), pointing to one branch of the formula firing on bad input.
+- The JSON contains fields that look contradictory, redundant, or impossible
+  given what the user describes entering on the UI.
+
+Before concluding "OpenL bug", scan the input JSON for **integrity smells**:
+
+- **Dual-encoded fields** — the same business concept sent two ways at once
+  (e.g. both `benefitAmount` and `benefitPercentage` for one benefit). The
+  formula's branch-selector silently picks one; if that branch was never
+  the user's intent, the result is mathematically correct but conceptually
+  wrong.
+- **Scale errors** — a percentage arriving as `10` when the formula expects
+  `0.1`; a basis-point field arriving as a decimal. Multiply the suspect
+  field by the obvious scale factor and check whether the wrong answer
+  matches the expected one.
+- **Phantom fields** — values present in JSON for inputs the user says they
+  never entered. Usually from default values, stale offer config, or a
+  mapping layer that always emits the field.
+- **Inverted booleans or mis-mapped enums** — `true` where `false` was
+  intended, or an enum value that routes to the wrong branch.
+- **Effective-date drift** — the JSON's effective date routes the trace to
+  a module revision the user did not expect.
+
+Then confirm the **arithmetic identity** from the trace: which branch fired,
+what value it used, which constant or sub-formula it applied. If the wrong
+result equals what a different input value would have produced via a
+different branch, that is the smoking gun (e.g. `100/250 = 0.4` is identical
+to what `benefitPercentage = 0.10` would yield via `0.10 × 1000 / 250`).
+
+To confirm the upstream defect, request from the user any of:
+
+- UI screenshot of the field(s) in question
+- Product model definition (which fields exist, whether mutually exclusive)
+- Offer configuration (defaults, hidden fields, conditional show/hide rules)
+- Mapping layer rules that build this part of the JSON
+
+If these aren't provided, do not block — state mapping is the suspected
+layer based on the JSON evidence and the arithmetic identity, and request
+the artifacts to confirm.
+
 ### Issue: wrong decision or rule match
 
 - Find the decision table node in the trace.
@@ -171,7 +222,8 @@ Always classify the root cause — the fix differs by type:
 | **WRONG ROUTING** | Dispatch table sends input to a table that doesn't cover this case | Update dispatch condition |
 | **MISSING RULE** | No row in a decision table covers this scenario | Add a rule row |
 | **FORMULA BUG** | Formula references wrong field or applies wrong operation | Correct the formula |
-| **INPUT ISSUE** | Input missing a required field or contains unexpected value | Fix on calling system side |
+| **INPUT MISSING/MALFORMED** | Required input field missing or contains an unexpected value | Fix on calling system side |
+| **UPSTREAM MAPPING DEFECT** | Trace ran cleanly, formula picked a valid branch, but the JSON delivered data that does not represent UI entry (dual-encoded fields, scale errors, phantom fields, inverted flags, mis-mapped enums) | Primary fix in the mapping layer; consider a defensive guard in the OpenL formula |
 
 ---
 
@@ -186,6 +238,21 @@ apply without explicit user confirmation.**
 
 If the user is a **business user**: describe the fix in business terms and
 note it requires a development team action.
+
+### When the bug is upstream (mapping or integration)
+
+If the root cause is `UPSTREAM MAPPING DEFECT`, the fix has two sides:
+
+- **Primary** — the caller (UI, integration layer, or mapping rules) must
+  stop sending data that misrepresents the UI entry. This is where the bug
+  actually lives.
+- **Defensive (optional)** — the OpenL formula can be hardened to reject
+  contradictory inputs (e.g. reject when both `$` and `%` are non-zero for
+  the same benefit) or to document which branch wins. This is a guardrail,
+  not the fix.
+
+Name the owning team(s) for each side. Do not draft tickets unless asked —
+just state ownership and the nature of each fix clearly.
 
 After a confirmed fix, suggest filing a ticket in the tracking system (like
 Jira) if a bug or data gap was found:
@@ -215,6 +282,7 @@ rule is in the shared library.
 - Never conclude a root cause without reading the actual table formula first.
 - Never assume data is missing from a lookup without reading the full table.
 - Never treat all nulls as errors — check whether null is the intended result.
+- Never conclude an OpenL bug when the trace ran cleanly and the formula picked a valid branch without first checking whether the input JSON faithfully represents the UI entry.
 - Never apply a fix in OpenL Studio without explicit user confirmation.
 - Never expose internal table IDs or system URLs in business user outputs.
 - Never skip running a trace and rely solely on manual table reading to determine the root cause.
