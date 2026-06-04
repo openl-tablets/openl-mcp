@@ -136,9 +136,16 @@ export class OpenLClient {
             }
           }
         }
-        // Once the cookie is captured, clear the gate so any future cookie-less
-        // request (e.g. cookie expired and re-issued) gets its own bootstrap.
-        if (this.jsessionId) {
+        // Re-arm the bootstrap gate. Once a JSESSIONID is captured, future
+        // requests carry it and need no gate. If THIS was the bootstrap but the
+        // response issued no cookie (e.g. GET /repos never sets one), clear the
+        // gate too — otherwise siblings waiting on it would wake on a resolved
+        // gate with a still-null cookie and each open its own studio session.
+        // Clearing it lets the next waiter/incoming request re-bootstrap, so we
+        // keep serializing until a cookie actually lands.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const wasBootstrap = Boolean((response.config as any)?._releaseFirstRequestGate);
+        if (this.jsessionId || wasBootstrap) {
           this.firstRequestGate = null;
         }
         releaseFirstRequestGate(response.config);
@@ -146,7 +153,13 @@ export class OpenLClient {
       },
       (error) => {
         // Always release the gate on error, otherwise queued requests would
-        // wait forever if the bootstrap request failed.
+        // wait forever if the bootstrap request failed. Re-arm it when the
+        // failed request was the bootstrap so the next waiter re-bootstraps
+        // rather than spinning on an already-resolved gate.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if ((error?.config as any)?._releaseFirstRequestGate) {
+          this.firstRequestGate = null;
+        }
         releaseFirstRequestGate(error?.config);
         return Promise.reject(error);
       }
@@ -155,12 +168,15 @@ export class OpenLClient {
     // Request interceptor: bootstrap-gate + add JSESSIONID to Cookie header.
     this.axiosInstance.interceptors.request.use(
       async (config) => {
-        // Bootstrap gate: when no cookie has been captured yet, only let one
-        // request through at a time. Parallel callers wait on the in-flight
-        // request and then get to add the freshly-captured cookie below.
-        if (!this.jsessionId) {
+        // Bootstrap gate: until a JSESSIONID is captured, serialize requests so
+        // they share one studio session instead of each opening its own. A
+        // sibling waits on the in-flight bootstrap; if that bootstrap returns
+        // without a cookie (e.g. GET /repos issues none), the gate is re-armed
+        // (see the response interceptor) and the woken sibling loops to become
+        // the next bootstrap — so we keep serializing until a cookie lands.
+        while (!this.jsessionId) {
           if (this.firstRequestGate) {
-            // A sibling request is currently bootstrapping; wait for it.
+            // A sibling is bootstrapping; wait, then re-check the loop condition.
             await this.firstRequestGate;
           } else {
             // We are the bootstrap. Open the gate and remember how to release it.
@@ -168,6 +184,7 @@ export class OpenLClient {
             this.firstRequestGate = new Promise<void>((r) => { resolveGate = r; });
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (config as any)._releaseFirstRequestGate = resolveGate;
+            break;
           }
         }
 

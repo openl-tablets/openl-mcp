@@ -1569,4 +1569,40 @@ describe("OpenLClient", () => {
       await client.downloadFile("design-project1", "My Rules #1.xlsx");
     });
   });
+
+  describe("Session continuity (firstRequestGate)", () => {
+    it("shares one JSESSIONID across concurrent calls when the bootstrap request issues no cookie", async () => {
+      // Studio reality: GET /repos issues NO Set-Cookie; GET /projects issues a fresh
+      // JSESSIONID for any request that arrives without one. If the turn's first request
+      // (the bootstrap) lands on /repos, naive gating releases all waiting siblings
+      // cookie-less and each opens its own studio session. The gate must keep
+      // serializing until a cookie actually lands.
+      let sessionsIssued = 0;
+      const cookiesSentToProjects: Array<string | undefined> = [];
+
+      mockAxios.onGet("/repos").reply(200, [{ id: "design", name: "Design" }]); // no Set-Cookie
+
+      mockAxios.onGet(/\/projects\/[^/]+\/status$/).reply((config) => {
+        const cookie = (config.headers?.Cookie ?? config.headers?.cookie) as string | undefined;
+        cookiesSentToProjects.push(cookie);
+        if (cookie && cookie.includes("JSESSIONID=")) {
+          return [200, { compileState: "ok" }]; // reuse existing session, no new cookie
+        }
+        sessionsIssued += 1;
+        return [200, { compileState: "ok" }, { "set-cookie": [`JSESSIONID=SESS-${sessionsIssued}; Path=/`] }];
+      });
+
+      // listRepositories() (→ /repos, first in array) bootstraps; two concurrent status calls follow.
+      await Promise.all([
+        client.listRepositories(),
+        client.getProjectStatus("p1"),
+        client.getProjectStatus("p2"),
+      ]);
+
+      // Exactly one session is ever issued, and only one /projects request went out cookie-less.
+      expect(sessionsIssued).toBe(1);
+      const cookieless = cookiesSentToProjects.filter((c) => !c || !c.includes("JSESSIONID=")).length;
+      expect(cookieless).toBe(1);
+    });
+  });
 });

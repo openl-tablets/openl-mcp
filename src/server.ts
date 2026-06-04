@@ -521,34 +521,50 @@ async function handleResourceRead(
 }
 
 /**
+ * Parse an HTTP `Authorization` header into OpenL client config fields.
+ *
+ * Supports the three schemes the OpenL REST API accepts:
+ * - `Token <PAT>`  → personal access token
+ * - `Bearer <PAT>` → personal access token (MCP clients commonly send Bearer)
+ * - `Basic <base64(user:pass)>` → username/password
+ *
+ * Returns an empty object when no usable credential is present. Mirrors the
+ * scheme priority of {@link AuthenticationManager.addAuthHeaders}.
+ */
+function authConfigFromHeader(
+  authHeader: string | string[] | undefined,
+): Record<string, string | undefined> {
+  const config: Record<string, string | undefined> = {};
+  if (typeof authHeader !== "string") {
+    return config;
+  }
+  if (authHeader.startsWith("Token ")) {
+    const token = authHeader.substring(6);
+    if (token) config.OPENL_PERSONAL_ACCESS_TOKEN = token;
+  } else if (authHeader.startsWith("Bearer ")) {
+    const token = authHeader.substring(7);
+    if (token) config.OPENL_PERSONAL_ACCESS_TOKEN = token;
+  } else if (authHeader.startsWith("Basic ")) {
+    const decoded = Buffer.from(authHeader.substring(6), "base64").toString("utf-8");
+    const sep = decoded.indexOf(":");
+    if (sep > 0) {
+      config.OPENL_USERNAME = decoded.substring(0, sep);
+      config.OPENL_PASSWORD = decoded.substring(sep + 1);
+    }
+  }
+  return config;
+}
+
+/**
  * SSE endpoint handler (shared for /mcp/sse and /sse)
  */
 const handleSSE = async (req: Request, res: Response): Promise<Response | void> => {
   try {
-    // Extract configuration from headers and query params (only authentication, not base URL)
-    const configFromHeaders: Record<string, string | undefined> = {};
-    
-    // Extract token from standard Authorization header: "Authorization: Token <PAT>" or "Authorization: Bearer <PAT>"
-    // Supports both formats: Bearer (from MCP config) and Token (direct format)
-    // Bearer will be converted to Token format for OpenL API requests
-    const authHeader = req.headers.authorization;
-    if (authHeader && typeof authHeader === 'string') {
-      if (authHeader.startsWith('Token ')) {
-        const token = authHeader.substring(6); // Remove "Token " prefix
-        if (token) {
-          configFromHeaders.OPENL_PERSONAL_ACCESS_TOKEN = token;
-        }
-      } else if (authHeader.startsWith('Bearer ')) {
-        const token = authHeader.substring(7); // Remove "Bearer " prefix
-        if (token) {
-          configFromHeaders.OPENL_PERSONAL_ACCESS_TOKEN = token;
-        }
-      }
-    }
-
-    // Merge headers and query params (only for authentication, base URL comes from server config)
+    // Extract authentication from the Authorization header (Token/Bearer/Basic),
+    // then merge query params (base URL always comes from server config).
+    const configFromHeaders = authConfigFromHeader(req.headers.authorization);
     const configParams = { ...req.query, ...configFromHeaders } as Record<string, string | undefined>;
-    
+
     // Try to create client from configuration (base URL from server, auth from client)
     const sessionId = randomUUID();
     const client = getClientForSession(sessionId, configParams);
@@ -599,28 +615,9 @@ app.get('/sse', handleSSE); // Alias for nginx proxy compatibility
  */
 const handleStreamableHttp = async (req: Request, res: Response): Promise<Response | void> => {
   try {
-    // Extract configuration from headers and query params (only authentication, not base URL)
-    const configFromHeaders: Record<string, string | undefined> = {};
-    
-    // Extract token from standard Authorization header: "Authorization: Token <PAT>" or "Authorization: Bearer <PAT>"
-    // Supports both formats: Bearer (from MCP config) and Token (direct format)
-    // Bearer will be converted to Token format for OpenL API requests
-    const authHeader = req.headers.authorization;
-    if (authHeader && typeof authHeader === 'string') {
-      if (authHeader.startsWith('Token ')) {
-        const token = authHeader.substring(6); // Remove "Token " prefix
-        if (token) {
-          configFromHeaders.OPENL_PERSONAL_ACCESS_TOKEN = token;
-        }
-      } else if (authHeader.startsWith('Bearer ')) {
-        const token = authHeader.substring(7); // Remove "Bearer " prefix
-        if (token) {
-          configFromHeaders.OPENL_PERSONAL_ACCESS_TOKEN = token;
-        }
-      }
-    }
-
-    // Merge headers and query params (only for authentication, base URL comes from server config)
+    // Extract authentication from the Authorization header (Token/Bearer/Basic),
+    // then merge query params (base URL always comes from server config).
+    const configFromHeaders = authConfigFromHeader(req.headers.authorization);
     const configParams = { ...req.query, ...configFromHeaders } as Record<string, string | undefined>;
 
     // Check for existing session ID in headers
@@ -848,7 +845,9 @@ app.post('/execute', async (req: Request, res: Response) => {
  * Error handling middleware
  */
 app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
-  console.error('Unhandled error:', err);
+  // Sanitize before logging too — the raw error/stack may carry credentials
+  // (e.g. an Authorization header echoed in an axios error config).
+  console.error('Unhandled error:', sanitizeError(err));
   res.status(500).json({
     error: 'Internal server error',
     message: sanitizeError(err)
