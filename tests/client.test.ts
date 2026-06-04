@@ -1570,6 +1570,75 @@ describe("OpenLClient", () => {
     });
   });
 
+  describe("Project Creation & Repository Files", () => {
+    it("createProjectFromZip PUTs multipart to /repos/{repo}/projects/{name} and returns the revision", async () => {
+      let capturedContentType: string | undefined;
+      mockAxios.onPut("/repos/design/projects/Offer-CW").reply((config) => {
+        capturedContentType = (config.headers?.["Content-Type"] ?? config.headers?.["content-type"]) as string;
+        return [200, { revision: "abc123", branch: "main" }];
+      });
+
+      const result = await client.createProjectFromZip(
+        "design",
+        "Offer-CW",
+        Buffer.from("PK-zip-bytes"),
+        { comment: "Initial commit" }
+      );
+
+      expect(result).toEqual({ revision: "abc123", branch: "main" });
+      expect(capturedContentType).toMatch(/^multipart\/form-data; boundary=/);
+    });
+
+    it("createProjectFromZip includes the comment field in the multipart body", async () => {
+      mockAxios.onPut("/repos/design/projects/Offer-CW").reply(200, { revision: "r1" });
+
+      await client.createProjectFromZip("design", "Offer-CW", Buffer.from("zip"), { comment: "Hello audit" });
+
+      // form-data with only Buffer/string parts exposes getBuffer().
+      const form = mockAxios.history.put[0].data as unknown as { getBuffer: () => Buffer };
+      const body = form.getBuffer().toString("utf-8");
+      expect(body).toContain('name="template"; filename="template.zip"');
+      expect(body).toContain('name="comment"');
+      expect(body).toContain("Hello audit");
+    });
+
+    it("copyRepositoryFile POSTs the path pair to /file-copy with the branch param", async () => {
+      let capturedBody: unknown;
+      let capturedParams: unknown;
+      mockAxios.onPost("/repos/design/file-copy").reply((config) => {
+        capturedBody = JSON.parse(config.data);
+        capturedParams = config.params;
+        return [201];
+      });
+
+      await client.copyRepositoryFile("design", "Offer-US", "Offer-CW", "main");
+
+      expect(capturedBody).toEqual({ sourcePath: "Offer-US", destinationPath: "Offer-CW" });
+      expect(capturedParams).toEqual({ branch: "main" });
+    });
+
+    it("getRepositoryFileContent returns the file as a string and null on 404", async () => {
+      mockAxios.onGet("/repos/design/files/Offer-CW/rules.xml").reply(200, "<project><name>X</name></project>");
+      const xml = await client.getRepositoryFileContent("design", "Offer-CW/rules.xml");
+      expect(xml).toContain("<name>X</name>");
+
+      mockAxios.onGet("/repos/design/files/Missing/rules.xml").reply(404);
+      const missing = await client.getRepositoryFileContent("design", "Missing/rules.xml");
+      expect(missing).toBeNull();
+    });
+
+    it("updateRepositoryFileRaw PUTs the raw body with a non-JSON content type", async () => {
+      let capturedContentType: string | undefined;
+      mockAxios.onPut("/repos/design/files/Offer-CW/rules.xml").reply((config) => {
+        capturedContentType = (config.headers?.["Content-Type"] ?? config.headers?.["content-type"]) as string;
+        return [200];
+      });
+
+      await client.updateRepositoryFileRaw("design", "Offer-CW/rules.xml", "<project/>");
+      expect(capturedContentType).toBe("application/xml");
+    });
+  });
+
   describe("Session continuity (firstRequestGate)", () => {
     it("shares one JSESSIONID across concurrent calls when the bootstrap request issues no cookie", async () => {
       // Studio reality: GET /repos issues NO Set-Cookie; GET /projects issues a fresh

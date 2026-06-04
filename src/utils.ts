@@ -493,3 +493,31 @@ export async function openBrowser(url: string): Promise<void> {
   }
 }
 
+/** Escape the XML special characters that matter inside an element's text content. */
+function escapeXmlText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
+ * Set the project-level `<name>` in an OpenL project descriptor (rules.xml).
+ *
+ * Mirrors OpenL Studio's `CopyProjectTransformer`, which parses rules.xml and
+ * calls `ProjectDescriptor.setName(newName)` — i.e. it renames ONLY the project
+ * itself. The project `<name>` is the first element under the root `<project>`
+ * and always precedes `<modules>`, so replacing the first `<name>…</name>`
+ * leaves module names untouched. If no `<name>` element is present (e.g. a
+ * descriptor-less project) the input is returned unchanged, matching the
+ * transformer's graceful fallback.
+ *
+ * @param xml - rules.xml contents
+ * @param newName - new project name
+ * @returns rules.xml with the project name replaced (or the original if no `<name>`)
+ */
+export function setRulesXmlProjectName(xml: string, newName: string): string {
+  // Function replacement avoids `$`-sequence interpretation in the replacement string.
+  return xml.replace(/<name>[\s\S]*?<\/name>/, () => `<name>${escapeXmlText(newName)}</name>`);
+}
+

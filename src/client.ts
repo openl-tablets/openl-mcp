@@ -6,6 +6,7 @@
  */
 
 import axios, { AxiosInstance } from "axios";
+import FormData from "form-data";
 import type * as Types from "./types.js";
 import { AuthenticationManager } from "./auth.js";
 import { DEFAULTS, ERROR_LOCAL_REPOSITORY, HEADERS, REPOSITORY_LOCAL } from "./constants.js";
@@ -464,6 +465,137 @@ export class OpenLClient {
       { params }
     );
     return response.data;
+  }
+
+  // =============================================================================
+  // Project Creation & Repository Files (repo-mount, direct-to-branch)
+  // =============================================================================
+
+  /**
+   * Create a new project in a design repository from a ZIP skeleton.
+   *
+   * Maps to `PUT /repos/{repo}/projects/{name}` (multipart, `template` = zip),
+   * which commits the project in a single FULL changeset and returns the commit
+   * revision. The repository's default/base branch is used (this endpoint does
+   * not accept a branch). A name collision returns HTTP 409.
+   *
+   * @param repositoryId - Canonical repository id (resolve via getRepositoryIdByName)
+   * @param projectName - New project name (also the project folder)
+   * @param templateZip - ZIP archive whose root entries become the project files
+   * @param options - Optional commit comment and (mapped-folder repos only) path
+   * @returns The created project's revision (commit SHA) and branch (if supported)
+   */
+  async createProjectFromZip(
+    repositoryId: string,
+    projectName: string,
+    templateZip: Buffer,
+    options?: { comment?: string; path?: string }
+  ): Promise<Types.CreateProjectResult> {
+    const form = new FormData();
+    form.append("template", templateZip, {
+      filename: "template.zip",
+      contentType: "application/zip",
+    });
+    if (options?.comment) form.append("comment", options.comment);
+    if (options?.path) form.append("path", options.path);
+
+    const response = await this.axiosInstance.put<Types.CreateProjectResult>(
+      `/repos/${encodeURIComponent(repositoryId)}/projects/${encodeURIComponent(projectName)}`,
+      form,
+      { headers: form.getHeaders() }
+    );
+    return response.data;
+  }
+
+  /**
+   * Copy a file or folder within a design repository on a single branch.
+   *
+   * Maps to `POST /repos/{repo}/file-copy` with a {sourcePath, destinationPath}
+   * body. Copying a project folder recursively copies all of its contents. The
+   * copy is committed file-by-file (one commit per file, not atomic). A
+   * destination collision returns HTTP 409; a missing source returns HTTP 404.
+   *
+   * @param repositoryId - Canonical repository id
+   * @param sourcePath - Mount-relative source path (e.g. the source project name)
+   * @param destinationPath - Mount-relative destination path (e.g. the new project name)
+   * @param branch - Optional branch (source and destination share this branch)
+   */
+  async copyRepositoryFile(
+    repositoryId: string,
+    sourcePath: string,
+    destinationPath: string,
+    branch?: string
+  ): Promise<void> {
+    const body: Types.FilePathPairRequest = { sourcePath, destinationPath };
+    await this.axiosInstance.post(
+      `/repos/${encodeURIComponent(repositoryId)}/file-copy`,
+      body,
+      branch ? { params: { branch } } : undefined
+    );
+  }
+
+  /**
+   * Read a single file's contents from a design repository branch.
+   *
+   * Maps to `GET /repos/{repo}/files/{path}`. Returns the file content as a
+   * UTF-8 string, or `null` if the file does not exist (HTTP 404).
+   *
+   * @param repositoryId - Canonical repository id
+   * @param filePath - Mount-relative file path (e.g. "MyProject/rules.xml")
+   * @param branch - Optional branch
+   */
+  async getRepositoryFileContent(
+    repositoryId: string,
+    filePath: string,
+    branch?: string
+  ): Promise<string | null> {
+    const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
+    try {
+      const response = await this.axiosInstance.get<ArrayBuffer>(
+        `/repos/${encodeURIComponent(repositoryId)}/files/${encodedPath}`,
+        {
+          responseType: "arraybuffer",
+          params: branch ? { branch } : undefined,
+          headers: { Accept: "*/*" },
+        }
+      );
+      return Buffer.from(response.data).toString("utf-8");
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Replace a single file's contents on a design repository branch.
+   *
+   * Maps to the raw `PUT /repos/{repo}/files/{path}` variant (updateResource).
+   * A non-JSON, non-multipart Content-Type is used so the request routes to the
+   * raw update handler (the JSON variant is the create-folder operation).
+   *
+   * @param repositoryId - Canonical repository id
+   * @param filePath - Mount-relative file path
+   * @param content - New file content
+   * @param branch - Optional branch
+   */
+  async updateRepositoryFileRaw(
+    repositoryId: string,
+    filePath: string,
+    content: Buffer | string,
+    branch?: string
+  ): Promise<void> {
+    const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
+    const body = Buffer.isBuffer(content) ? content : Buffer.from(content, "utf-8");
+    await this.axiosInstance.put(
+      `/repos/${encodeURIComponent(repositoryId)}/files/${encodedPath}`,
+      body,
+      {
+        headers: { "Content-Type": "application/xml" },
+        params: branch ? { branch } : undefined,
+      }
+    );
   }
 
   // =============================================================================

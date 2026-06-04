@@ -51,6 +51,26 @@ export interface ProjectViewModel {
   selectedBranches?: string[];
 }
 
+/**
+ * Response of the create-from-zip endpoint (PUT /repos/{repo}/projects/{name}).
+ * The revision is the git commit SHA of the single FULL-changeset commit that
+ * created the project.
+ */
+export interface CreateProjectResult {
+  revision: string;
+  /** Present only for repositories that support branches. */
+  branch?: string;
+}
+
+/**
+ * Request body for repository file copy/move operations
+ * (POST /repos/{repo}/file-copy and /file-move). Paths are mount-relative.
+ */
+export interface FilePathPairRequest {
+  sourcePath: string;
+  destinationPath: string;
+}
+
 export type TableType =
   // Decision Tables (most common - 5 variants)
   | "Rules"           // Standard decision table with explicit C/A/RET columns

@@ -569,7 +569,7 @@ function categoryOf(toolName: string): string {
   if (/^openl_(list_deployments|deploy_project|redeploy_project)$/.test(toolName)) {
     return "Deployment";
   }
-  if (/^openl_(list_projects|get_project|project_status|open_project|save_project|close_project|create_project_branch|list_project_local_changes|restore_project_local_change|upload_file|download_file|start_project_tests|get_test_results)/.test(toolName)) {
+  if (/^openl_(list_projects|get_project|project_status|open_project|save_project|close_project|create_project|create_project_branch|list_project_local_changes|restore_project_local_change|upload_file|download_file|start_project_tests|get_test_results)/.test(toolName)) {
     return "Project";
   }
   return "Other";
