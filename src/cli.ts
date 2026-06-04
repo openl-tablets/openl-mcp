@@ -26,7 +26,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { OpenLClient } from "./client.js";
 import { SERVER_INFO } from "./constants.js";
 import { executeTool, getAllTools, registerAllTools } from "./tool-handlers.js";
-import { sanitizeError } from "./utils.js";
+import { hashFingerprint, sanitizeError } from "./utils.js";
 import type * as Types from "./types.js";
 
 /**
@@ -362,22 +362,54 @@ function buildConfig(
 }
 
 /**
- * Load a previously persisted JSESSIONID from a cookie-jar file. Used to
- * make session-coupled flows (notably trace) work across separate `npx`
- * invocations — each new process otherwise starts with an empty session.
+ * A cookie-jar entry binds a persisted JSESSIONID to the server and principal
+ * it was issued for, so it is never replayed across a different host or user.
+ */
+interface CookieJarData {
+  /** Normalized studio base URL the session belongs to (client.getBaseUrl()). */
+  baseUrl: string;
+  /** sha256 fingerprint of the Authorization header (the principal). */
+  authFingerprint: string;
+  /** The JSESSIONID value. */
+  jsessionId: string;
+}
+
+/**
+ * Studio session ids are opaque alphanumerics; reject anything else so a
+ * tampered jar can't inject extra Cookie-header directives when replayed.
+ */
+function isValidJSessionId(value: string): boolean {
+  return /^[A-Za-z0-9._-]+$/.test(value);
+}
+
+/**
+ * Compute the binding (server + principal) for the current invocation. A
+ * persisted JSESSIONID is only restored when its stored binding matches this.
+ */
+function computeCookieBinding(client: OpenLClient): { baseUrl: string; authFingerprint: string } {
+  return {
+    baseUrl: client.getBaseUrl(),
+    authFingerprint: hashFingerprint(client.getAuthorizationHeader() ?? "anonymous"),
+  };
+}
+
+/**
+ * Load a previously persisted JSESSIONID from a cookie-jar file — but only when
+ * it was saved for the SAME base URL and principal as the current invocation,
+ * so a session never leaks across hosts or users.
  *
- * File format: a single line containing the JSESSIONID value (no prefix).
- * Missing/empty/unreadable file: returns `null` (treated as fresh session,
- * a warning is written to stderr so the user notices).
+ * Returns `null` (fresh session) for a missing/unreadable file, the legacy
+ * bare-cookie format (no binding to verify), a binding mismatch, or an invalid
+ * session id. Non-fatal cases emit a stderr warning so the user notices.
  */
 async function loadCookieJar(
   path: string,
+  binding: { baseUrl: string; authFingerprint: string },
   stderr: NodeJS.WritableStream,
 ): Promise<string | null> {
+  let raw: string;
   try {
-    const raw = await readFile(path, "utf-8");
-    const trimmed = raw.trim();
-    return trimmed === "" ? null : trimmed;
+    raw = await readFile(path, "utf-8");
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "ENOENT") return null; // first run — no jar yet
@@ -386,12 +418,45 @@ async function loadCookieJar(
     );
     return null;
   }
+
+  const trimmed = raw.trim();
+  if (trimmed === "") return null;
+
+  let data: Partial<CookieJarData> | null = null;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object") {
+      data = parsed as Partial<CookieJarData>;
+    }
+  } catch {
+    // Legacy format (a bare JSESSIONID line) carried no server/principal
+    // binding, so we cannot verify it belongs here — discard rather than replay.
+    stderr.write(
+      `Warning: ignoring legacy cookie jar at ${path} (no server/user binding); starting a fresh session.\n`,
+    );
+    return null;
+  }
+
+  if (!data || typeof data.jsessionId !== "string" || !isValidJSessionId(data.jsessionId)) {
+    stderr.write(
+      `Warning: ignoring malformed cookie jar at ${path}; starting a fresh session.\n`,
+    );
+    return null;
+  }
+  if (data.baseUrl !== binding.baseUrl || data.authFingerprint !== binding.authFingerprint) {
+    stderr.write(
+      `Warning: ignoring cookie jar at ${path}: it was saved for a different server or user; starting a fresh session.\n`,
+    );
+    return null;
+  }
+  return data.jsessionId;
 }
 
 /**
  * Persist the client's current JSESSIONID to the cookie-jar file with 0600
- * permissions. Best-effort: write failures emit a warning but do not fail
- * the tool invocation, since the API call itself has already succeeded.
+ * permissions, bound to the current base URL and principal so a later run only
+ * replays it for the same server+user. Best-effort: write failures emit a
+ * warning but do not fail the tool invocation.
  *
  * When the client has no session cookie (e.g. the tool hit only stateless
  * endpoints), no file is written.
@@ -399,11 +464,23 @@ async function loadCookieJar(
 async function saveCookieJar(
   path: string,
   cookie: string | null,
+  binding: { baseUrl: string; authFingerprint: string },
   stderr: NodeJS.WritableStream,
 ): Promise<void> {
   if (cookie === null) return;
+  if (!isValidJSessionId(cookie)) {
+    stderr.write(
+      `Warning: not persisting cookie jar at ${path}: unexpected session id format.\n`,
+    );
+    return;
+  }
+  const data: CookieJarData = {
+    baseUrl: binding.baseUrl,
+    authFingerprint: binding.authFingerprint,
+    jsessionId: cookie,
+  };
   try {
-    await writeFile(path, `${cookie}\n`, { mode: 0o600 });
+    await writeFile(path, `${JSON.stringify(data)}\n`, { mode: 0o600 });
   } catch (error) {
     stderr.write(
       `Warning: could not write cookie jar at ${path}: ${(error as Error).message}\n`,
@@ -759,9 +836,12 @@ export async function runCli(options: RunCliOptions): Promise<number> {
     const client = (options.clientFactory ?? ((c) => new OpenLClient(c)))(config);
 
     // Cookie-jar: restore JSESSIONID from previous invocation so
-    // session-coupled flows (trace) work across separate `npx` calls.
-    if (parsed.cookieJarPath) {
-      const cookie = await loadCookieJar(parsed.cookieJarPath, stderr);
+    // session-coupled flows (trace) work across separate `npx` calls. The jar
+    // is bound to (base URL, principal) so a session never leaks across
+    // hosts/users.
+    const cookieBinding = parsed.cookieJarPath ? computeCookieBinding(client) : null;
+    if (parsed.cookieJarPath && cookieBinding) {
+      const cookie = await loadCookieJar(parsed.cookieJarPath, cookieBinding, stderr);
       if (cookie !== null) client.setSessionCookie(cookie);
     }
 
@@ -779,8 +859,8 @@ export async function runCli(options: RunCliOptions): Promise<number> {
     const result = await executeTool(parsed.toolName, toolArgs, client);
 
     // Persist any session cookie established by this call for the next one.
-    if (parsed.cookieJarPath) {
-      await saveCookieJar(parsed.cookieJarPath, client.getSessionCookie(), stderr);
+    if (parsed.cookieJarPath && cookieBinding) {
+      await saveCookieJar(parsed.cookieJarPath, client.getSessionCookie(), cookieBinding, stderr);
     }
 
     for (const part of result.content) {

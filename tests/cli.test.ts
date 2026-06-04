@@ -15,6 +15,7 @@ import { join } from "node:path";
 
 import { CliError, EXIT_CODES, classifyError, runCli } from "../src/cli.js";
 import { OpenLClient } from "../src/client.js";
+import { hashFingerprint } from "../src/utils.js";
 import type { OpenLConfig } from "../src/types.js";
 import { mockRepositories } from "./mocks/openl-api-mocks.js";
 
@@ -373,21 +374,31 @@ describe("CLI", () => {
         });
         expect(code).toBe(0);
 
-        const persisted = (await readFile(jarPath, "utf-8")).trim();
-        expect(persisted).toBe("abc123session");
+        const persisted = JSON.parse((await readFile(jarPath, "utf-8")).trim());
+        expect(persisted.jsessionId).toBe("abc123session");
+        expect(persisted.baseUrl).toBe(client.getBaseUrl());
+        expect(typeof persisted.authFingerprint).toBe("string");
       } finally {
         await rm(dir, { recursive: true, force: true });
       }
     });
 
-    it("restores JSESSIONID from the jar on the next invocation", async () => {
+    it("restores JSESSIONID from a jar bound to the same server and user", async () => {
       const dir = await mkdtemp(join(tmpdir(), "openl-cli-jar-"));
       try {
         const jarPath = join(dir, "session.jar");
-        await writeFile(jarPath, "prevsession789\n");
-
         const { client, mock: m } = createMockClient();
         mock = m;
+        // Write a jar whose binding matches the client (same base URL + principal).
+        await writeFile(
+          jarPath,
+          JSON.stringify({
+            baseUrl: client.getBaseUrl(),
+            authFingerprint: hashFingerprint(client.getAuthorizationHeader() ?? "anonymous"),
+            jsessionId: "prevsession789",
+          }) + "\n",
+        );
+
         // Capture the Cookie header the client sends.
         let sentCookie: string | undefined;
         m.onGet("/repos").reply((config) => {
@@ -406,6 +417,75 @@ describe("CLI", () => {
         });
         expect(code).toBe(0);
         expect(sentCookie).toContain("JSESSIONID=prevsession789");
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("ignores a legacy bare-cookie jar (no binding) and warns", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "openl-cli-jar-"));
+      try {
+        const jarPath = join(dir, "session.jar");
+        await writeFile(jarPath, "legacysession\n"); // pre-binding format
+
+        const { client, mock: m } = createMockClient();
+        mock = m;
+        let sentCookie: string | undefined;
+        m.onGet("/repos").reply((config) => {
+          sentCookie = (config.headers?.Cookie || config.headers?.cookie) as string | undefined;
+          return [200, mockRepositories];
+        });
+
+        const h = createHarness();
+        const code = await runCli({
+          argv: ["openl_list_repositories", "--cookie-jar", jarPath],
+          env: ENV_OK,
+          stdin: h.stdin,
+          stdout: h.stdout,
+          stderr: h.stderr,
+          clientFactory: () => client,
+        });
+        expect(code).toBe(0);
+        expect(sentCookie ?? "").not.toContain("JSESSIONID=legacysession");
+        expect(h.getStderr()).toContain("legacy cookie jar");
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("ignores a jar saved for a different server or user", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "openl-cli-jar-"));
+      try {
+        const jarPath = join(dir, "session.jar");
+        await writeFile(
+          jarPath,
+          JSON.stringify({
+            baseUrl: "http://other-host:9999/rest",
+            authFingerprint: "deadbeefdeadbeef",
+            jsessionId: "othersession",
+          }) + "\n",
+        );
+
+        const { client, mock: m } = createMockClient();
+        mock = m;
+        let sentCookie: string | undefined;
+        m.onGet("/repos").reply((config) => {
+          sentCookie = (config.headers?.Cookie || config.headers?.cookie) as string | undefined;
+          return [200, mockRepositories];
+        });
+
+        const h = createHarness();
+        const code = await runCli({
+          argv: ["openl_list_repositories", "--cookie-jar", jarPath],
+          env: ENV_OK,
+          stdin: h.stdin,
+          stdout: h.stdout,
+          stderr: h.stderr,
+          clientFactory: () => client,
+        });
+        expect(code).toBe(0);
+        expect(sentCookie ?? "").not.toContain("JSESSIONID=othersession");
+        expect(h.getStderr()).toContain("different server or user");
       } finally {
         await rm(dir, { recursive: true, force: true });
       }
