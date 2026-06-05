@@ -396,6 +396,8 @@ describe("MCP Server Tools", () => {
       name: "calculatePremium",
     };
     mockAxios.onPut(`/projects/${encoded}/tables/${encodeURIComponent("Rules.xls_1234")}`).reply(204);
+    // The edit tool reads the table back to trigger a recompile.
+    mockAxios.onGet(`/projects/${encoded}/tables/${encodeURIComponent("Rules.xls_1234")}`).reply(200, mockDecisionTable);
 
     const result = await executeTool(
       "openl_update_table",
@@ -403,6 +405,8 @@ describe("MCP Server Tools", () => {
       client
     );
     expect(result.content[0].text).toContain("Successfully updated table");
+    // recompile trigger fired: GET on the table after the PUT
+    expect(mockAxios.history.get.some((g) => g.url === `/projects/${encoded}/tables/Rules.xls_1234`)).toBe(true);
   });
 
   it("should execute openl_append_table", async () => {
@@ -414,6 +418,8 @@ describe("MCP Server Tools", () => {
     mockAxios
       .onPost(`/projects/${encoded}/tables/${encodeURIComponent("Customer_1234")}/lines`, appendData)
       .reply(200);
+    // The edit tool reads the table back to trigger a recompile.
+    mockAxios.onGet(`/projects/${encoded}/tables/${encodeURIComponent("Customer_1234")}`).reply(200, mockDecisionTable);
 
     const result = await executeTool(
       "openl_append_table",
@@ -421,6 +427,7 @@ describe("MCP Server Tools", () => {
       client
     );
     expect(result.content[0].text).toContain("Successfully appended");
+    expect(mockAxios.history.get.some((g) => g.url === `/projects/${encoded}/tables/Customer_1234`)).toBe(true);
   });
 
   it("should execute openl_append_table with RawSource and report row count", async () => {

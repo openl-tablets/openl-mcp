@@ -425,7 +425,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "Get Project Status",
     version: "1.0.0",
     description:
-      "Get the post-compilation status of a project: compile state, diagnostics, pending changes, and module/test summary. Read-only — does not trigger compilation. When wait=true, blocks until compileState is terminal (ok/warnings/errors) and emits MCP progress notifications.",
+      "Get the post-compilation status of a project: compile state, diagnostics, pending changes, and module/test summary. Read-only — does not trigger compilation. When wait=true, blocks until compileState is terminal (ok/warnings/errors) and emits MCP progress notifications. Note: compileState reflects the last compilation. The studio does not auto-compile on edit (it resets the status), but openl_update_table / openl_append_table / openl_create_project_table all trigger a recompile of the affected table, so this status reflects changes made through those tools. (Edits made by bypassing those tools — e.g. raw REST — won't refresh it until the table is read.)",
     inputSchema: schemas.z.toJSONSchema(schemas.projectStatusSchema) as Record<string, unknown>,
     annotations: {
       readOnlyHint: true,
@@ -990,7 +990,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "Replace Entire Table",
     version: "1.0.0",
     description:
-      "Replace the ENTIRE table structure with a modified version. Use for MODIFYING existing rows, DELETING rows, REORDERING rows, or STRUCTURAL changes. CRITICAL: Must send the FULL table structure (not just modified fields). DO NOT use for simple additions - use append_table instead. Required workflow: 1) Call get_table() to retrieve complete structure, 2) Modify the returned object, 3) Pass the ENTIRE modified object to update_table().",
+      "Replace the ENTIRE table structure with a modified version. Use for MODIFYING existing rows, DELETING rows, REORDERING rows, or STRUCTURAL changes. CRITICAL: Must send the FULL table structure (not just modified fields). DO NOT use for simple additions - use append_table instead. Required workflow: 1) Call get_table() to retrieve complete structure, 2) Modify the returned object, 3) Pass the ENTIRE modified object to update_table(). Note: the studio does not auto-compile after an edit (it only resets the previous compile status); this tool reads the table back after updating to trigger the recompile, so a subsequent openl_project_status reflects the change.",
     inputSchema: schemas.z.toJSONSchema(schemas.updateTableSchema) as Record<string, unknown>,
     annotations: {
       idempotentHint: true,
@@ -1012,9 +1012,14 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
       await client.updateTable(typedArgs.projectId, typedArgs.tableId, typedArgs.view);
 
+      // The studio resets (does not recompile) compile status on edit; reading the
+      // table back triggers its recompile so openl_project_status reflects the change.
+      await triggerTableRecompile(client, typedArgs.projectId, typedArgs.tableId);
+
       const result = {
         success: true,
         message: `Successfully updated table ${typedArgs.tableId}`,
+        recompileTriggered: true,
       };
 
       const formattedResult = formatResponse(result, format);
@@ -1030,7 +1035,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "Append Rows/Fields to Table",
     version: "1.0.0",
     description:
-      "Add new rows/fields to an existing table (additions only). Payload by type: Datatype→fields, SimpleRules/SmartRules→rules, SimpleSpreadsheet→steps, Vocabulary→values, RawSource→rows. For modifying, deleting, or reordering use update_table instead.",
+      "Add new rows/fields to an existing table (additions only). Payload by type: Datatype→fields, SimpleRules/SmartRules→rules, SimpleSpreadsheet→steps, Vocabulary→values, RawSource→rows. For modifying, deleting, or reordering use update_table instead. Note: the studio does not auto-compile after an edit (it only resets the previous compile status); this tool reads the table back after appending to trigger the recompile, so a subsequent openl_project_status reflects the change.",
     inputSchema: schemas.z.toJSONSchema(schemas.appendTableSchema) as Record<string, unknown>,
     annotations: {
       idempotentHint: true,
@@ -1062,6 +1067,10 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
       await client.appendProjectTable(typedArgs.projectId, typedArgs.tableId, appendData);
 
+      // The studio resets (does not recompile) compile status on edit; reading the
+      // table back triggers its recompile so openl_project_status reflects the change.
+      await triggerTableRecompile(client, typedArgs.projectId, typedArgs.tableId);
+
       // Generate appropriate success message based on table type
       let itemCount = 0;
       let itemType = "items";
@@ -1085,6 +1094,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
       const result = {
         success: true,
         message: `Successfully appended ${itemCount} ${itemType} to table ${typedArgs.tableId}`,
+        recompileTriggered: true,
       };
 
       const formattedResult = formatResponse(result, format);
@@ -1100,7 +1110,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "Create New Table",
     version: "1.0.0",
     description:
-      "Create a new table/rule in OpenL project using BETA API (Create New Project Table). This is the recommended tool for creating new OpenL tables programmatically. Use cases: Create Rules (decision tables), Spreadsheet tables, Datatype definitions, Test tables, or other table types. Requires moduleName (existing project module name) and complete table structure (EditableTableView). The table structure must include at least tableType, kind, name, plus type-specific data (rules/headers for Rules tables, rows for Spreadsheet, fields for Datatype). id is optional for create requests. Use get_table() on an existing table as a reference for the structure. This tool uses the Create New Project Table (BETA) API endpoint.",
+      "Create a new table/rule in OpenL project using BETA API (Create New Project Table). This is the recommended tool for creating new OpenL tables programmatically. Use cases: Create Rules (decision tables), Spreadsheet tables, Datatype definitions, Test tables, or other table types. Requires moduleName (an EXISTING project module — modules correspond to the project's .xlsx files; a freshly created blank project has a single module named 'Main') and a complete table structure (EditableTableView). The table structure must include at least tableType, kind, name, plus type-specific data (rules/headers for Rules tables, rows for Spreadsheet, fields for Datatype). id is optional for create requests. Use get_table() on an existing table as a reference for the structure. The response contains the created table's metadata (id, signature), NOT a compilation result — call openl_project_status afterward to confirm the project still compiles. This tool uses the Create New Project Table (BETA) API endpoint.",
     inputSchema: schemas.z.toJSONSchema(schemas.createProjectTableSchema) as Record<string, unknown>,
     annotations: {
       openWorldHint: true,
@@ -2459,6 +2469,28 @@ function rethrowConflictAsActionable(error: unknown, conflictMessage: string): n
     throw new McpError(ErrorCode.InvalidRequest, conflictMessage);
   }
   throw error;
+}
+
+/**
+ * Force the studio to (re)compile a table after an edit by reading it back.
+ *
+ * The studio's table-edit endpoints (update / append) do NOT auto-compile — they
+ * only RESET the project's previous compile status. Compilation is triggered when
+ * the table is read (GET /projects/{id}/tables/{tableId}). So after an edit we
+ * read the table by id, which makes a subsequent openl_project_status reflect the
+ * change. Best-effort: the edit has already been committed, so a failure here is
+ * swallowed (the status simply refreshes on the next table read).
+ */
+async function triggerTableRecompile(
+  client: OpenLClient,
+  projectId: string,
+  tableId: string,
+): Promise<void> {
+  try {
+    await client.getTable(projectId, tableId);
+  } catch {
+    // Best-effort: the edit already applied; compile status refreshes on next read.
+  }
 }
 
 function handleToolError(error: unknown, toolName: string, toolArgs?: unknown): McpError {
