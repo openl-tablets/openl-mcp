@@ -73,10 +73,9 @@ export interface FilePathPairRequest {
 
 /**
  * A file or folder node returned by the Projects: Files (BETA) API
- * (folder listings, `view=meta`, and file-search). The base contract is
- * {@link https://… FsNode} (path/name/type/basePath); the backend additionally
- * returns `extension`, `size` and `lastModified` for files, so they are modelled
- * here as optional.
+ * (folder listings, `view=meta`, and file-search). The base contract is the
+ * path/name/type/basePath quartet; the backend additionally returns `extension`,
+ * `size` and `lastModified` for files, so they are modelled here as optional.
  */
 export interface FsNode {
   /** Project-relative path (e.g. 'folder/rules.xlsx'). */

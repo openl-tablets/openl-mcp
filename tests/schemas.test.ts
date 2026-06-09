@@ -83,6 +83,31 @@ describe("createProjectTableSchema.table (EditableTableView union)", () => {
     expect(Object.keys(fieldItem.properties)).toEqual(expect.arrayContaining(["name", "type", "required", "defaultValue"]));
     expect(dt!.required).toEqual(expect.arrayContaining(["tableType", "name"]));
   });
+
+  it("runtime-parses a Datatype payload and preserves boolean 'required' (create + append)", () => {
+    const created = createProjectTableSchema.parse({
+      projectId: "p1",
+      moduleName: "Main",
+      table: {
+        tableType: "Datatype",
+        name: "LoanApplication",
+        fields: [{ name: "age", type: "Integer", required: true }],
+      },
+    });
+    const createdTable = created.table as { fields: Array<{ required: unknown }> };
+    expect(createdTable.fields[0].required).toBe(true);
+
+    const appended = appendTableSchema.parse({
+      projectId: "p1",
+      tableId: "t1",
+      appendData: {
+        tableType: "Datatype",
+        fields: [{ name: "score", type: "Integer", required: false }],
+      },
+    });
+    const appendData = appended.appendData as { fields: Array<{ required: unknown }> };
+    expect(appendData.fields[0].required).toBe(false);
+  });
 });
 
 describe("appendTableSchema.appendData union", () => {

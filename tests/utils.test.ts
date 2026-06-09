@@ -146,9 +146,24 @@ describe("utils", () => {
       expect(out.content).toBe("[redacted: 5000 chars]");
     });
 
-    it("leaves short string values intact (after pattern redaction)", () => {
+    it("leaves short non-sensitive string values intact (after pattern redaction)", () => {
       const out = sanitizeJson({ path: "rules/Model.xlsx" }) as Record<string, unknown>;
       expect(out.path).toBe("rules/Model.xlsx");
+    });
+
+    it("redacts a sensitive substring in a non-sensitive key's value via pattern matching", () => {
+      // 'note' is not a sensitive key, so the value is pattern-scanned.
+      const out = sanitizeJson({ note: "Bearer abc123secrettoken" }) as Record<string, unknown>;
+      expect(out.note).toBe("Bearer [REDACTED]");
+      expect(out.note).not.toContain("abc123secrettoken");
+    });
+
+    it("applies the 2048-char length cap at the boundary", () => {
+      const exactly2048 = "x".repeat(2048);
+      const over = "x".repeat(2049);
+      // > 2048 is redacted to a length marker; exactly 2048 passes through.
+      expect(sanitizeJson(exactly2048)).toBe(exactly2048);
+      expect(sanitizeJson(over)).toBe("[redacted: 2049 chars]");
     });
   });
 

@@ -286,7 +286,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: "openl_create_project_table",
-    description: "Create a new table/rule in an OpenL project (Create New Project Table API). This is the recommended tool for creating new OpenL tables programmatically. Use cases: Create Rules (decision tables), Spreadsheet tables, Datatype definitions, Test tables, or other table types. Requires moduleName (existing project module name) and complete table structure (EditableTableView). The table structure must include at least tableType, kind, name, plus type-specific data (rules/headers for Rules tables, rows for Spreadsheet, fields for Datatype). id is optional for create requests. Use get_table() on an existing table as a reference for the structure. This tool uses the Create New Project Table API endpoint.",
+    description: "Create a new table/rule in an OpenL project (Create New Project Table API). This is the recommended tool for creating new OpenL tables programmatically. Use cases: Create Rules (decision tables), Spreadsheet tables, Datatype definitions, Test tables, or other table types. Requires moduleName (existing project module name) and complete table structure (EditableTableView). The table structure must include at least tableType and name, plus type-specific data (rules/headers for Rules tables, rows for Spreadsheet, fields for Datatype). 'kind' and 'id' are optional for create requests. Use get_table() on an existing table as a reference for the structure. This tool uses the Create New Project Table API endpoint.",
     inputSchema: schemas.z.toJSONSchema(schemas.createProjectTableSchema) as Record<string, unknown>,
     _meta: {
       version: "1.0.0",
