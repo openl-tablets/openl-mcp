@@ -140,7 +140,7 @@ export const appendTableSchema = z.object({
       fields: z.array(z.object({
         name: z.string().describe("Field name"),
         type: z.string().describe("Field type (e.g., 'String', 'int', 'double')"),
-        required: z.boolean().optional().describe("Whether field is required"),
+        required: z.union([z.boolean(), z.string()]).optional().describe("Whether the field is required (backend field is a String; a boolean is accepted and coerced)."),
         defaultValue: z.any().optional().describe("Default value for the field"),
       })).describe("Array of field definitions to append"),
     }),
@@ -152,7 +152,11 @@ export const appendTableSchema = z.object({
     // SimpleSpreadsheetAppend
     z.object({
       tableType: z.literal("SimpleSpreadsheet"),
-      steps: z.array(z.unknown()).describe("Array of spreadsheet step objects to append"),
+      steps: z.array(z.object({
+        name: z.string().describe("Step name (referenced elsewhere as $StepName)."),
+        type: z.string().optional().describe("Step result type, e.g. 'Double'."),
+        value: z.any().describe("The step's formula or value, e.g. '= app.annualIncome / 12'. NOT 'formula'."),
+      })).describe("Array of spreadsheet steps to append: [{ name, type?, value }]."),
     }),
     // SmartRulesAppend
     z.object({
@@ -162,14 +166,34 @@ export const appendTableSchema = z.object({
     // VocabularyAppend
     z.object({
       tableType: z.literal("Vocabulary"),
-      values: z.array(z.unknown()).describe("Array of vocabulary value objects to append"),
+      values: z.array(z.object({ value: z.any() })).describe("Array of vocabulary values to append: [{ value }]."),
+    }),
+    // LookupAppend (SimpleLookup / SmartLookup) — rows are an array of maps.
+    z.object({
+      tableType: z.literal("SimpleLookup"),
+      rows: z.array(z.record(z.string(), z.unknown())).describe("Array of lookup rows to append; each row is a map keyed by the table's columns."),
+    }),
+    z.object({
+      tableType: z.literal("SmartLookup"),
+      rows: z.array(z.record(z.string(), z.unknown())).describe("Array of lookup rows to append; each row is a map keyed by the table's columns."),
+    }),
+    // DataAppend — rows are positional { values: [...] }.
+    z.object({
+      tableType: z.literal("Data"),
+      rows: z.array(z.object({ values: z.array(z.any()) })).describe("Array of data rows to append: [{ values: [...] }] (one value per column)."),
+    }),
+    // TestAppend — rows are positional { values: [...] }; use this to add test cases
+    // to an existing Test table (create writes only the header, then append the cases).
+    z.object({
+      tableType: z.literal("Test"),
+      rows: z.array(z.object({ values: z.array(z.any()) })).describe("Array of test cases to append: [{ values: [...] }] (one value per header column)."),
     }),
     // RawSourceAppend
     z.object({
       tableType: z.literal("RawSource"),
       rows: z.array(z.array(z.record(z.string(), z.unknown()))).describe("Array of rows to append; each row is an array of cell objects (e.g. { value: string, colspan?: number } or { covered?: boolean })"),
     }),
-  ]).describe("Data structure to append to the table. Structure depends on tableType: Datatype uses 'fields', SimpleRules/SmartRules use 'rules', SimpleSpreadsheet uses 'steps', Vocabulary uses 'values', RawSource uses 'rows' (array of rows)"),
+  ]).describe("Data structure to append to the table. Structure depends on tableType: Datatype uses 'fields'; SimpleRules/SmartRules use 'rules'; SimpleLookup/SmartLookup use 'rows' (array of maps); Data/Test use 'rows' (array of { values }); SimpleSpreadsheet uses 'steps'; Vocabulary uses 'values'; RawSource uses 'rows' (array of cell-arrays)."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
@@ -330,6 +354,13 @@ const spreadsheetRowColView = z.object({
   name: z.string(),
   type: z.string().optional(),
 });
+// Lookup column header (LookupView/LookupHeaderView): a caption plus optional
+// nested sub-columns for multi-level column grouping (modelled one level deep —
+// nested children are open maps of the same {title, children} shape).
+const lookupHeaderView = z.object({
+  title: z.string().optional().describe("Header caption."),
+  children: z.array(z.record(z.string(), z.any())).optional().describe("Nested sub-column headers ({ title, children }) for multi-level grouping."),
+});
 
 const editableTableViewSchema = z.discriminatedUnion("tableType", [
   // Datatype — a data structure definition.
@@ -340,6 +371,7 @@ const editableTableViewSchema = z.discriminatedUnion("tableType", [
     fields: z.array(z.object({
       name: z.string(),
       type: z.string(),
+      required: z.union([z.boolean(), z.string()]).optional().describe("Whether the field is required (backend stores a String; a boolean is accepted and coerced)."),
       defaultValue: z.any().optional(),
     })).optional().describe("Field definitions: [{ name, type }]."),
   }),
@@ -348,7 +380,7 @@ const editableTableViewSchema = z.discriminatedUnion("tableType", [
     tableType: z.literal("Vocabulary"),
     ...commonTableFields,
     type: z.string().optional().describe("Vocabulary element type."),
-    values: z.array(z.any()).optional().describe("Vocabulary values."),
+    values: z.array(z.object({ value: z.any() })).optional().describe("Vocabulary values: [{ value }]."),
   }),
   // SimpleRules / SmartRules — decision tables. headers are captions [{title}];
   // each rules row is a MAP keyed by those titles (return column usually 'RET1').
@@ -365,7 +397,10 @@ const editableTableViewSchema = z.discriminatedUnion("tableType", [
     ...commonTableFields,
     ...executableFields,
     collect: z.boolean().optional(),
-    headers: z.array(z.record(z.string(), z.any())).optional(),
+    headers: z.array(z.object({
+      title: z.string().optional().describe("Condition column caption."),
+      width: z.number().int().optional().describe("Number of condition columns this header spans (defaults to 1)."),
+    })).optional().describe("Condition column headers: [{ title, width? }]."),
     rules: z.array(z.record(z.string(), z.any())).optional().describe("Rows as maps keyed by the header captions."),
   }),
   // SimpleLookup / SmartLookup — lookup tables (LookupView): rows is an array of maps.
@@ -374,16 +409,16 @@ const editableTableViewSchema = z.discriminatedUnion("tableType", [
     ...commonTableFields,
     ...executableFields,
     collect: z.boolean().optional(),
-    headers: z.array(z.record(z.string(), z.any())).optional(),
-    rows: z.array(z.record(z.string(), z.any())).optional(),
+    headers: z.array(lookupHeaderView).optional().describe("Lookup column headers: [{ title?, children? }] — children nest for multi-level column grouping."),
+    rows: z.array(z.record(z.string(), z.any())).optional().describe("Lookup rows as maps keyed by the columns."),
   }),
   z.object({
     tableType: z.literal("SmartLookup"),
     ...commonTableFields,
     ...executableFields,
     collect: z.boolean().optional(),
-    headers: z.array(z.record(z.string(), z.any())).optional(),
-    rows: z.array(z.record(z.string(), z.any())).optional(),
+    headers: z.array(lookupHeaderView).optional().describe("Lookup column headers: [{ title?, children? }] — children nest for multi-level column grouping."),
+    rows: z.array(z.record(z.string(), z.any())).optional().describe("Lookup rows as maps keyed by the columns."),
   }),
   // SimpleSpreadsheet — a single-column spreadsheet of named steps. Each step's
   // formula goes in `value` (e.g. value: "= app.annualIncome / 12"), NOT 'formula'.
@@ -427,7 +462,12 @@ const editableTableViewSchema = z.discriminatedUnion("tableType", [
     tableType: z.literal("RawSource"),
     ...commonTableFields,
     pos: z.string().optional(),
-    source: z.array(z.array(z.any())).optional().describe("2D matrix of raw cells."),
+    source: z.array(z.array(z.object({
+      value: z.any().optional(),
+      colspan: z.number().int().optional(),
+      rowspan: z.number().int().optional(),
+      covered: z.boolean().optional(),
+    }))).optional().describe("2D matrix of raw cells: [[{ value, colspan?, rowspan?, covered? }]]."),
   }),
 ]).describe(
   "Complete table structure (EditableTableView), selected by the CASE-SENSITIVE 'tableType' discriminator " +

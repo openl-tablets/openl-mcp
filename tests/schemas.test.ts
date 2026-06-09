@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from "@jest/globals";
-import { z, createProjectTableSchema } from "../src/schemas.js";
+import { z, createProjectTableSchema, appendTableSchema } from "../src/schemas.js";
 
 type JsonSchemaObject = {
   properties: Record<string, { oneOf?: BranchSchema[] }>;
@@ -75,10 +75,39 @@ describe("createProjectTableSchema.table (EditableTableView union)", () => {
     expect(stepItems.additionalProperties).toBe(false);
   });
 
-  it("Datatype branch exposes fields", () => {
+  it("Datatype branch exposes fields incl. 'required' (parity with append)", () => {
     const dt = branchFor("Datatype");
     expect(dt).toBeDefined();
     expect(dt!.properties).toHaveProperty("fields");
+    const fieldItem = (dt!.properties as Record<string, { items?: BranchSchema }>).fields.items!;
+    expect(Object.keys(fieldItem.properties)).toEqual(expect.arrayContaining(["name", "type", "required", "defaultValue"]));
     expect(dt!.required).toEqual(expect.arrayContaining(["tableType", "name"]));
+  });
+});
+
+describe("appendTableSchema.appendData union", () => {
+  function appendBranches(): BranchSchema[] {
+    const json = z.toJSONSchema(appendTableSchema) as unknown as JsonSchemaObject;
+    return json.properties.appendData.oneOf ?? [];
+  }
+
+  it("covers all 10 appendable table types (incl. Data/Test/SimpleLookup/SmartLookup)", () => {
+    const types = appendBranches().map((b) => b.properties.tableType.const ?? b.properties.tableType.enum?.[0]);
+    expect(types).toEqual(
+      expect.arrayContaining([
+        "Datatype", "SimpleRules", "SmartRules", "SimpleSpreadsheet", "Vocabulary",
+        "SimpleLookup", "SmartLookup", "Data", "Test", "RawSource",
+      ])
+    );
+    expect(appendBranches().length).toBe(10);
+  });
+
+  it("Test/Data append branches use rows:[{values}]", () => {
+    for (const tt of ["Test", "Data"]) {
+      const b = appendBranches().find((x) => x.properties.tableType.const === tt);
+      expect(b).toBeDefined();
+      const rowsItem = (b!.properties as Record<string, { items?: BranchSchema }>).rows.items!;
+      expect(rowsItem.properties).toHaveProperty("values");
+    }
   });
 });
