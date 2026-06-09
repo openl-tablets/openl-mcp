@@ -1738,6 +1738,29 @@ describe("OpenLClient", () => {
         expect(called).toBe(false);
       });
 
+      it("rejects '.'/'..' in copy/move body paths and search 'from' (defense-in-depth)", async () => {
+        let called = false;
+        mockAxios.onAny().reply(() => {
+          called = true;
+          return [200, []];
+        });
+
+        await expect(
+          client.copyProjectFile("p1", { sourcePath: "a.xlsx", destinationPath: "../b.xlsx" })
+        ).rejects.toThrow(/project-relative|not allowed/);
+        await expect(
+          client.copyProjectFile("p1", { sourcePath: "../a.xlsx", destinationPath: "b.xlsx" })
+        ).rejects.toThrow(/project-relative|not allowed/);
+        await expect(
+          client.moveProjectFile("p1", { sourcePath: "a.xlsx", destinationPath: "sub/../../x.xlsx" })
+        ).rejects.toThrow(/project-relative|not allowed/);
+        await expect(
+          client.searchProjectFiles("p1", { from: "../secrets" })
+        ).rejects.toThrow(/project-relative|not allowed/);
+
+        expect(called).toBe(false);
+      });
+
       it("serializes extensions as a comma-separated query param", async () => {
         let seenParams: Record<string, unknown> | undefined;
         mockAxios.onGet(/\/projects\/p1\/files\/?/).reply((config) => {

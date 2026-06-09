@@ -1172,17 +1172,29 @@ export class OpenLClient {
     if (trimmed === "") return "";
     const hasTrailingSlash = trimmed.endsWith("/");
     const segments = trimmed.split("/").filter((seg) => seg.length > 0);
-    // Reject '.'/'..' segments: encodeURIComponent leaves them untouched (both
-    // are RFC 3986 unreserved), so they would survive into the URL and let a
-    // downstream URL normalizer collapse them and escape the project's /files/
-    // subtree. Paths are always project-relative — enforce that here.
+    this.assertSafeProjectPath(path);
+    const encoded = segments.map(encodeURIComponent).join("/");
+    return hasTrailingSlash ? `${encoded}/` : encoded;
+  }
+
+  /**
+   * Defense-in-depth path validation: reject '.'/'..' segments so a caller-supplied
+   * path can't escape the project subtree. URL-path operations (read/write/delete)
+   * also need this because encodeURIComponent leaves '.'/'..' untouched (both are
+   * RFC 3986 unreserved) and a downstream URL normalizer could collapse them; body-
+   * path operations (copy/move source & destination, search 'from') don't go through
+   * encodeProjectFilePath, so they call this directly rather than trusting the backend.
+   *
+   * @param path - Project-relative path to validate (no-op for empty/undefined).
+   */
+  private assertSafeProjectPath(path: string | undefined): void {
+    if (!path) return;
+    const segments = path.split("/").filter((seg) => seg.length > 0);
     if (segments.some((seg) => seg === "." || seg === "..")) {
       throw new Error(
         "Invalid path: '.' and '..' segments are not allowed; paths must be project-relative."
       );
     }
-    const encoded = segments.map(encodeURIComponent).join("/");
-    return hasTrailingSlash ? `${encoded}/` : encoded;
   }
 
   /**
@@ -1369,6 +1381,7 @@ export class OpenLClient {
     query: Types.FileSearchQuery,
     options?: { branch?: string; fields?: string }
   ): Promise<Types.FsNode[]> {
+    this.assertSafeProjectPath(query.from);
     const projectPath = this.buildProjectPath(projectId);
     const params: Record<string, unknown> = {};
     if (options?.branch) params.branch = options.branch;
@@ -1398,6 +1411,8 @@ export class OpenLClient {
     pair: Types.FilePathPairRequest,
     options?: { branch?: string }
   ): Promise<void> {
+    this.assertSafeProjectPath(pair.sourcePath);
+    this.assertSafeProjectPath(pair.destinationPath);
     const projectPath = this.buildProjectPath(projectId);
     await this.axiosInstance.post(
       `${projectPath}/file-copy`,
@@ -1422,6 +1437,8 @@ export class OpenLClient {
     pair: Types.FilePathPairRequest,
     options?: { branch?: string }
   ): Promise<void> {
+    this.assertSafeProjectPath(pair.sourcePath);
+    this.assertSafeProjectPath(pair.destinationPath);
     const projectPath = this.buildProjectPath(projectId);
     await this.axiosInstance.post(
       `${projectPath}/file-move`,

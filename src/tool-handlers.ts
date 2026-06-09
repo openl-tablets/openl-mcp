@@ -840,7 +840,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
       "(2) a FILE path with view='meta' returns JSON metadata (name, size, extension, lastModified); " +
       "(3) a FOLDER path (empty string for the root, or a path ending in '/') lists its entries (use recursive, viewMode FLAT/NESTED, extensions, namePattern, foldersOnly); " +
       "(4) a FOLDER path with download=true returns a ZIP of the folder (base64). " +
-      "Optional 'version' reads a historical revision; 'branch' pins the project branch. Optional byte range (offset/length) is applied client-side AFTER fetching the whole file (the backend does not support partial transfers). Use this to read AGENTS.md, README.md, schemas, manifests, or to inspect/export xlsx rule files.",
+      "Optional 'version' reads a historical revision; 'branch' pins the project branch. Optional byte range (offset/length) is applied client-side AFTER fetching the whole file (the backend does not support partial transfers), so the entire file is loaded into memory; for very large/binary files, bound the RETURNED size with offset/length and read in chunks (a full file's base64 can exceed MCP message limits). Use this to read AGENTS.md, README.md, schemas, manifests, or to inspect/export xlsx rule files.",
     inputSchema: schemas.z.toJSONSchema(schemas.readProjectFileSchema) as Record<string, unknown>,
     annotations: {
       readOnlyHint: true,
