@@ -281,11 +281,153 @@ export const createRuleSchema = z.object({
   response_format: ResponseFormat.optional(),
 }).strict();
 
+// -----------------------------------------------------------------------------
+// EditableTableView — discriminated union on the CASE-SENSITIVE `tableType`.
+//
+// The backend EditableTableView is a polymorphic Jackson type (one shape per
+// tableType) that rejects unknown fields with an opaque 400 "Failed to read
+// request". Modelling it as a discriminated union (mirroring appendTableSchema)
+// publishes the correct REQUIRED/allowed fields PER table type in the tool's JSON
+// Schema, so an LLM picks the right shape up front instead of reusing, say, the
+// SimpleRules shape (args/returnType/headers[title]/rules) for a Test table — which
+// actually needs the data-table shape (testedTableName/headers[fieldName]/rows[values]).
+// Field sets mirror the backend view classes (TableView + per-type subtypes).
+// -----------------------------------------------------------------------------
+const commonTableFields = {
+  name: z.string().describe("Table name (a valid Java identifier, e.g. 'calculatePremium')."),
+  id: z.string().optional().describe("Optional; ignored on create."),
+  kind: z.string().optional().describe("Informational only — NOT the discriminator (that is tableType)."),
+  properties: z.record(z.string(), z.any()).optional().describe("Dimension/table properties, e.g. { state: 'CA', lob: 'Auto' }."),
+  messages: z.array(z.any()).optional().describe("Read-only diagnostics; tolerated if a payload is copied from openl_get_table()."),
+};
+// ExecutableView base (rules, lookups, spreadsheets): the method signature is
+// defined by name + returnType + args — there is NO 'signature' field.
+const executableFields = {
+  returnType: z.string().optional().describe("Return type, e.g. 'String', 'Double', 'EligibilityResult', 'SpreadsheetResult'."),
+  args: z.array(z.object({
+    name: z.string().describe("Parameter name, e.g. 'app'."),
+    type: z.string().describe("Parameter type, e.g. 'LoanApplication', 'Integer'."),
+  })).optional().describe("Input parameters: [{ name, type }]. There is NO 'signature' field — use this instead."),
+};
+const rulesHeaderView = z.object({ title: z.string().describe("Column caption.") });
+const dataHeaderView = z.object({
+  fieldName: z.string().describe("Column accessor, e.g. 'app.age' (an input) or '_res_.eligible' (an expected result)."),
+  displayName: z.string().optional(),
+  foreignKey: z.string().optional(),
+});
+const dataRowView = z.object({
+  values: z.array(z.any()).describe("Positional cell values — one per header, in header order."),
+});
+
+const editableTableViewSchema = z.discriminatedUnion("tableType", [
+  // Datatype — a data structure definition.
+  z.object({
+    tableType: z.literal("Datatype"),
+    ...commonTableFields,
+    extends: z.string().optional().describe("Parent datatype to extend, if any."),
+    fields: z.array(z.object({
+      name: z.string(),
+      type: z.string(),
+      defaultValue: z.any().optional(),
+    })).optional().describe("Field definitions: [{ name, type }]."),
+  }),
+  // Vocabulary — an enumeration of values.
+  z.object({
+    tableType: z.literal("Vocabulary"),
+    ...commonTableFields,
+    type: z.string().optional().describe("Vocabulary element type."),
+    values: z.array(z.any()).optional().describe("Vocabulary values."),
+  }),
+  // SimpleRules / SmartRules — decision tables. headers are captions [{title}];
+  // each rules row is a MAP keyed by those titles (return column usually 'RET1').
+  z.object({
+    tableType: z.literal("SimpleRules"),
+    ...commonTableFields,
+    ...executableFields,
+    collect: z.boolean().optional(),
+    headers: z.array(rulesHeaderView).optional().describe("Column captions, e.g. [{title:'creditScore'},{title:'RET1'}]."),
+    rules: z.array(z.record(z.string(), z.any())).optional().describe("Rows as maps keyed by the header titles, e.g. { creditScore: '< 580', RET1: 'Poor' }."),
+  }),
+  z.object({
+    tableType: z.literal("SmartRules"),
+    ...commonTableFields,
+    ...executableFields,
+    collect: z.boolean().optional(),
+    headers: z.array(z.record(z.string(), z.any())).optional(),
+    rules: z.array(z.record(z.string(), z.any())).optional().describe("Rows as maps keyed by the header captions."),
+  }),
+  // SimpleLookup / SmartLookup — lookup tables (LookupView): rows is an array of maps.
+  z.object({
+    tableType: z.literal("SimpleLookup"),
+    ...commonTableFields,
+    ...executableFields,
+    collect: z.boolean().optional(),
+    headers: z.array(z.record(z.string(), z.any())).optional(),
+    rows: z.array(z.record(z.string(), z.any())).optional(),
+  }),
+  z.object({
+    tableType: z.literal("SmartLookup"),
+    ...commonTableFields,
+    ...executableFields,
+    collect: z.boolean().optional(),
+    headers: z.array(z.record(z.string(), z.any())).optional(),
+    rows: z.array(z.record(z.string(), z.any())).optional(),
+  }),
+  // SimpleSpreadsheet — steps.
+  z.object({
+    tableType: z.literal("SimpleSpreadsheet"),
+    ...commonTableFields,
+    ...executableFields,
+    steps: z.array(z.record(z.string(), z.any())).optional().describe("Spreadsheet steps."),
+  }),
+  // Spreadsheet — rows/columns/cells.
+  z.object({
+    tableType: z.literal("Spreadsheet"),
+    ...commonTableFields,
+    ...executableFields,
+    rows: z.array(z.record(z.string(), z.any())).optional(),
+    columns: z.array(z.record(z.string(), z.any())).optional(),
+    cells: z.array(z.array(z.any())).optional().describe("2D matrix of spreadsheet cells."),
+  }),
+  // Data — a data table (AbstractDataView): headers[fieldName] + rows[{values}].
+  z.object({
+    tableType: z.literal("Data"),
+    ...commonTableFields,
+    dataType: z.string().optional().describe("Element type of the data table."),
+    headers: z.array(dataHeaderView).optional().describe("Columns: [{fieldName}]."),
+    rows: z.array(dataRowView).optional().describe("Rows as positional { values: [...] }."),
+  }),
+  // Test — a test table (AbstractDataView). NOTE: 'testedTableName' (NOT
+  // 'testedMethodName'), headers use 'fieldName' (NOT 'title'), and test cases go
+  // in 'rows' as positional { values } (NOT 'rules').
+  z.object({
+    tableType: z.literal("Test"),
+    ...commonTableFields,
+    testedTableName: z.string().describe("Name of the table/method under test (NOT 'testedMethodName')."),
+    headers: z.array(dataHeaderView).optional().describe("Test columns: [{fieldName}] — inputs like 'app.age' and expected results like '_res_.eligible'."),
+    rows: z.array(dataRowView).optional().describe("Test cases as positional { values: [...] } (NOT 'rules'); one value per header."),
+  }),
+  // RawSource — raw 2D cell matrix.
+  z.object({
+    tableType: z.literal("RawSource"),
+    ...commonTableFields,
+    pos: z.string().optional(),
+    source: z.array(z.array(z.any())).optional().describe("2D matrix of raw cells."),
+  }),
+]).describe(
+  "Complete table structure (EditableTableView), selected by the CASE-SENSITIVE 'tableType' discriminator " +
+  "(Datatype, Vocabulary, Spreadsheet, SimpleSpreadsheet, SimpleRules, SmartRules, SimpleLookup, SmartLookup, Data, Test, RawSource — " +
+  "lowercase like 'datatype' is rejected). Each table type has a DIFFERENT shape (shown per branch); the backend rejects unknown/extra " +
+  "fields with a 400 'Failed to read request'. Rules tables use args/returnType/headers[{title}]/rules; Data and Test tables use " +
+  "headers[{fieldName}]/rows[{values}] (Test also needs testedTableName) — do NOT mix the two. There is NO 'signature' field. " +
+  "Tip: openl_get_table() on an existing table of the SAME type returns this exact shape to copy."
+);
+
 export const createProjectTableSchema = z.object({
   projectId: projectIdSchema,
-  moduleName: z.string().min(1).describe("Name of an existing project module where the table will be created (for example, 'Rules')."),
+  moduleName: z.string().min(1).describe("Name of an existing project module where the table will be created (for example, 'Main' or 'Rules')."),
   sheetName: z.string().optional().describe("Name of the sheet where the table will be created within the Excel file. If not provided, the table name will be used as the sheet name."),
-  table: z.record(z.string(), z.any()).describe("Complete table structure (EditableTableView). REQUIRED: 'tableType' (the CASE-SENSITIVE discriminator — use one of EXACTLY: Datatype, Vocabulary, Spreadsheet, SimpleSpreadsheet, SimpleRules, SmartRules, SimpleLookup, SmartLookup, Data, Test, RawSource; lowercase like 'datatype' is rejected) and 'name'. Add type-specific data: 'fields' for Datatype; 'rules' for SimpleRules/SmartRules; 'rows' for Spreadsheet; 'steps' for SimpleSpreadsheet; 'values' for Vocabulary. For SimpleRules/SmartRules/lookups ALSO provide 'returnType' (e.g. 'String'), 'args':[{name,type}] (inputs), and 'headers':[{title}] (column captions, one per rules-row key; return column usually 'RET1'); each rules row is a map keyed by the header titles. There is NO 'signature' field — define the method via name+returnType+args; the backend rejects unknown/extra fields with a 400 'Failed to read request'. 'kind' is informational (not the discriminator). 'id' is optional for create. Tip: call openl_get_table() on an existing table to copy its exact shape; for a blank project (no tables yet) build it from the tableType values above."),
+  table: editableTableViewSchema,
   response_format: ResponseFormat.optional(),
 }).strict();
 
