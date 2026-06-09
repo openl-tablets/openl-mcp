@@ -1597,6 +1597,31 @@ describe("Tool Handler Integration Tests", () => {
         expect(parsed.data.committed).toBe(false);
       });
 
+      it("openl_write_project_file with 'message' commits the write (save) and reports committed:true", async () => {
+        mockAxios.onPost("/projects/p1/files/docs/x.md").reply(201, {});
+        // saveProject(): GET project (EDITING, design) -> GET validation -> PATCH commit
+        mockAxios.onGet("/projects/p1").reply(200, { id: "p1", name: "P", status: "EDITING", repository: "design" });
+        mockAxios.onGet("/projects/p1/validation").reply(200, { valid: true, errors: [] });
+        let patched: Record<string, unknown> = {};
+        mockAxios.onPatch("/projects/p1").reply((config) => {
+          patched = JSON.parse(config.data);
+          return [204];
+        });
+
+        const result = await executeTool("openl_write_project_file", {
+          projectId: "p1",
+          path: "docs/x.md",
+          content: "hello",
+          message: "add docs/x.md",
+          response_format: "json",
+        }, client);
+
+        expect(patched.comment).toBe("add docs/x.md"); // committed via save (PATCH)
+        const parsed = JSON.parse(result.content[0].text);
+        expect(parsed.data.committed).toBe(true);
+        expect(parsed.data.message).toContain("committed");
+      });
+
       it("openl_delete_project_file deletes and reports success", async () => {
         mockAxios.onDelete("/projects/p1/files/old.txt").reply(204);
 

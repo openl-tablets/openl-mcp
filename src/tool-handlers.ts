@@ -965,7 +965,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     version: "1.0.0",
     description:
       "Create or replace a file in a project by its project-relative path. Provide 'content' as UTF-8 text (default) or base64 (set encoding='base64' for binary files such as xlsx/images). " +
-      "IMPORTANT: the write lands in the project WORKING COPY and is NOT committed to Git — commit it afterwards with openl_save_project (there is no commit message). " +
+      "COMMIT: pass 'message' to commit the write to Git (a new revision is created); omit 'message' and the write stays in the project WORKING COPY (commit it later with openl_save_project). Committing saves ALL pending project changes and works only for design repositories (not 'local'). " +
       "By default missing parent folders are created (createFolders=true). If the target file already EXISTS, behavior follows conflictPolicy: FAIL (default) returns an error; OVERWRITE replaces the file in place; SKIP leaves the existing file unchanged (reported skipped). Use 'branch' to pin the project's branch (omit for local/non-branch repositories). Use this to add or update docs, schemas, or manifests. (For a NEW file the tool POSTs/creates; OVERWRITE is performed via PUT/update — overwriting a module .xlsx replaces its bytes but to change a module's TABLES use openl_update_table / openl_append_table / openl_create_project_table.)",
     inputSchema: schemas.z.toJSONSchema(schemas.writeProjectFileSchema) as Record<string, unknown>,
     annotations: {
@@ -979,6 +979,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
         encoding?: "utf-8" | "base64";
         createFolders?: boolean;
         conflictPolicy?: "FAIL" | "OVERWRITE" | "SKIP";
+        message?: string;
         branch?: string;
         response_format?: "json" | "markdown";
       };
@@ -1050,20 +1051,42 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
         }
       }
 
+      // "message present -> commit": after writing to the working copy, commit it to
+      // Git via saveProject (a PATCH that creates a revision). Saving commits ALL
+      // pending project changes, not just this file (OpenL has no per-file commit).
+      // Without a message the write simply stays in the working copy.
+      let committed = false;
+      let commitNote: string | undefined;
+      if (typedArgs.message) {
+        try {
+          const saveResult = await client.saveProject(typedArgs.projectId, typedArgs.message);
+          committed = saveResult.success !== false;
+          commitNote = saveResult.message;
+        } catch (error) {
+          // e.g. a 'local' repository (no Git) — the file is already written to the
+          // working copy, so report it couldn't be committed instead of failing.
+          commitNote = sanitizeError(error);
+        }
+      }
+
+      const verb = action === "overwritten" ? "Overwrote" : "Wrote";
+      const prep = action === "overwritten" ? "in" : "to";
       const result = {
         success: true,
         path: typedArgs.path,
         action,
         bytesWritten: buffer.length,
-        committed: false,
+        committed,
         ...(typedArgs.branch ? { branch: typedArgs.branch } : {}),
         ...(metadata && typeof metadata === "object" && Object.keys(metadata as object).length > 0
           ? { metadata }
           : {}),
         message:
-          `${action === "overwritten" ? "Overwrote" : "Wrote"} ${buffer.length} byte(s) ` +
-          `${action === "overwritten" ? "in" : "to"} '${typedArgs.path}' in the project working copy. ` +
-          `Changes are NOT committed — use openl_save_project to commit them to Git.`,
+          committed
+            ? `${verb} ${buffer.length} byte(s) ${prep} '${typedArgs.path}' and committed the project to Git: "${typedArgs.message}".`
+            : typedArgs.message
+              ? `${verb} ${buffer.length} byte(s) ${prep} '${typedArgs.path}' in the working copy, but it was NOT committed${commitNote ? ` (${commitNote})` : ""}. Commit with openl_save_project (design repos only).`
+              : `${verb} ${buffer.length} byte(s) ${prep} '${typedArgs.path}' in the project working copy. Changes are NOT committed — pass 'message' to commit, or use openl_save_project.`,
       };
 
       return { content: [{ type: "text", text: formatResponse(result, format) }] };

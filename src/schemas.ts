@@ -818,6 +818,10 @@ export const writeProjectFileSchema = z.object({
     .enum(["FAIL", "OVERWRITE", "SKIP"])
     .optional()
     .describe("How to handle a target file that already exists: FAIL (default) returns an error; OVERWRITE replaces its content in place; SKIP leaves the existing file unchanged and reports it skipped. Has no effect when creating a new file."),
+  message: z
+    .string()
+    .optional()
+    .describe("Optional commit message. PRESENT → the write is committed to Git after saving the project (a new revision is created). ABSENT → the write stays in the project WORKING COPY (commit it later with openl_save_project). NOTE: committing saves ALL pending project changes (OpenL has no per-file commit), and only works for design (Git) repositories — not 'local'."),
   branch: fileBranchSchema,
   response_format: ResponseFormat.optional(),
 }).strict();
