@@ -24,6 +24,7 @@ import { logger } from "./logger.js";
 import { isAxiosError, sanitizeError, extractApiErrorInfo, sanitizeJson, setRulesXmlProjectName } from "./utils.js";
 import { waitForCompilation } from "./wait-for-compilation.js";
 import { getProjectTemplateZip } from "./project-templates.js";
+import { RESPONSE_LIMITS } from "./constants.js";
 import type * as Types from "./types.js";
 
 /**
@@ -923,9 +924,18 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
       const asBase64 = forceBinary || (!forceText && looksBinary(slice));
 
       if (!asBase64) {
-        // Text content: return verbatim (most useful for docs/schemas/manifests).
-        // response_format does not apply to verbatim text.
-        return { content: [{ type: "text", text: slice.toString("utf-8") }] };
+        // Text content: returned (near-)verbatim — most useful for docs/schemas/
+        // manifests (response_format does not apply). The verbatim path would
+        // otherwise bypass the response-size cap, so when the content exceeds the
+        // 25K limit we truncate and append a continuation cursor (next byte offset)
+        // so the caller can page the rest with offset/length.
+        let text = slice.toString("utf-8");
+        if (text.length > RESPONSE_LIMITS.MAX_CHARACTERS) {
+          text = text.slice(0, RESPONSE_LIMITS.MAX_CHARACTERS);
+          const nextOffset = start + Buffer.byteLength(text, "utf-8");
+          text += `\n\n${RESPONSE_LIMITS.TRUNCATION_MESSAGE} Returned bytes ${start}–${nextOffset} of ${total}; continue with offset=${nextOffset}.`;
+        }
+        return { content: [{ type: "text", text }] };
       }
 
       const envelope = {
@@ -1107,7 +1117,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "Search Project Files",
     version: "1.0.0",
     description:
-      "Search a project's files and folders by ant-glob path 'pattern' (e.g. 'rules/**/*.xlsx'), file 'extensions', resource 'type' (FILE/FOLDER/ANY), and/or a case-insensitive 'content' substring (full-text). Maps to POST /projects/{projectId}/file-search. IMPORTANT: set recursive=true to search nested folders — by default (recursive omitted/false) only the project's TOP LEVEL is searched, and a '**' glob alone does NOT descend (so a project-wide search needs recursive=true, and to match files in subfolders use a '**/' pattern such as '**/*.xlsx', not '*.xlsx'). Scope SUBTREE (default) searches within the project and may target a historical 'version'; scope ANCESTORS walks up to the repository root. Returns matching nodes (path, name, type, size, ...). Use 'branch' to pin the project's branch. Use this for questions like \"where is portability loading mentioned?\" (content, recursive=true) or \"list every xlsx under rules\" (pattern '**/*.xlsx', recursive=true).",
+      "Search a project's files and folders by ant-glob path 'pattern' (e.g. 'rules/**/*.xlsx'), file 'extensions', resource 'type' (FILE/FOLDER/ANY), and/or a case-insensitive 'content' substring (full-text). Maps to POST /projects/{projectId}/file-search. IMPORTANT: set recursive=true to search nested folders — by default (recursive omitted/false) only the project's TOP LEVEL is searched, and a '**' glob alone does NOT descend (so a project-wide search needs recursive=true, and to match files in subfolders use a '**/' pattern such as '**/*.xlsx', not '*.xlsx'). Scope SUBTREE (default) searches within the project and may target a historical 'version'; scope ANCESTORS walks up to the repository root. Returns matching nodes (path, name, type, size, ...), paginated client-side via 'limit'/'offset' (the response carries pagination metadata; the server returns the full match set). Use 'branch' to pin the project's branch. Use this for questions like \"where is portability loading mentioned?\" (content, recursive=true) or \"list every xlsx under rules\" (pattern '**/*.xlsx', recursive=true).",
     inputSchema: schemas.z.toJSONSchema(schemas.searchProjectFilesSchema) as Record<string, unknown>,
     annotations: {
       readOnlyHint: true,
@@ -1127,6 +1137,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
         version?: string;
         branch?: string;
         fields?: string;
+        limit?: number;
+        offset?: number;
         response_format?: "json" | "markdown";
       };
 
@@ -1138,6 +1150,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
       }
 
       const format = validateResponseFormat(typedArgs.response_format);
+      const { limit, offset } = validatePagination(typedArgs.limit, typedArgs.offset);
 
       // Undefined fields are dropped by JSON serialization, so an empty query
       // matches everything in scope.
@@ -1152,13 +1165,22 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
         version: typedArgs.version,
       };
 
+      // The backend file-search has no server-side paging (it returns the full
+      // match set), so — like openl_list_deployments/openl_list_repositories — we
+      // paginate the returned array client-side and report pagination metadata.
       const results = await client.searchProjectFiles(typedArgs.projectId, query, {
         branch: typedArgs.branch,
         fields: typedArgs.fields,
       });
+      const paginated = paginateResults(results, limit, offset);
 
       return {
-        content: [{ type: "text", text: formatResponse(results, format) }],
+        content: [{
+          type: "text",
+          text: formatResponse(paginated.data, format, {
+            pagination: { limit, offset, total: paginated.total_count },
+          }),
+        }],
       };
     },
   });

@@ -869,7 +869,7 @@ export const searchProjectFilesSchema = z.object({
     .optional()
     .describe("Comma-separated response fields to return per result (e.g. 'path,name,type'). When omitted, the full response is returned."),
   response_format: ResponseFormat.optional(),
-}).strict();
+}).merge(PaginationParams).strict();
 
 const copyMovePairSchema = {
   projectId: projectIdSchema,

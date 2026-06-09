@@ -1887,6 +1887,26 @@ describe("OpenLClient", () => {
 
         expect(body).toEqual({ sourcePath: "a.xlsx", destinationPath: "sub/a.xlsx" });
       });
+
+      it("normalizes body paths (strips leading slash) but does NOT percent-encode them", async () => {
+        let copyBody: Record<string, unknown> = {};
+        let searchBody: Record<string, unknown> = {};
+        mockAxios.onPost("/projects/p1/file-copy").reply((config) => {
+          copyBody = JSON.parse(config.data);
+          return [201];
+        });
+        mockAxios.onPost("/projects/p1/file-search").reply((config) => {
+          searchBody = JSON.parse(config.data);
+          return [200, []];
+        });
+
+        // Leading slash is stripped; the space is preserved (NOT %20) — body paths are raw JSON.
+        await client.copyProjectFile("p1", { sourcePath: "/rules/My File.xlsx", destinationPath: "/out/Copy File.xlsx" });
+        expect(copyBody).toEqual({ sourcePath: "rules/My File.xlsx", destinationPath: "out/Copy File.xlsx" });
+
+        await client.searchProjectFiles("p1", { from: "/rules" });
+        expect(searchBody.from).toBe("rules");
+      });
     });
   });
 });

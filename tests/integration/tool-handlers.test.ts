@@ -1519,6 +1519,21 @@ describe("Tool Handler Integration Tests", () => {
         expect(result.content[0].text).toBe("234");
       });
 
+      it("openl_read_project_file caps oversized text at 25K and appends a continuation cursor", async () => {
+        const big = "A".repeat(30000); // > 25K chars
+        mockAxios.onGet("/projects/p1/files/big.txt").reply(200, big, {
+          "content-type": "text/plain",
+          "content-disposition": "attachment",
+        });
+
+        const result = await executeTool("openl_read_project_file", { projectId: "p1", path: "big.txt" }, client);
+        const text = result.content[0].text;
+        expect(text.startsWith("A".repeat(100))).toBe(true);
+        // First 25000 chars of content + a continuation note pointing at the next byte offset.
+        expect(text).toContain("continue with offset=25000");
+        expect(text.length).toBeLessThan(25000 + 300);
+      });
+
       it("openl_read_project_file returns a folder listing as JSON", async () => {
         const listing = JSON.stringify([
           { path: "a.xlsx", name: "a.xlsx", type: "file" },
@@ -1615,6 +1630,25 @@ describe("Tool Handler Integration Tests", () => {
         const parsed = JSON.parse(result.content[0].text);
         expect(parsed.data).toHaveLength(1);
         expect(parsed.data[0].name).toBe("M.xlsx");
+      });
+
+      it("openl_search_project_files paginates the match set client-side (limit/offset)", async () => {
+        const nodes = Array.from({ length: 5 }, (_, i) => ({ path: `f${i}.xlsx`, name: `f${i}.xlsx`, type: "file" }));
+        mockAxios.onPost("/projects/p1/file-search").reply(200, nodes);
+
+        const page1 = JSON.parse((await executeTool("openl_search_project_files", {
+          projectId: "p1", pattern: "**/*.xlsx", limit: 2, offset: 0, response_format: "json",
+        }, client)).content[0].text);
+        expect(page1.data).toHaveLength(2);
+        expect(page1.data[0].name).toBe("f0.xlsx");
+        expect(page1.pagination).toMatchObject({ limit: 2, offset: 0, total_count: 5, has_more: true });
+
+        const page3 = JSON.parse((await executeTool("openl_search_project_files", {
+          projectId: "p1", pattern: "**/*.xlsx", limit: 2, offset: 4, response_format: "json",
+        }, client)).content[0].text);
+        expect(page3.data).toHaveLength(1);
+        expect(page3.data[0].name).toBe("f4.xlsx");
+        expect(page3.pagination).toMatchObject({ total_count: 5, has_more: false });
       });
 
       it("openl_copy_project_file copies and reports source/destination", async () => {

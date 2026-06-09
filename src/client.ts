@@ -1198,6 +1198,20 @@ export class OpenLClient {
   }
 
   /**
+   * Normalize a file path carried in a JSON request BODY (copy/move source &
+   * destination, search 'from'): strip leading slashes so it's consistently
+   * project-relative (matching the URL-path encoder), and validate it. Unlike
+   * encodeProjectFilePath this does NOT percent-encode — body paths are sent raw
+   * in JSON, so encoding would corrupt names containing spaces or reserved chars
+   * (e.g. "My File.xlsx" -> "My%20File.xlsx", a literal name the backend can't find).
+   */
+  private normalizeBodyPath(path: string): string {
+    const normalized = (path ?? "").replace(/^\/+/, "");
+    this.assertSafeProjectPath(normalized);
+    return normalized;
+  }
+
+  /**
    * Read a file's bytes, a file's metadata, or a folder listing from a project.
    *
    * Maps to `GET /projects/{projectId}/files/{path}`. The single endpoint serves
@@ -1381,7 +1395,7 @@ export class OpenLClient {
     query: Types.FileSearchQuery,
     options?: { branch?: string; fields?: string }
   ): Promise<Types.FsNode[]> {
-    this.assertSafeProjectPath(query.from);
+    const body = query.from !== undefined ? { ...query, from: this.normalizeBodyPath(query.from) } : query;
     const projectPath = this.buildProjectPath(projectId);
     const params: Record<string, unknown> = {};
     if (options?.branch) params.branch = options.branch;
@@ -1389,7 +1403,7 @@ export class OpenLClient {
 
     const response = await this.axiosInstance.post<Types.FsNode[]>(
       `${projectPath}/file-search`,
-      query,
+      body,
       Object.keys(params).length > 0 ? { params } : undefined
     );
     return response.data;
@@ -1411,12 +1425,14 @@ export class OpenLClient {
     pair: Types.FilePathPairRequest,
     options?: { branch?: string }
   ): Promise<void> {
-    this.assertSafeProjectPath(pair.sourcePath);
-    this.assertSafeProjectPath(pair.destinationPath);
+    const body: Types.FilePathPairRequest = {
+      sourcePath: this.normalizeBodyPath(pair.sourcePath),
+      destinationPath: this.normalizeBodyPath(pair.destinationPath),
+    };
     const projectPath = this.buildProjectPath(projectId);
     await this.axiosInstance.post(
       `${projectPath}/file-copy`,
-      pair,
+      body,
       options?.branch ? { params: { branch: options.branch } } : undefined
     );
   }
@@ -1437,12 +1453,14 @@ export class OpenLClient {
     pair: Types.FilePathPairRequest,
     options?: { branch?: string }
   ): Promise<void> {
-    this.assertSafeProjectPath(pair.sourcePath);
-    this.assertSafeProjectPath(pair.destinationPath);
+    const body: Types.FilePathPairRequest = {
+      sourcePath: this.normalizeBodyPath(pair.sourcePath),
+      destinationPath: this.normalizeBodyPath(pair.destinationPath),
+    };
     const projectPath = this.buildProjectPath(projectId);
     await this.axiosInstance.post(
       `${projectPath}/file-move`,
-      pair,
+      body,
       options?.branch ? { params: { branch: options.branch } } : undefined
     );
   }
