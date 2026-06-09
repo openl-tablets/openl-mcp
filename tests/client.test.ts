@@ -1569,4 +1569,109 @@ describe("OpenLClient", () => {
       await client.downloadFile("design-project1", "My Rules #1.xlsx");
     });
   });
+
+  describe("Project Creation & Repository Files", () => {
+    it("createProjectFromZip PUTs multipart to /repos/{repo}/projects/{name} and returns the revision", async () => {
+      let capturedContentType: string | undefined;
+      mockAxios.onPut("/repos/design/projects/Offer-CW").reply((config) => {
+        capturedContentType = (config.headers?.["Content-Type"] ?? config.headers?.["content-type"]) as string;
+        return [200, { revision: "abc123", branch: "main" }];
+      });
+
+      const result = await client.createProjectFromZip(
+        "design",
+        "Offer-CW",
+        Buffer.from("PK-zip-bytes"),
+        { comment: "Initial commit" }
+      );
+
+      expect(result).toEqual({ revision: "abc123", branch: "main" });
+      expect(capturedContentType).toMatch(/^multipart\/form-data; boundary=/);
+    });
+
+    it("createProjectFromZip includes the comment field in the multipart body", async () => {
+      mockAxios.onPut("/repos/design/projects/Offer-CW").reply(200, { revision: "r1" });
+
+      await client.createProjectFromZip("design", "Offer-CW", Buffer.from("zip"), { comment: "Hello audit" });
+
+      // form-data with only Buffer/string parts exposes getBuffer().
+      const form = mockAxios.history.put[0].data as unknown as { getBuffer: () => Buffer };
+      const body = form.getBuffer().toString("utf-8");
+      expect(body).toContain('name="template"; filename="template.zip"');
+      expect(body).toContain('name="comment"');
+      expect(body).toContain("Hello audit");
+    });
+
+    it("copyRepositoryFile POSTs the path pair to /file-copy with the branch param", async () => {
+      let capturedBody: unknown;
+      let capturedParams: unknown;
+      mockAxios.onPost("/repos/design/file-copy").reply((config) => {
+        capturedBody = JSON.parse(config.data);
+        capturedParams = config.params;
+        return [201];
+      });
+
+      await client.copyRepositoryFile("design", "Offer-US", "Offer-CW", "main");
+
+      expect(capturedBody).toEqual({ sourcePath: "Offer-US", destinationPath: "Offer-CW" });
+      expect(capturedParams).toEqual({ branch: "main" });
+    });
+
+    it("getRepositoryFileContent returns the file as a string and null on 404", async () => {
+      mockAxios.onGet("/repos/design/files/Offer-CW/rules.xml").reply(200, "<project><name>X</name></project>");
+      const xml = await client.getRepositoryFileContent("design", "Offer-CW/rules.xml");
+      expect(xml).toContain("<name>X</name>");
+
+      mockAxios.onGet("/repos/design/files/Missing/rules.xml").reply(404);
+      const missing = await client.getRepositoryFileContent("design", "Missing/rules.xml");
+      expect(missing).toBeNull();
+    });
+
+    it("updateRepositoryFileRaw PUTs the raw body with a non-JSON content type", async () => {
+      let capturedContentType: string | undefined;
+      mockAxios.onPut("/repos/design/files/Offer-CW/rules.xml").reply((config) => {
+        capturedContentType = (config.headers?.["Content-Type"] ?? config.headers?.["content-type"]) as string;
+        return [200];
+      });
+
+      await client.updateRepositoryFileRaw("design", "Offer-CW/rules.xml", "<project/>");
+      expect(capturedContentType).toBe("application/xml");
+    });
+  });
+
+  describe("Session continuity (firstRequestGate)", () => {
+    it("shares one JSESSIONID across concurrent calls when the bootstrap request issues no cookie", async () => {
+      // Studio reality: GET /repos issues NO Set-Cookie; GET /projects issues a fresh
+      // JSESSIONID for any request that arrives without one. If the turn's first request
+      // (the bootstrap) lands on /repos, naive gating releases all waiting siblings
+      // cookie-less and each opens its own studio session. The gate must keep
+      // serializing until a cookie actually lands.
+      let sessionsIssued = 0;
+      const cookiesSentToProjects: Array<string | undefined> = [];
+
+      mockAxios.onGet("/repos").reply(200, [{ id: "design", name: "Design" }]); // no Set-Cookie
+
+      mockAxios.onGet(/\/projects\/[^/]+\/status$/).reply((config) => {
+        const cookie = (config.headers?.Cookie ?? config.headers?.cookie) as string | undefined;
+        cookiesSentToProjects.push(cookie);
+        if (cookie && cookie.includes("JSESSIONID=")) {
+          return [200, { compileState: "ok" }]; // reuse existing session, no new cookie
+        }
+        sessionsIssued += 1;
+        return [200, { compileState: "ok" }, { "set-cookie": [`JSESSIONID=SESS-${sessionsIssued}; Path=/`] }];
+      });
+
+      // listRepositories() (→ /repos, first in array) bootstraps; two concurrent status calls follow.
+      await Promise.all([
+        client.listRepositories(),
+        client.getProjectStatus("p1"),
+        client.getProjectStatus("p2"),
+      ]);
+
+      // Exactly one session is ever issued, and only one /projects request went out cookie-less.
+      expect(sessionsIssued).toBe(1);
+      const cookieless = cookiesSentToProjects.filter((c) => !c || !c.includes("JSESSIONID=")).length;
+      expect(cookieless).toBe(1);
+    });
+  });
 });

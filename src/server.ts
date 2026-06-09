@@ -139,16 +139,27 @@ function getClientForSession(sessionId: string, query?: Record<string, string | 
       // Only log on first client creation for this session (not on every request)
       return client;
     } catch (error) {
+      // Auth was explicitly supplied for this session; do NOT silently fall back
+      // to the credential-less default client — that would surface later as a
+      // confusing upstream 401. Surface the construction failure instead.
       console.error(`⚠️  Failed to create client for session ${sessionId}:`, sanitizeError(error));
-      // Fall back to default client
+      throw error;
     }
   }
 
-  // Use default client (with server-configured base URL and auth)
+  // No auth supplied: use the default client (server-configured base URL, no creds).
   return baseClient;
 }
 
-// Initialize MCP Server for SSE transport
+// Startup-only MCP server. Its one load-bearing effect is the registerAllTools()
+// call inside initializeMCPServer(), which populates the shared (module-level)
+// tool registry so the REST helper endpoints (GET /tools, POST /execute, …) work
+// before any MCP session exists.
+//
+// WARNING: this instance must NEVER be .connect()-ed to a transport — its request
+// handlers are bound to the credential-less default client, so connecting it would
+// serve tools/resources unauthenticated. Every live MCP transport instead uses
+// createSessionServer(client), which binds an auth-scoped per-session client.
 let mcpServer: Server;
 
 async function initializeMCPServer(): Promise<void> {
@@ -521,34 +532,50 @@ async function handleResourceRead(
 }
 
 /**
+ * Parse an HTTP `Authorization` header into OpenL client config fields.
+ *
+ * Supports the three schemes the OpenL REST API accepts:
+ * - `Token <PAT>`  → personal access token
+ * - `Bearer <PAT>` → personal access token (MCP clients commonly send Bearer)
+ * - `Basic <base64(user:pass)>` → username/password
+ *
+ * Returns an empty object when no usable credential is present. Mirrors the
+ * scheme priority of {@link AuthenticationManager.addAuthHeaders}.
+ */
+function authConfigFromHeader(
+  authHeader: string | string[] | undefined,
+): Record<string, string | undefined> {
+  const config: Record<string, string | undefined> = {};
+  if (typeof authHeader !== "string") {
+    return config;
+  }
+  if (authHeader.startsWith("Token ")) {
+    const token = authHeader.substring(6);
+    if (token) config.OPENL_PERSONAL_ACCESS_TOKEN = token;
+  } else if (authHeader.startsWith("Bearer ")) {
+    const token = authHeader.substring(7);
+    if (token) config.OPENL_PERSONAL_ACCESS_TOKEN = token;
+  } else if (authHeader.startsWith("Basic ")) {
+    const decoded = Buffer.from(authHeader.substring(6), "base64").toString("utf-8");
+    const sep = decoded.indexOf(":");
+    if (sep > 0) {
+      config.OPENL_USERNAME = decoded.substring(0, sep);
+      config.OPENL_PASSWORD = decoded.substring(sep + 1);
+    }
+  }
+  return config;
+}
+
+/**
  * SSE endpoint handler (shared for /mcp/sse and /sse)
  */
 const handleSSE = async (req: Request, res: Response): Promise<Response | void> => {
   try {
-    // Extract configuration from headers and query params (only authentication, not base URL)
-    const configFromHeaders: Record<string, string | undefined> = {};
-    
-    // Extract token from standard Authorization header: "Authorization: Token <PAT>" or "Authorization: Bearer <PAT>"
-    // Supports both formats: Bearer (from MCP config) and Token (direct format)
-    // Bearer will be converted to Token format for OpenL API requests
-    const authHeader = req.headers.authorization;
-    if (authHeader && typeof authHeader === 'string') {
-      if (authHeader.startsWith('Token ')) {
-        const token = authHeader.substring(6); // Remove "Token " prefix
-        if (token) {
-          configFromHeaders.OPENL_PERSONAL_ACCESS_TOKEN = token;
-        }
-      } else if (authHeader.startsWith('Bearer ')) {
-        const token = authHeader.substring(7); // Remove "Bearer " prefix
-        if (token) {
-          configFromHeaders.OPENL_PERSONAL_ACCESS_TOKEN = token;
-        }
-      }
-    }
-
-    // Merge headers and query params (only for authentication, base URL comes from server config)
+    // Extract authentication from the Authorization header (Token/Bearer/Basic),
+    // then merge query params (base URL always comes from server config).
+    const configFromHeaders = authConfigFromHeader(req.headers.authorization);
     const configParams = { ...req.query, ...configFromHeaders } as Record<string, string | undefined>;
-    
+
     // Try to create client from configuration (base URL from server, auth from client)
     const sessionId = randomUUID();
     const client = getClientForSession(sessionId, configParams);
@@ -599,28 +626,9 @@ app.get('/sse', handleSSE); // Alias for nginx proxy compatibility
  */
 const handleStreamableHttp = async (req: Request, res: Response): Promise<Response | void> => {
   try {
-    // Extract configuration from headers and query params (only authentication, not base URL)
-    const configFromHeaders: Record<string, string | undefined> = {};
-    
-    // Extract token from standard Authorization header: "Authorization: Token <PAT>" or "Authorization: Bearer <PAT>"
-    // Supports both formats: Bearer (from MCP config) and Token (direct format)
-    // Bearer will be converted to Token format for OpenL API requests
-    const authHeader = req.headers.authorization;
-    if (authHeader && typeof authHeader === 'string') {
-      if (authHeader.startsWith('Token ')) {
-        const token = authHeader.substring(6); // Remove "Token " prefix
-        if (token) {
-          configFromHeaders.OPENL_PERSONAL_ACCESS_TOKEN = token;
-        }
-      } else if (authHeader.startsWith('Bearer ')) {
-        const token = authHeader.substring(7); // Remove "Bearer " prefix
-        if (token) {
-          configFromHeaders.OPENL_PERSONAL_ACCESS_TOKEN = token;
-        }
-      }
-    }
-
-    // Merge headers and query params (only for authentication, base URL comes from server config)
+    // Extract authentication from the Authorization header (Token/Bearer/Basic),
+    // then merge query params (base URL always comes from server config).
+    const configFromHeaders = authConfigFromHeader(req.headers.authorization);
     const configParams = { ...req.query, ...configFromHeaders } as Record<string, string | undefined>;
 
     // Check for existing session ID in headers
@@ -771,23 +779,58 @@ app.get('/tools/:toolName', (req: Request, res: Response) => {
 });
 
 /**
+ * Build a one-shot, request-scoped OpenL client for the REST helper endpoints
+ * from the request's Authorization header / query credentials (the base URL
+ * always comes from server config). Returns null when NO credentials are
+ * supplied — unlike the MCP transports, these endpoints have no session to
+ * carry per-connection auth, so the caller must respond 401 rather than fall
+ * through to the credential-less default client (which surfaces as a confusing
+ * upstream 401 laundered into a 500, leaking the internal request path).
+ */
+function authedClientFromRequest(req: Request): OpenLClient | null {
+  const cfg = {
+    ...req.query,
+    ...authConfigFromHeader(req.headers.authorization),
+  } as Record<string, string | undefined>;
+  if (!cfg.OPENL_PERSONAL_ACCESS_TOKEN && !cfg.OPENL_USERNAME) {
+    return null;
+  }
+  return new OpenLClient({
+    baseUrl: getDefaultClientOrThrow().getBaseUrl(),
+    username: cfg.OPENL_USERNAME,
+    password: cfg.OPENL_PASSWORD,
+    personalAccessToken: cfg.OPENL_PERSONAL_ACCESS_TOKEN,
+    timeout: cfg.OPENL_TIMEOUT ? parseInt(cfg.OPENL_TIMEOUT, 10) : undefined,
+  });
+}
+
+const AUTH_REQUIRED_MESSAGE =
+  'Authentication required. Provide credentials via the Authorization header ' +
+  '(Token/Bearer <PAT> or Basic <base64 user:pass>) or the OPENL_USERNAME/OPENL_PASSWORD query params.';
+
+/**
  * Execute a tool
  */
 app.post('/tools/:toolName/execute', async (req: Request, res: Response) => {
   try {
     const toolName = Array.isArray(req.params.toolName) ? req.params.toolName[0] : req.params.toolName;
     const args = req.body;
-    
+
     // Never log actual arguments - they may contain sensitive data
-    
+
     if (!defaultClient) {
       return res.status(500).json({
         error: 'OpenL client not initialized',
         tool: toolName
       });
     }
-    
-    const result = await executeTool(toolName, args, defaultClient);
+
+    const client = authedClientFromRequest(req);
+    if (!client) {
+      return res.status(401).json({ error: 'Authentication required', tool: toolName, message: AUTH_REQUIRED_MESSAGE });
+    }
+
+    const result = await executeTool(toolName, args, client);
     
     res.json({
       tool: toolName,
@@ -826,8 +869,13 @@ app.post('/execute', async (req: Request, res: Response) => {
         tool
       });
     }
-    
-    const result = await executeTool(tool, args || {}, defaultClient);
+
+    const client = authedClientFromRequest(req);
+    if (!client) {
+      return res.status(401).json({ error: 'Authentication required', tool, message: AUTH_REQUIRED_MESSAGE });
+    }
+
+    const result = await executeTool(tool, args || {}, client);
     
     res.json({
       tool,
@@ -848,7 +896,9 @@ app.post('/execute', async (req: Request, res: Response) => {
  * Error handling middleware
  */
 app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
-  console.error('Unhandled error:', err);
+  // Sanitize before logging too — the raw error/stack may carry credentials
+  // (e.g. an Authorization header echoed in an axios error config).
+  console.error('Unhandled error:', sanitizeError(err));
   res.status(500).json({
     error: 'Internal server error',
     message: sanitizeError(err)

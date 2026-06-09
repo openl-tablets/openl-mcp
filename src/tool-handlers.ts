@@ -21,8 +21,9 @@ import * as schemas from "./schemas.js";
 import { formatResponse, paginateResults } from "./formatters.js";
 import { validateResponseFormat, validatePagination } from "./validators.js";
 import { logger } from "./logger.js";
-import { isAxiosError, sanitizeError, extractApiErrorInfo, sanitizeJson } from "./utils.js";
+import { isAxiosError, sanitizeError, extractApiErrorInfo, sanitizeJson, setRulesXmlProjectName } from "./utils.js";
 import { waitForCompilation } from "./wait-for-compilation.js";
+import { getProjectTemplateZip } from "./project-templates.js";
 import type * as Types from "./types.js";
 
 /**
@@ -424,7 +425,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "Get Project Status",
     version: "1.0.0",
     description:
-      "Get the post-compilation status of a project: compile state, diagnostics, pending changes, and module/test summary. Read-only — does not trigger compilation. When wait=true, blocks until compileState is terminal (ok/warnings/errors) and emits MCP progress notifications.",
+      "Get the post-compilation status of a project: compile state, diagnostics, pending changes, and module/test summary. Read-only — does not trigger compilation. When wait=true, blocks until compileState is terminal (ok/warnings/errors) and emits MCP progress notifications. Note: compileState reflects the last compilation. The studio does not auto-compile on edit (it resets the status), but openl_update_table / openl_append_table / openl_create_project_table all trigger a recompile of the affected table, so this status reflects changes made through those tools. (Edits made by bypassing those tools — e.g. raw REST — won't refresh it until the table is read.)",
     inputSchema: schemas.z.toJSONSchema(schemas.projectStatusSchema) as Record<string, unknown>,
     annotations: {
       readOnlyHint: true,
@@ -989,7 +990,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "Replace Entire Table",
     version: "1.0.0",
     description:
-      "Replace the ENTIRE table structure with a modified version. Use for MODIFYING existing rows, DELETING rows, REORDERING rows, or STRUCTURAL changes. CRITICAL: Must send the FULL table structure (not just modified fields). DO NOT use for simple additions - use append_table instead. Required workflow: 1) Call get_table() to retrieve complete structure, 2) Modify the returned object, 3) Pass the ENTIRE modified object to update_table().",
+      "Replace the ENTIRE table structure with a modified version. Use for MODIFYING existing rows, DELETING rows, REORDERING rows, or STRUCTURAL changes. CRITICAL: Must send the FULL table structure (not just modified fields). DO NOT use for simple additions - use append_table instead. Required workflow: 1) Call get_table() to retrieve complete structure, 2) Modify the returned object, 3) Pass the ENTIRE modified object to update_table(). Note: the studio does not auto-compile after an edit (it only resets the previous compile status); this tool reads the table back after updating to trigger the recompile, so a subsequent openl_project_status reflects the change.",
     inputSchema: schemas.z.toJSONSchema(schemas.updateTableSchema) as Record<string, unknown>,
     annotations: {
       idempotentHint: true,
@@ -1011,9 +1012,14 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
       await client.updateTable(typedArgs.projectId, typedArgs.tableId, typedArgs.view);
 
+      // The studio resets (does not recompile) compile status on edit; reading the
+      // table back triggers its recompile so openl_project_status reflects the change.
+      await triggerTableRecompile(client, typedArgs.projectId, typedArgs.tableId);
+
       const result = {
         success: true,
         message: `Successfully updated table ${typedArgs.tableId}`,
+        recompileTriggered: true,
       };
 
       const formattedResult = formatResponse(result, format);
@@ -1029,7 +1035,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "Append Rows/Fields to Table",
     version: "1.0.0",
     description:
-      "Add new rows/fields to an existing table (additions only). Payload by type: Datatype→fields, SimpleRules/SmartRules→rules, SimpleSpreadsheet→steps, Vocabulary→values, RawSource→rows. For modifying, deleting, or reordering use update_table instead.",
+      "Add new rows/fields to an existing table (additions only). Payload by type: Datatype→fields, SimpleRules/SmartRules→rules, SimpleSpreadsheet→steps, Vocabulary→values, RawSource→rows. For modifying, deleting, or reordering use update_table instead. Note: the studio does not auto-compile after an edit (it only resets the previous compile status); this tool reads the table back after appending to trigger the recompile, so a subsequent openl_project_status reflects the change.",
     inputSchema: schemas.z.toJSONSchema(schemas.appendTableSchema) as Record<string, unknown>,
     annotations: {
       idempotentHint: true,
@@ -1061,6 +1067,10 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
       await client.appendProjectTable(typedArgs.projectId, typedArgs.tableId, appendData);
 
+      // The studio resets (does not recompile) compile status on edit; reading the
+      // table back triggers its recompile so openl_project_status reflects the change.
+      await triggerTableRecompile(client, typedArgs.projectId, typedArgs.tableId);
+
       // Generate appropriate success message based on table type
       let itemCount = 0;
       let itemType = "items";
@@ -1084,6 +1094,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
       const result = {
         success: true,
         message: `Successfully appended ${itemCount} ${itemType} to table ${typedArgs.tableId}`,
+        recompileTriggered: true,
       };
 
       const formattedResult = formatResponse(result, format);
@@ -1099,7 +1110,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "Create New Table",
     version: "1.0.0",
     description:
-      "Create a new table/rule in OpenL project using BETA API (Create New Project Table). This is the recommended tool for creating new OpenL tables programmatically. Use cases: Create Rules (decision tables), Spreadsheet tables, Datatype definitions, Test tables, or other table types. Requires moduleName (existing project module name) and complete table structure (EditableTableView). The table structure must include at least tableType, kind, name, plus type-specific data (rules/headers for Rules tables, rows for Spreadsheet, fields for Datatype). id is optional for create requests. Use get_table() on an existing table as a reference for the structure. This tool uses the Create New Project Table (BETA) API endpoint.",
+      "Create a new table/rule in OpenL project using BETA API (Create New Project Table). This is the recommended tool for creating new OpenL tables programmatically. Use cases: Create Rules (decision tables), Spreadsheet tables, Datatype definitions, Test tables, or other table types. Requires moduleName (an EXISTING project module — modules correspond to the project's .xlsx files; a freshly created blank project has a single module named 'Main') and a complete table structure (EditableTableView). The table structure must include at least tableType, kind, name, plus type-specific data (rules/headers for Rules tables, rows for Spreadsheet, fields for Datatype). id is optional for create requests. Use get_table() on an existing table as a reference for the structure. The response contains the created table's metadata (id, signature), NOT a compilation result — call openl_project_status afterward to confirm the project still compiles. This tool uses the Create New Project Table (BETA) API endpoint.",
     inputSchema: schemas.z.toJSONSchema(schemas.createProjectTableSchema) as Record<string, unknown>,
     annotations: {
       openWorldHint: true,
@@ -1865,6 +1876,160 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   // =============================================================================
+  // Project Creation Tool (blank skeleton OR clone of an existing project)
+  // =============================================================================
+
+  registerTool({
+    name: "openl_create_project",
+    title: "Create or Clone Project",
+    version: "2.0.0",
+    description:
+      "Create a new OpenL project in a design repository and commit it. Two modes, selected by the `template` argument:\n" +
+      "• CREATE (omit `template`): create a BLANK project from the default empty skeleton. Committed atomically on the repository's default branch; returns the commit revision.\n" +
+      "• CLONE (pass `template` = an existing project name): copy the source project's FULL structure (rules, tests, settings, request/response examples) into the new project and rename it — the project name in rules.xml is updated to projectName, matching OpenL Studio's Copy Project. `branch` is honored.\n" +
+      "Call openl_list_repositories() / openl_list_projects() first. Returns the new project name and commit revision (hash). A name collision is rejected with 409; a missing clone source returns 404; missing permission returns 403. Note: cloning writes directly to Git via the files API (one commit per file, not atomic), so the clone may not appear in openl_list_projects until OpenL re-indexes the repository. Local repositories are not supported.",
+    inputSchema: schemas.z.toJSONSchema(schemas.createProjectSchema) as Record<string, unknown>,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    handler: async (args, client): Promise<ToolResponse> => {
+      const typedArgs = args as {
+        repository?: string;
+        projectName?: string;
+        template?: string;
+        branch?: string;
+        comment?: string;
+        response_format?: "json" | "markdown";
+      };
+
+      if (!typedArgs || !typedArgs.repository || !typedArgs.projectName) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          "Missing required arguments: repository, projectName"
+        );
+      }
+
+      const format = validateResponseFormat(typedArgs.response_format);
+      const repositoryId = await client.getRepositoryIdByName(typedArgs.repository);
+
+      // -----------------------------------------------------------------------
+      // CLONE mode: `template` is the source project to copy from.
+      // -----------------------------------------------------------------------
+      if (typedArgs.template) {
+        const source = typedArgs.template;
+        const branch = typedArgs.branch;
+
+        // 1. Recursively copy the source project folder to the new project folder.
+        try {
+          await client.copyRepositoryFile(repositoryId, source, typedArgs.projectName, branch);
+        } catch (error) {
+          rethrowConflictAsActionable(
+            error,
+            `Cannot create project: a project or folder named '${typedArgs.projectName}' already exists in repository '${typedArgs.repository}'` +
+              `${branch ? ` (branch '${branch}')` : ""}. Choose a different projectName.`
+          );
+        }
+
+        // 2. Rename the project in rules.xml (best-effort; mirrors CopyProjectTransformer).
+        //    A descriptor-less project (no rules.xml) keeps its folder name as its name.
+        let renamedDescriptor = false;
+        const rulesXmlPath = `${typedArgs.projectName}/rules.xml`;
+        const rulesXml = await client.getRepositoryFileContent(repositoryId, rulesXmlPath, branch);
+        if (rulesXml !== null) {
+          const updated = setRulesXmlProjectName(rulesXml, typedArgs.projectName);
+          if (updated !== rulesXml) {
+            await client.updateRepositoryFileRaw(repositoryId, rulesXmlPath, updated, branch);
+            renamedDescriptor = true;
+          }
+        }
+
+        // 3. Read back the commit revision (best-effort — file-copy returns no hash).
+        let revision: string | undefined;
+        try {
+          const history = await client.getProjectRevisions(repositoryId, typedArgs.projectName, {
+            branch,
+            size: 1,
+          });
+          revision = history.content?.[0]?.revisionNo;
+        } catch {
+          // Read-back is best-effort; the clone itself already succeeded.
+        }
+
+        const result = {
+          success: true,
+          mode: "clone",
+          projectId: typedArgs.projectName,
+          projectName: typedArgs.projectName,
+          source,
+          repository: typedArgs.repository,
+          branch,
+          revision,
+          renamedDescriptor,
+          message:
+            `Cloned '${source}' to '${typedArgs.projectName}' in repository '${typedArgs.repository}'` +
+            `${branch ? ` (branch '${branch}')` : ""}` +
+            `${revision ? ` at revision ${revision}` : ""}.`,
+          note:
+            "Cloned via the files API (one commit per file, not atomic): the new project may not appear " +
+            "in openl_list_projects (and its history/revision may be unavailable) until OpenL re-indexes the " +
+            "repository. Commit messages are system-generated." +
+            (revision ? "" : " No commit revision could be read back yet (project not indexed)."),
+        };
+
+        return {
+          content: [{ type: "text", text: formatResponse(result, format) }],
+        };
+      }
+
+      // -----------------------------------------------------------------------
+      // CREATE mode: blank project from the bundled empty skeleton.
+      // -----------------------------------------------------------------------
+      if (typedArgs.branch) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          "branch is only supported when cloning (with `template`). A blank project is created on the " +
+            "repository's default branch — omit `branch`, or clone an existing project to target a specific branch."
+        );
+      }
+
+      const templateZip = getProjectTemplateZip("empty");
+      let created: Types.CreateProjectResult;
+      try {
+        created = await client.createProjectFromZip(repositoryId, typedArgs.projectName, templateZip, {
+          comment: typedArgs.comment,
+        });
+      } catch (error) {
+        rethrowConflictAsActionable(
+          error,
+          `Cannot create project: a project named '${typedArgs.projectName}' already exists in repository '${typedArgs.repository}'. ` +
+            `Choose a different projectName, or use openl_list_projects() to see existing names.`
+        );
+      }
+
+      const result = {
+        success: true,
+        mode: "create",
+        projectId: typedArgs.projectName,
+        projectName: typedArgs.projectName,
+        repository: typedArgs.repository,
+        branch: created.branch,
+        revision: created.revision,
+        message:
+          `Created project '${typedArgs.projectName}' in repository '${typedArgs.repository}'` +
+          `${created.branch ? ` (branch '${created.branch}')` : ""}` +
+          `${created.revision ? ` at revision ${created.revision}` : ""}.`,
+      };
+
+      return {
+        content: [{ type: "text", text: formatResponse(result, format) }],
+      };
+    },
+  });
+
+  // =============================================================================
   // Local Changes & Restore Tools
   // =============================================================================
 
@@ -2287,6 +2452,45 @@ function progressMessage(status: Types.ProjectStatusView): string {
   // Terminal states aren't normally emitted via onProgress (the wait resolves first),
   // but include sensible labels just in case.
   return `Compile state: ${status.compileState}`;
+}
+
+/**
+ * Rethrow an HTTP 409 (conflict) from a mutating call as a clear, actionable
+ * McpError; rethrow anything else unchanged so it reaches {@link handleToolError}.
+ *
+ * The default status→ErrorCode mapping turns 409 into InternalError, which reads
+ * to the model as a server fault rather than a recoverable "name already taken".
+ * Create/clone use this to tell the model exactly how to recover.
+ *
+ * @returns never — always throws.
+ */
+function rethrowConflictAsActionable(error: unknown, conflictMessage: string): never {
+  if (isAxiosError(error) && error.response?.status === 409) {
+    throw new McpError(ErrorCode.InvalidRequest, conflictMessage);
+  }
+  throw error;
+}
+
+/**
+ * Force the studio to (re)compile a table after an edit by reading it back.
+ *
+ * The studio's table-edit endpoints (update / append) do NOT auto-compile — they
+ * only RESET the project's previous compile status. Compilation is triggered when
+ * the table is read (GET /projects/{id}/tables/{tableId}). So after an edit we
+ * read the table by id, which makes a subsequent openl_project_status reflect the
+ * change. Best-effort: the edit has already been committed, so a failure here is
+ * swallowed (the status simply refreshes on the next table read).
+ */
+async function triggerTableRecompile(
+  client: OpenLClient,
+  projectId: string,
+  tableId: string,
+): Promise<void> {
+  try {
+    await client.getTable(projectId, tableId);
+  } catch {
+    // Best-effort: the edit already applied; compile status refreshes on next read.
+  }
 }
 
 function handleToolError(error: unknown, toolName: string, toolArgs?: unknown): McpError {

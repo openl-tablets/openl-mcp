@@ -396,6 +396,8 @@ describe("MCP Server Tools", () => {
       name: "calculatePremium",
     };
     mockAxios.onPut(`/projects/${encoded}/tables/${encodeURIComponent("Rules.xls_1234")}`).reply(204);
+    // The edit tool reads the table back to trigger a recompile.
+    mockAxios.onGet(`/projects/${encoded}/tables/${encodeURIComponent("Rules.xls_1234")}`).reply(200, mockDecisionTable);
 
     const result = await executeTool(
       "openl_update_table",
@@ -403,6 +405,8 @@ describe("MCP Server Tools", () => {
       client
     );
     expect(result.content[0].text).toContain("Successfully updated table");
+    // recompile trigger fired: GET on the table after the PUT
+    expect(mockAxios.history.get.some((g) => g.url === `/projects/${encoded}/tables/Rules.xls_1234`)).toBe(true);
   });
 
   it("should execute openl_append_table", async () => {
@@ -414,6 +418,8 @@ describe("MCP Server Tools", () => {
     mockAxios
       .onPost(`/projects/${encoded}/tables/${encodeURIComponent("Customer_1234")}/lines`, appendData)
       .reply(200);
+    // The edit tool reads the table back to trigger a recompile.
+    mockAxios.onGet(`/projects/${encoded}/tables/${encodeURIComponent("Customer_1234")}`).reply(200, mockDecisionTable);
 
     const result = await executeTool(
       "openl_append_table",
@@ -421,6 +427,7 @@ describe("MCP Server Tools", () => {
       client
     );
     expect(result.content[0].text).toContain("Successfully appended");
+    expect(mockAxios.history.get.some((g) => g.url === `/projects/${encoded}/tables/Customer_1234`)).toBe(true);
   });
 
   it("should execute openl_append_table with RawSource and report row count", async () => {
@@ -491,6 +498,111 @@ describe("MCP Server Tools", () => {
 
   it("should validate required params via handlers", async () => {
     await expect(executeTool("openl_get_project", {}, client)).rejects.toThrow(/projectId/);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Project Creation & Cloning
+  // ---------------------------------------------------------------------------
+
+  it("should create an empty project and return the commit revision", async () => {
+    mockAxios.onGet("/repos").reply(200, mockRepositories);
+    mockAxios.onPut("/repos/design/projects/Offer-CW").reply(200, { revision: "abc123", branch: "main" });
+
+    const result = await executeTool(
+      "openl_create_project",
+      { repository: "Design Repository", projectName: "Offer-CW", response_format: "json" },
+      client
+    );
+
+    expect(result.content[0].text).toContain("abc123");
+    expect(result.content[0].text).toContain("Offer-CW");
+  });
+
+  it("should reject openl_create_project on name collision (409)", async () => {
+    mockAxios.onGet("/repos").reply(200, mockRepositories);
+    mockAxios.onPut("/repos/design/projects/Existing").reply(409, { message: "duplicated.project.message" });
+
+    await expect(
+      executeTool("openl_create_project", { repository: "design", projectName: "Existing" }, client)
+    ).rejects.toThrow(/already exists/i);
+  });
+
+  it("should reject a blank create when a branch is requested", async () => {
+    mockAxios.onGet("/repos").reply(200, mockRepositories);
+    await expect(
+      executeTool("openl_create_project", { repository: "design", projectName: "Offer-CW", branch: "dev" }, client)
+    ).rejects.toThrow(/branch is only supported when cloning/i);
+  });
+
+  it("should clone a project (template), rename rules.xml, and return the revision", async () => {
+    mockAxios.onGet("/repos").reply(200, mockRepositories);
+    mockAxios.onPost("/repos/design/file-copy").reply(201);
+    mockAxios
+      .onGet("/repos/design/files/Offer-CW/rules.xml")
+      .reply(200, "<project>\n  <name>Offer-US</name>\n  <modules>\n    <module><name>Main</name></module>\n  </modules>\n</project>");
+    mockAxios.onPut("/repos/design/files/Offer-CW/rules.xml").reply(200);
+    mockAxios.onGet("/repos/design/projects/Offer-CW/history").reply(200, { content: [{ revisionNo: "def456" }] });
+
+    const result = await executeTool(
+      "openl_create_project",
+      { repository: "design", template: "Offer-US", projectName: "Offer-CW", response_format: "json" },
+      client
+    );
+
+    expect(result.content[0].text).toContain("Cloned");
+    expect(result.content[0].text).toContain("def456");
+
+    // rules.xml project name rewritten to the new name; module name left untouched.
+    const putReq = mockAxios.history.put.find((p) => p.url === "/repos/design/files/Offer-CW/rules.xml");
+    const body = String(putReq?.data);
+    expect(body).toContain("<name>Offer-CW</name>");
+    expect(body).toContain("<module><name>Main</name></module>");
+  });
+
+  it("should clone a descriptor-less project without attempting a rename", async () => {
+    mockAxios.onGet("/repos").reply(200, mockRepositories);
+    mockAxios.onPost("/repos/design/file-copy").reply(201);
+    mockAxios.onGet("/repos/design/files/NoDesc/rules.xml").reply(404);
+    mockAxios.onGet("/repos/design/projects/NoDesc/history").reply(200, { content: [{ revisionNo: "zzz" }] });
+
+    const result = await executeTool(
+      "openl_create_project",
+      { repository: "design", template: "Src", projectName: "NoDesc", response_format: "json" },
+      client
+    );
+
+    expect(result.content[0].text).toContain("\"renamedDescriptor\": false");
+    expect(mockAxios.history.put.some((p) => p.url?.includes("rules.xml"))).toBe(false);
+  });
+
+  it("should reject a clone when the destination already exists (409)", async () => {
+    mockAxios.onGet("/repos").reply(200, mockRepositories);
+    mockAxios.onPost("/repos/design/file-copy").reply(409, { message: "file.copy.failed.message" });
+
+    await expect(
+      executeTool(
+        "openl_create_project",
+        { repository: "design", template: "Offer-US", projectName: "Existing" },
+        client
+      )
+    ).rejects.toThrow(/already exists/i);
+  });
+
+  it("should surface a 404 when cloning a non-existent source", async () => {
+    mockAxios.onGet("/repos").reply(200, mockRepositories);
+    mockAxios.onPost("/repos/design/file-copy").reply(404, { message: "Project 'Nope' not found" });
+
+    await expect(
+      executeTool(
+        "openl_create_project",
+        { repository: "design", template: "Nope", projectName: "NewOne" },
+        client
+      )
+    ).rejects.toThrow(/not found/i);
+  });
+
+  it("should validate required params for create", async () => {
+    await expect(executeTool("openl_create_project", {}, client)).rejects.toThrow(/repository|projectName/);
   });
 });
 

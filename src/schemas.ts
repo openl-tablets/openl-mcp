@@ -185,6 +185,27 @@ export const createBranchSchema = z.object({
   response_format: ResponseFormat.optional(),
 }).strict();
 
+// =============================================================================
+// Project Creation & Cloning Schema (single tool: blank create or clone)
+// =============================================================================
+
+export const createProjectSchema = z.object({
+  repository: repositoryNameSchema,
+  projectName: projectNameSchema.describe(
+    "Name for the new project (the ticket's `project`). Becomes the project folder name and — when cloning — the renamed project name written into rules.xml. Must be unique in the repository; a collision is rejected with 409. Allowed characters: letters, digits, space, '_' and '-'."
+  ),
+  template: z.string().optional().describe(
+    "How to create the project (the ticket's `template`). OMIT to create a BLANK project from the default empty skeleton. To CLONE an existing project, pass its name (from openl_list_projects()): its full structure is copied (rules, tests, settings, request/response examples) and the project is renamed to projectName. The clone source must be in the same repository."
+  ),
+  branch: branchNameSchema.optional().describe(
+    "Target branch (the ticket's `defaultBranch`). Honored when CLONING (the source is read from and the clone written to this branch). For a BLANK project, omit this — blank projects are created on the repository's default branch (the create endpoint cannot target a branch); passing branch without template is rejected."
+  ),
+  comment: commentSchema.describe(
+    "Commit comment for audit. Applied when creating a BLANK project; clone commit messages are system-generated. Defaults to 'Project <name> is created.' when omitted."
+  ),
+  response_format: ResponseFormat.optional(),
+}).strict();
+
 export const deployProjectSchema = z.object({
   projectId: projectIdSchema.describe("Project ID to deploy. Use the exact 'projectId' value from openl_list_projects() response."),
   deploymentName: z.string().describe("Name for the deployment (e.g., 'InsuranceRules', 'AutoPremium'). This will be the deployment identifier."),

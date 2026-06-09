@@ -241,10 +241,14 @@ curl http://localhost:3000/tools | jq
 # Get tool info
 curl http://localhost:3000/tools/openl_list_repositories | jq
 
-# Execute tool
+# Execute tool — credentials are required (these endpoints have no MCP session
+# to carry auth). Pass an Authorization header (Token/Bearer <PAT> or
+# Basic <base64 user:pass>) or OPENL_USERNAME/OPENL_PASSWORD query params.
 curl -X POST http://localhost:3000/execute \
   -H "Content-Type: application/json" \
+  -H "Authorization: Basic $(printf '%s' 'admin:admin' | base64)" \
   -d '{"tool": "openl_list_repositories", "arguments": {}}'
+# Without credentials these endpoints return HTTP 401.
 ```
 
 ---

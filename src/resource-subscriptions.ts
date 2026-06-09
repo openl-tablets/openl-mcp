@@ -147,12 +147,24 @@ export class ResourceSubscriptionManager {
       cookiePrefix: cookie.substring(0, 12) + "…",
     });
 
+    // The WS upgrade is authenticated by the Authorization header (the session
+    // cookie alone is rejected for user-routed /user/topic destinations).
+    // Without credentials the subscription connects anonymously and never
+    // receives frames, so surface that instead of failing silently.
+    const authorizationHeader = this.client.getAuthorizationHeader();
+    if (!authorizationHeader) {
+      console.error(
+        `[ResourceSub] ⚠️  Subscribing to ${uri} without credentials; the studio rejects ` +
+          "anonymous subscriptions to user-routed topics, so push notifications may never arrive.",
+      );
+    }
+
     // Step 2: open the STOMP subscription. Reconnect is on for resource-level
     // subscriptions so transient WS drops don't lose the subscription.
     const stomp = await this.subscribeImpl({
       studioBaseUrl: this.client.getBaseUrl(),
       cookieHeader: `JSESSIONID=${cookie}`,
-      authorizationHeader: this.client.getAuthorizationHeader(),
+      authorizationHeader,
       projectId: parsed.projectId,
       branch: branchForStomp,
       reconnectDelay: this.reconnectDelayMs,

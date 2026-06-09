@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `openl_create_project` - create a new project in a design repository, in one of two modes (EPBDS-15661):
+  - **blank** (omit `template`): create an empty project from the bundled skeleton; committed atomically on the repository's default branch and returns the commit hash.
+  - **clone** (`template` = an existing project name): copy the source project's full structure (rules, tests, settings, examples) into the new project and rename it in `rules.xml`, matching OpenL Studio's Copy Project; `branch` is honored.
+
+  Name collisions return 409, a missing clone source returns 404, and missing permission returns 403.
+
+### Notes
+
+- Cloning (`openl_create_project` with `template`) writes directly to the repository's Git via the files API, which bypasses OpenL's workspace indexing. The clone is committed, but the new project may not appear in `openl_list_projects` (and its commit revision may be unavailable) until OpenL re-indexes the repository — there is currently no API to trigger re-indexing on demand.
+- Targeting a specific `branch` is supported when cloning; a blank project is always created on the repository's default branch (the create endpoint cannot target a branch).
+
 ## [1.0.0] - 2026-02-23
 
 ### Added

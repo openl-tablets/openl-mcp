@@ -131,12 +131,25 @@ export async function waitForCompilation(
     }
   };
 
+  // The WS upgrade is authenticated by the Authorization header (the session
+  // cookie alone is rejected for user-routed /user/topic destinations). Without
+  // credentials the subscription connects anonymously and never receives frames,
+  // so surface that rather than silently hang until the wait times out.
+  const authorizationHeader = client.getAuthorizationHeader();
+  if (!authorizationHeader) {
+    console.error(
+      "[wait] ⚠️  Subscribing to the project-status WebSocket without credentials; " +
+        "the studio rejects anonymous subscriptions to user-routed topics, so live " +
+        "status updates may never arrive. Provide authentication to enable wait mode.",
+    );
+  }
+
   let subscription: Subscription | null = null;
   try {
     subscription = await subscribeImpl({
       studioBaseUrl: client.getBaseUrl(),
       cookieHeader: `JSESSIONID=${cookie}`,
-      authorizationHeader: client.getAuthorizationHeader(),
+      authorizationHeader,
       projectId,
       branch: actualBranch,
       onMessage: handleMessage,
