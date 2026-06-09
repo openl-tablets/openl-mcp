@@ -318,6 +318,18 @@ const dataHeaderView = z.object({
 const dataRowView = z.object({
   values: z.array(z.any()).describe("Positional cell values — one per header, in header order."),
 });
+// Spreadsheet step/row/column/cell shapes (backend SpreadsheetStepView etc.).
+// IMPORTANT: a step's formula goes in `value` (e.g. "= app.annualIncome / 12"),
+// NOT a `formula` field.
+const spreadsheetStepView = z.object({
+  name: z.string().describe("Step name (referenced elsewhere as $StepName)."),
+  type: z.string().optional().describe("Step result type, e.g. 'Double', 'String'."),
+  value: z.any().describe("The step's formula or value, e.g. '= app.annualIncome / 12'. NOT 'formula'."),
+});
+const spreadsheetRowColView = z.object({
+  name: z.string(),
+  type: z.string().optional(),
+});
 
 const editableTableViewSchema = z.discriminatedUnion("tableType", [
   // Datatype — a data structure definition.
@@ -373,21 +385,24 @@ const editableTableViewSchema = z.discriminatedUnion("tableType", [
     headers: z.array(z.record(z.string(), z.any())).optional(),
     rows: z.array(z.record(z.string(), z.any())).optional(),
   }),
-  // SimpleSpreadsheet — steps.
+  // SimpleSpreadsheet — a single-column spreadsheet of named steps. Each step's
+  // formula goes in `value` (e.g. value: "= app.annualIncome / 12"), NOT 'formula'.
   z.object({
     tableType: z.literal("SimpleSpreadsheet"),
     ...commonTableFields,
     ...executableFields,
-    steps: z.array(z.record(z.string(), z.any())).optional().describe("Spreadsheet steps."),
+    steps: z.array(spreadsheetStepView).optional().describe(
+      "Named steps: [{ name, type?, value }]. The formula goes in 'value' (e.g. value: '= app.annualIncome / 12'); there is NO 'formula' field. Reference earlier steps as $StepName."
+    ),
   }),
-  // Spreadsheet — rows/columns/cells.
+  // Spreadsheet — full row/column/cell grid.
   z.object({
     tableType: z.literal("Spreadsheet"),
     ...commonTableFields,
     ...executableFields,
-    rows: z.array(z.record(z.string(), z.any())).optional(),
-    columns: z.array(z.record(z.string(), z.any())).optional(),
-    cells: z.array(z.array(z.any())).optional().describe("2D matrix of spreadsheet cells."),
+    rows: z.array(spreadsheetRowColView).optional().describe("Row headers: [{ name, type? }]."),
+    columns: z.array(spreadsheetRowColView).optional().describe("Column headers: [{ name, type? }]."),
+    cells: z.array(z.array(z.object({ value: z.any() }))).optional().describe("2D matrix of cells: [[{ value }]]. The formula/value goes in each cell's 'value'."),
   }),
   // Data — a data table (AbstractDataView): headers[fieldName] + rows[{values}].
   z.object({

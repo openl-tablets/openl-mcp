@@ -65,6 +65,16 @@ describe("createProjectTableSchema.table (EditableTableView union)", () => {
     expect(rules!.properties).not.toHaveProperty("signature");
   });
 
+  it("SimpleSpreadsheet branch models steps as {name,type,value} and forbids 'formula'", () => {
+    const ss = branchFor("SimpleSpreadsheet");
+    expect(ss).toBeDefined();
+    expect(ss!.properties).toHaveProperty("steps");
+    const stepItems = (ss!.properties as Record<string, { items?: BranchSchema }>).steps.items!;
+    expect(Object.keys(stepItems.properties)).toEqual(expect.arrayContaining(["name", "type", "value"]));
+    expect(stepItems.properties).not.toHaveProperty("formula"); // the field the agent wrongly used
+    expect(stepItems.additionalProperties).toBe(false);
+  });
+
   it("Datatype branch exposes fields", () => {
     const dt = branchFor("Datatype");
     expect(dt).toBeDefined();
