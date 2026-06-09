@@ -877,7 +877,7 @@ describe("CLI", () => {
       expect(out).toContain("Repository:");
       expect(out).toContain("Project:");
       expect(out).toContain("Rules & Tables:");
-      expect(out).toContain("Trace (BETA):");
+      expect(out).toContain("Trace:");
       expect(out).toContain("Deployment:");
     });
   });

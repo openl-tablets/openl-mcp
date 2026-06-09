@@ -71,6 +71,68 @@ export interface FilePathPairRequest {
   destinationPath: string;
 }
 
+/**
+ * A file or folder node returned by the Projects: Files (BETA) API
+ * (folder listings, `view=meta`, and file-search). The base contract is
+ * {@link https://… FsNode} (path/name/type/basePath); the backend additionally
+ * returns `extension`, `size` and `lastModified` for files, so they are modelled
+ * here as optional.
+ */
+export interface FsNode {
+  /** Project-relative path (e.g. 'folder/rules.xlsx'). */
+  path: string;
+  /** Simple file or folder name. */
+  name: string;
+  /** Resource type. */
+  type: "file" | "folder";
+  /** Parent directory path (project-relative), when provided. */
+  basePath?: string;
+  /** File extension without the dot (files only). */
+  extension?: string;
+  /** Size in bytes (files only). */
+  size?: number;
+  /** ISO-8601 last-modified timestamp (files only). */
+  lastModified?: string;
+}
+
+/**
+ * Search query body for POST /projects/{projectId}/file-search (FileSearchQuery).
+ * All fields are optional; an empty body matches everything in scope.
+ */
+export interface FileSearchQuery {
+  /** Ant-glob path pattern, e.g. all xlsx under rules. */
+  pattern?: string;
+  /** Case-insensitive content substring (full-text match). */
+  content?: string;
+  /** Filter by file extensions (without the dot). */
+  extensions?: string[];
+  /** Restrict to files, folders, or both. */
+  type?: "FILE" | "FOLDER" | "ANY";
+  /** SUBTREE (default) searches within the project; ANCESTORS walks up to the repo root. */
+  scope?: "SUBTREE" | "ANCESTORS";
+  /** Whether to descend into nested folders. */
+  recursive?: boolean;
+  /** Project-relative path to start the search from. */
+  from?: string;
+  /** Historical revision to search (SUBTREE scope only). */
+  version?: string;
+}
+
+/**
+ * Result of reading a single project file's bytes via the Projects: Files API.
+ * Returned by {@link OpenLClient.readProjectFile} so the caller can decide how to
+ * decode the payload (text vs base64) and whether the body was a file download or
+ * a JSON listing/metadata response.
+ */
+export interface ProjectFileResponse {
+  /** Raw response body. */
+  data: Buffer;
+  /** Response Content-Type header (lower-cased), if any. */
+  contentType: string;
+  /** Response Content-Disposition header, if any (present for file downloads). */
+  contentDisposition: string;
+}
+
 export type TableType =
   // Decision Tables (most common - 5 variants)
   | "Rules"           // Standard decision table with explicit C/A/RET columns

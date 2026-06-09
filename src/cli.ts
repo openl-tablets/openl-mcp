@@ -558,10 +558,13 @@ function categoryOf(toolName: string): string {
     return "Repository";
   }
   if (/^openl_(start_trace|cancel_trace|export_trace|get_trace_)/.test(toolName)) {
-    return "Trace (BETA)";
+    return "Trace";
   }
   if (/^openl_(list_tables|get_table|update_table|append_table|create_project_table|execute_rule)$/.test(toolName)) {
     return "Rules & Tables";
+  }
+  if (/^openl_(read|write|delete|search|copy|move)_project_file(s)?$/.test(toolName)) {
+    return "Project Files";
   }
   if (/^openl_(get_project_history|get_file_history|revert_version)$/.test(toolName)) {
     return "Version Control";
@@ -580,7 +583,8 @@ const CATEGORY_ORDER = [
   "Repository",
   "Project",
   "Rules & Tables",
-  "Trace (BETA)",
+  "Project Files",
+  "Trace",
   "Version Control",
   "Deployment",
   "Other",

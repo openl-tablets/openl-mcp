@@ -126,7 +126,7 @@ export const getTableSchema = z.object({
 export const updateTableSchema = z.object({
   projectId: projectIdSchema,
   tableId: tableIdSchema,
-  view: z.record(z.string(), z.any()).describe("FULL table structure from get_table() with your modifications applied. MUST include: id, tableType, kind, name, plus type-specific data (rules for SimpleRules, rows for Spreadsheet, fields for Datatype). Do NOT send only the changed fields - send the complete structure. Workflow: 1) currentTable = get_table(), 2) currentTable.rules[0]['Column'] = newValue, 3) update_table(view=currentTable)"),
+  view: z.record(z.string(), z.any()).describe("FULL table structure from get_table() with your modifications applied. MUST include: id, tableType, kind, name, plus type-specific data (rules for SimpleRules, rows for Spreadsheet, fields for Datatype). Keep 'tableType' EXACTLY as get_table() returned it (it is a CASE-SENSITIVE discriminator: Datatype, Spreadsheet, SimpleRules, SmartRules, SimpleSpreadsheet, Vocabulary, Data, Test, SimpleLookup, SmartLookup, RawSource — lowercase is rejected). Do NOT send only the changed fields - send the complete structure. Workflow: 1) currentTable = get_table(), 2) currentTable.rules[0]['Column'] = newValue, 3) update_table(view=currentTable)"),
   response_format: ResponseFormat.optional(),
 }).strict();
 
@@ -285,7 +285,7 @@ export const createProjectTableSchema = z.object({
   projectId: projectIdSchema,
   moduleName: z.string().min(1).describe("Name of an existing project module where the table will be created (for example, 'Rules')."),
   sheetName: z.string().optional().describe("Name of the sheet where the table will be created within the Excel file. If not provided, the table name will be used as the sheet name."),
-  table: z.record(z.string(), z.any()).describe("Complete table structure (EditableTableView). Must include at least tableType, kind, and name, plus type-specific data (for example rules/headers for Rules tables, rows for Spreadsheet, fields for Datatype). id is optional for create requests."),
+  table: z.record(z.string(), z.any()).describe("Complete table structure (EditableTableView). REQUIRED: 'tableType' (the CASE-SENSITIVE discriminator — use one of EXACTLY: Datatype, Vocabulary, Spreadsheet, SimpleSpreadsheet, SimpleRules, SmartRules, SimpleLookup, SmartLookup, Data, Test, RawSource; lowercase like 'datatype' is rejected) and 'name'. Add type-specific data: 'fields' for Datatype; 'rules' for SimpleRules/SmartRules; 'rows' for Spreadsheet; 'steps' for SimpleSpreadsheet; 'values' for Vocabulary. For SimpleRules/SmartRules/lookups ALSO provide 'returnType' (e.g. 'String'), 'args':[{name,type}] (inputs), and 'headers':[{title}] (column captions, one per rules-row key; return column usually 'RET1'); each rules row is a map keyed by the header titles. There is NO 'signature' field — define the method via name+returnType+args; the backend rejects unknown/extra fields with a 400 'Failed to read request'. 'kind' is informational (not the discriminator). 'id' is optional for create. Tip: call openl_get_table() on an existing table to copy its exact shape; for a blank project (no tables yet) build it from the tableType values above."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
@@ -502,6 +502,195 @@ export const getTestResultsByTableSchema = z.object({
     message: "Invalid pagination parameters: page and offset are mutually exclusive; unpaged is mutually exclusive with page, offset, size, and limit",
   }
 );
+
+// =============================================================================
+// Project Files (BETA) Schemas
+// =============================================================================
+// Map 1:1 onto the "Projects: Files (BETA)" REST API:
+//   GET    /projects/{projectId}/files/{path}     -> openl_read_project_file
+//   POST   /projects/{projectId}/files/{path}     -> openl_write_project_file
+//   DELETE /projects/{projectId}/files/{path}     -> openl_delete_project_file
+//   POST   /projects/{projectId}/file-search      -> openl_search_project_files
+//   POST   /projects/{projectId}/file-copy        -> openl_copy_project_file
+//   POST   /projects/{projectId}/file-move        -> openl_move_project_file
+
+const filePathSchema = z
+  .string()
+  .min(1)
+  .describe(
+    "Project-relative path to the resource (e.g. 'rules/Model.xlsx'). Do NOT include the project name itself; paths are relative to the project root. A trailing slash denotes a folder."
+  );
+
+const fileBranchSchema = branchNameSchema
+  .optional()
+  .describe(
+    "Branch the project must be on for this operation. Ignored when blank. Fails if the repository has no branches or the project is on another branch. Omit for repository 'local' and non-branch repositories."
+  );
+
+export const readProjectFileSchema = z.object({
+  projectId: projectIdSchema,
+  path: z
+    .string()
+    .default("")
+    .describe(
+      "Project-relative path to a file or folder (e.g. 'rules/Model.xlsx' or 'rules/'). Empty string (default) or a path ending in '/' lists the project root / that folder; a file path returns the file content."
+    ),
+  view: z
+    .enum(["meta"])
+    .optional()
+    .describe(
+      "For a file, set to 'meta' to return JSON metadata (name, size, extension, lastModified) instead of the file content. Omit to read content (files) or list entries (folders)."
+    ),
+  download: z
+    .boolean()
+    .optional()
+    .describe(
+      "For a folder, set true to download the folder and its contents as a ZIP archive (returned base64-encoded). Ignored for files."
+    ),
+  recursive: z
+    .boolean()
+    .optional()
+    .describe("Folder listing only: include nested resources recursively (default false)."),
+  viewMode: z
+    .enum(["FLAT", "NESTED"])
+    .optional()
+    .describe("Folder listing only: FLAT returns a flat list, NESTED returns a tree (default FLAT)."),
+  extensions: z
+    .array(z.string())
+    .optional()
+    .describe("Folder listing only: filter by file extensions without the dot, e.g. ['xlsx','xml']."),
+  namePattern: z
+    .string()
+    .optional()
+    .describe("Folder listing only: filter by name (case-insensitive contains match)."),
+  foldersOnly: z
+    .boolean()
+    .optional()
+    .describe("Folder listing only: if true, return only folders (default false)."),
+  version: z
+    .string()
+    .optional()
+    .describe(
+      "Historical revision (commit hash) to read. Omit to read the latest revision. Applies to file content/metadata and folder listing/ZIP. An unknown revision yields 404."
+    ),
+  branch: fileBranchSchema,
+  fields: z
+    .string()
+    .optional()
+    .describe(
+      "Comma-separated response fields to return for metadata/listing responses, including nested selection (e.g. 'id,name'). When omitted, the full response is returned."
+    ),
+  encoding: z
+    .enum(["auto", "utf-8", "base64"])
+    .default("auto")
+    .describe(
+      "How to return file content. 'auto' (default) returns text as UTF-8 and binary as base64; 'utf-8' forces text; 'base64' forces base64. Ignored for metadata/listing responses."
+    ),
+  offset: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional()
+    .describe(
+      "Byte offset to start reading file content from (default 0). NOTE: the backend does not support partial transfers, so the whole file is fetched and then sliced client-side. offset/length are BYTE offsets — a range boundary that lands inside a multi-byte UTF-8 character makes that character decode to U+FFFD (�) at the seam; for exact bytes use encoding='base64'."
+    ),
+  length: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe("Maximum number of bytes of file content to return starting at 'offset'. Omit for the rest of the file. Byte count, not character count (see the note on 'offset')."),
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+export const writeProjectFileSchema = z.object({
+  projectId: projectIdSchema,
+  path: filePathSchema,
+  content: z
+    .string()
+    .describe("File content, interpreted according to 'encoding'. Use base64 for binary files (xlsx, images, zip)."),
+  encoding: z
+    .enum(["utf-8", "base64"])
+    .default("utf-8")
+    .describe("How 'content' is encoded: 'utf-8' (default) for text, 'base64' for binary."),
+  createFolders: z
+    .boolean()
+    .default(true)
+    .describe("If true (default), missing intermediate folders are created automatically; otherwise the parent folder must already exist."),
+  conflictPolicy: z
+    .enum(["FAIL", "OVERWRITE", "SKIP"])
+    .optional()
+    .describe("How to handle a target file that already exists: FAIL (default) returns an error; OVERWRITE replaces its content in place; SKIP leaves the existing file unchanged and reports it skipped. Has no effect when creating a new file."),
+  branch: fileBranchSchema,
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+export const deleteProjectFileSchema = z.object({
+  projectId: projectIdSchema,
+  path: filePathSchema,
+  branch: fileBranchSchema,
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+export const searchProjectFilesSchema = z.object({
+  projectId: projectIdSchema,
+  pattern: z
+    .string()
+    .optional()
+    .describe("Ant-glob path pattern, e.g. 'rules/**/*.xlsx' or '**/*.xml'."),
+  content: z
+    .string()
+    .optional()
+    .describe("Case-insensitive content substring to match inside files (full-text search)."),
+  extensions: z
+    .array(z.string())
+    .optional()
+    .describe("Filter by file extensions without the dot, e.g. ['xlsx','xml']."),
+  type: z
+    .enum(["FILE", "FOLDER", "ANY"])
+    .optional()
+    .describe("Restrict results to files, folders, or both (ANY, default)."),
+  scope: z
+    .enum(["SUBTREE", "ANCESTORS"])
+    .optional()
+    .describe("SUBTREE (default) searches within the project; ANCESTORS walks up to the repository root."),
+  recursive: z
+    .boolean()
+    .optional()
+    .describe("Whether to descend into nested folders. IMPORTANT: defaults to false (top level only) — set true to search the whole project/subtree. A '**' glob still needs recursive:true to actually descend."),
+  from: z
+    .string()
+    .optional()
+    .describe("Project-relative path to start the search from."),
+  version: z
+    .string()
+    .optional()
+    .describe("Historical revision (commit hash) to search; SUBTREE scope only."),
+  branch: fileBranchSchema,
+  fields: z
+    .string()
+    .optional()
+    .describe("Comma-separated response fields to return per result (e.g. 'path,name,type'). When omitted, the full response is returned."),
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+const copyMovePairSchema = {
+  projectId: projectIdSchema,
+  sourcePath: z
+    .string()
+    .min(1)
+    .describe("Project-relative path of the source file (e.g. 'rules/Model.xlsx')."),
+  destinationPath: z
+    .string()
+    .min(1)
+    .describe("Project-relative destination path (e.g. 'rules/Model-copy.xlsx'). Intermediate folders are created automatically."),
+  branch: fileBranchSchema,
+  response_format: ResponseFormat.optional(),
+};
+
+export const copyProjectFileSchema = z.object(copyMovePairSchema).strict();
+
+export const moveProjectFileSchema = z.object(copyMovePairSchema).strict();
 
 // =============================================================================
 // Redeploy Schema

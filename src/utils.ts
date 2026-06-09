@@ -117,12 +117,38 @@ export function sanitizeError(error: unknown): string {
  * @param obj - Object to sanitize
  * @returns Sanitized object (deep clone)
  */
+/**
+ * Upper bound on the length of a string value preserved in sanitized error
+ * context. Long string values (e.g. a raw file body passed to
+ * openl_write_project_file via its `content` arg) are replaced with a length
+ * marker so proprietary rules / PII / pasted secrets can't leak into logs or
+ * into the McpError data returned to the client. Generous enough for normal
+ * args (paths, comments, ids).
+ */
+const MAX_SANITIZED_STRING_LENGTH = 2048;
+
 export function sanitizeJson(obj: unknown): unknown {
   if (obj === null || obj === undefined) {
     return obj;
   }
 
+  // Binary payloads (e.g. an octet-stream Buffer request body) must NEVER be
+  // walked as plain objects: Object.entries(buffer) yields a {0:byte,1:byte,…}
+  // map that serializes the full content byte-for-byte, bypassing redaction.
+  if (Buffer.isBuffer(obj)) {
+    return `[binary: ${obj.length} bytes]`;
+  }
+  if (obj instanceof ArrayBuffer) {
+    return `[binary: ${obj.byteLength} bytes]`;
+  }
+  if (ArrayBuffer.isView(obj)) {
+    return `[binary: ${(obj as ArrayBufferView).byteLength} bytes]`;
+  }
+
   if (typeof obj === "string") {
+    if (obj.length > MAX_SANITIZED_STRING_LENGTH) {
+      return `[redacted: ${obj.length} chars]`;
+    }
     // Apply string sanitization
     return applySanitizationPatterns(obj);
   }

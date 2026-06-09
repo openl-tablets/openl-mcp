@@ -1674,4 +1674,196 @@ describe("OpenLClient", () => {
       expect(cookieless).toBe(1);
     });
   });
+
+  describe("Project Files (BETA)", () => {
+    describe("readProjectFile", () => {
+      it("returns file bytes plus content-type/disposition headers and forwards version/branch", async () => {
+        let seenParams: Record<string, unknown> | undefined;
+        mockAxios.onGet("/projects/p1/files/rules/Model.xlsx").reply((config) => {
+          seenParams = config.params;
+          return [200, "hello-bytes", {
+            "content-type": "text/plain",
+            "content-disposition": "attachment; filename=Model.xlsx",
+          }];
+        });
+
+        const res = await client.readProjectFile("p1", "rules/Model.xlsx", {
+          version: "abc123",
+          branch: "main",
+        });
+
+        expect(res.data.toString("utf-8")).toBe("hello-bytes");
+        expect(res.contentType).toBe("text/plain");
+        expect(res.contentDisposition).toMatch(/attachment/i);
+        expect(seenParams).toMatchObject({ version: "abc123", branch: "main" });
+      });
+
+      it("lists the project root with a trailing-slash URL when path is empty", async () => {
+        const listing = JSON.stringify([{ path: "Bank Rating.xlsx", name: "Bank Rating.xlsx", type: "file" }]);
+        let url = "";
+        mockAxios.onGet(/\/projects\/p1\/files\/?/).reply((config) => {
+          url = config.url || "";
+          return [200, listing, { "content-type": "application/json" }];
+        });
+
+        const res = await client.readProjectFile("p1", "", { recursive: true, viewMode: "FLAT" });
+
+        expect(url).toBe("/projects/p1/files/");
+        expect(res.contentType).toBe("application/json");
+        expect(res.contentDisposition).toBe("");
+        expect(JSON.parse(res.data.toString("utf-8"))[0].name).toBe("Bank Rating.xlsx");
+      });
+
+      it("percent-encodes path segments but preserves '/' separators", async () => {
+        let url = "";
+        mockAxios.onGet(/\/projects\/p1\/files\//).reply((config) => {
+          url = config.url || "";
+          return [200, "x", { "content-type": "application/octet-stream", "content-disposition": "attachment" }];
+        });
+
+        await client.readProjectFile("p1", "a b/c.xml");
+
+        expect(url).toBe("/projects/p1/files/a%20b/c.xml");
+      });
+
+      it("rejects '.'/'..' path-traversal segments before issuing a request", async () => {
+        let called = false;
+        mockAxios.onAny().reply(() => {
+          called = true;
+          return [200, ""];
+        });
+
+        await expect(client.readProjectFile("p1", "rules/../../etc/passwd")).rejects.toThrow(/project-relative|not allowed/);
+        await expect(client.deleteProjectFile("p1", "..")).rejects.toThrow(/project-relative|not allowed/);
+        expect(called).toBe(false);
+      });
+
+      it("serializes extensions as a comma-separated query param", async () => {
+        let seenParams: Record<string, unknown> | undefined;
+        mockAxios.onGet(/\/projects\/p1\/files\/?/).reply((config) => {
+          seenParams = config.params;
+          return [200, "[]", { "content-type": "application/json" }];
+        });
+
+        await client.readProjectFile("p1", "", { extensions: ["xlsx", "xml"] });
+
+        expect(seenParams?.extensions).toBe("xlsx,xml");
+      });
+    });
+
+    describe("writeProjectFile / updateProjectFile", () => {
+      it("writeProjectFile POSTs octet-stream bytes with createFolders/branch (create) and returns metadata", async () => {
+        let captured: { headers?: Record<string, unknown>; params?: Record<string, unknown>; data?: unknown } = {};
+        mockAxios.onPost("/projects/p1/files/docs/readme.md").reply((config) => {
+          captured = config;
+          return [201, { name: "readme.md", size: 5 }];
+        });
+
+        const meta = await client.writeProjectFile("p1", "docs/readme.md", Buffer.from("hello"), {
+          createFolders: true,
+          branch: "main",
+        });
+
+        const ct = (captured.headers?.["Content-Type"] ?? captured.headers?.["content-type"]) as string;
+        expect(ct).toContain("octet-stream");
+        // conflictPolicy is NOT sent on POST — the backend ignores it for single files (overwrite = PUT).
+        expect(captured.params).toEqual({ createFolders: true, branch: "main" });
+        expect(Buffer.from(captured.data as Buffer).toString("utf-8")).toBe("hello");
+        expect(meta).toEqual({ name: "readme.md", size: 5 });
+      });
+
+      it("updateProjectFile PUTs octet-stream bytes (overwrite) with branch", async () => {
+        let captured: { headers?: Record<string, unknown>; params?: Record<string, unknown>; data?: unknown } = {};
+        mockAxios.onPut("/projects/p1/files/docs/readme.md").reply((config) => {
+          captured = config;
+          return [204];
+        });
+
+        await client.updateProjectFile("p1", "docs/readme.md", Buffer.from("v2"), { branch: "main" });
+
+        const ct = (captured.headers?.["Content-Type"] ?? captured.headers?.["content-type"]) as string;
+        expect(ct).toContain("octet-stream");
+        expect(captured.params).toEqual({ branch: "main" });
+        expect(Buffer.from(captured.data as Buffer).toString("utf-8")).toBe("v2");
+      });
+    });
+
+    describe("deleteProjectFile", () => {
+      it("DELETEs with the branch query param", async () => {
+        let seenParams: Record<string, unknown> | undefined;
+        mockAxios.onDelete("/projects/p1/files/old.txt").reply((config) => {
+          seenParams = config.params;
+          return [204];
+        });
+
+        await client.deleteProjectFile("p1", "old.txt", { branch: "dev" });
+
+        expect(seenParams).toEqual({ branch: "dev" });
+      });
+
+      it("omits query params when no branch is given", async () => {
+        let seenParams: Record<string, unknown> | undefined = { sentinel: true };
+        mockAxios.onDelete("/projects/p1/files/old.txt").reply((config) => {
+          seenParams = config.params;
+          return [204];
+        });
+
+        await client.deleteProjectFile("p1", "old.txt");
+
+        expect(seenParams).toBeUndefined();
+      });
+    });
+
+    describe("searchProjectFiles", () => {
+      it("POSTs the FileSearchQuery body and returns the FsNode array", async () => {
+        const nodes = [{ path: "rules/M.xlsx", name: "M.xlsx", type: "file" }];
+        let body: unknown;
+        let params: Record<string, unknown> | undefined;
+        mockAxios.onPost("/projects/p1/file-search").reply((config) => {
+          body = JSON.parse(config.data);
+          params = config.params;
+          return [200, nodes];
+        });
+
+        const res = await client.searchProjectFiles(
+          "p1",
+          { pattern: "**/*.xlsx", content: "premium", type: "FILE" },
+          { branch: "main", fields: "path,name" }
+        );
+
+        expect(body).toEqual({ pattern: "**/*.xlsx", content: "premium", type: "FILE" });
+        expect(params).toMatchObject({ branch: "main", fields: "path,name" });
+        expect(res).toEqual(nodes);
+      });
+    });
+
+    describe("copyProjectFile / moveProjectFile", () => {
+      it("copies with a {sourcePath,destinationPath} body and branch param", async () => {
+        let body: unknown;
+        let params: Record<string, unknown> | undefined;
+        mockAxios.onPost("/projects/p1/file-copy").reply((config) => {
+          body = JSON.parse(config.data);
+          params = config.params;
+          return [201];
+        });
+
+        await client.copyProjectFile("p1", { sourcePath: "a.xlsx", destinationPath: "b.xlsx" }, { branch: "main" });
+
+        expect(body).toEqual({ sourcePath: "a.xlsx", destinationPath: "b.xlsx" });
+        expect(params).toEqual({ branch: "main" });
+      });
+
+      it("moves with a {sourcePath,destinationPath} body", async () => {
+        let body: unknown;
+        mockAxios.onPost("/projects/p1/file-move").reply((config) => {
+          body = JSON.parse(config.data);
+          return [204];
+        });
+
+        await client.moveProjectFile("p1", { sourcePath: "a.xlsx", destinationPath: "sub/a.xlsx" });
+
+        expect(body).toEqual({ sourcePath: "a.xlsx", destinationPath: "sub/a.xlsx" });
+      });
+    });
+  });
 });
