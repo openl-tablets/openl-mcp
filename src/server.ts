@@ -21,6 +21,7 @@ import { OpenLClient } from './client.js';
 import { ResourceSubscriptionManager } from './resource-subscriptions.js';
 import { getAllTools, executeTool, registerAllTools } from './tool-handlers.js';
 import { sanitizeError, safeStringify } from './utils.js';
+import { logger } from './logger.js';
 import type * as Types from './types.js';
 import { SERVER_INFO } from './constants.js';
 import { PROMPTS, loadPromptContent, getPromptDefinition } from './prompts-registry.js';
@@ -567,12 +568,41 @@ function authConfigFromHeader(
 }
 
 /**
+ * Sensitive config keys that should never travel in a URL query string.
+ * Query parameters routinely end up in proxy/access logs, browser history,
+ * and Referer headers — see docs/guides/authentication.md.
+ */
+const SENSITIVE_QUERY_KEYS = ["OPENL_PERSONAL_ACCESS_TOKEN", "OPENL_PASSWORD"] as const;
+
+/**
+ * Emit a deprecation/security warning when credentials arrive via URL query
+ * parameters. Passing secrets in the query string is still honored for
+ * backward compatibility and local development, but the `Authorization` header
+ * is the secure path. Never logs the secret value itself — only which keys
+ * were present, so the warning is safe to keep in production logs.
+ */
+function warnIfSecretsInQuery(query: Record<string, unknown>): void {
+  const leaked = SENSITIVE_QUERY_KEYS.filter((key) => query[key] !== undefined);
+  if (leaked.length === 0) {
+    return;
+  }
+  logger.warn(
+    `Received credential(s) via URL query parameter (${leaked.join(", ")}). ` +
+      "This is deprecated and insecure: query strings are commonly captured in " +
+      "proxy/access logs, browser history, and Referer headers. Pass the token " +
+      'via the "Authorization: Token <PAT>" header instead. ' +
+      "See docs/guides/authentication.md.",
+  );
+}
+
+/**
  * SSE endpoint handler (shared for /mcp/sse and /sse)
  */
 const handleSSE = async (req: Request, res: Response): Promise<Response | void> => {
   try {
     // Extract authentication from the Authorization header (Token/Bearer/Basic),
     // then merge query params (base URL always comes from server config).
+    warnIfSecretsInQuery(req.query as Record<string, unknown>);
     const configFromHeaders = authConfigFromHeader(req.headers.authorization);
     const configParams = { ...req.query, ...configFromHeaders } as Record<string, string | undefined>;
 
@@ -614,9 +644,12 @@ const handleSSE = async (req: Request, res: Response): Promise<Response | void> 
  * Only authentication token can be passed via Authorization header or query parameter.
  * 
  * Supports configuration via:
- *   1. HTTP Authorization header: "Authorization: Token <PAT>" or "Authorization: Bearer <PAT>"
- *      (Bearer format will be automatically converted to Token format for OpenL API)
- *   2. Query parameter: ?OPENL_PERSONAL_ACCESS_TOKEN=<PAT>
+ *   1. HTTP Authorization header (recommended): "Authorization: Token <PAT>" or
+ *      "Authorization: Bearer <PAT>" (Bearer is converted to Token for the OpenL API)
+ *   2. Query parameter: ?OPENL_PERSONAL_ACCESS_TOKEN=<PAT> — DEPRECATED and insecure
+ *      (query strings leak into proxy/access logs, browser history, and Referer
+ *      headers). Honored for backward compatibility / local development only;
+ *      emits a warning. Prefer the Authorization header.
  */
 app.get('/mcp/sse', handleSSE);
 app.get('/sse', handleSSE); // Alias for nginx proxy compatibility
@@ -643,7 +676,9 @@ const handleStreamableHttp = async (req: Request, res: Response): Promise<Respon
       // Reuse existing transport
       transport = streamableHttpTransports[sessionId];
     } else if (!sessionId && isInitializeRequest(req.body)) {
-      // New initialization request - create session-specific MCP server with the client
+      // New initialization request - create session-specific MCP server with the client.
+      // Warn here (once per session) rather than per request to avoid log spam.
+      warnIfSecretsInQuery(req.query as Record<string, unknown>);
       const { server: sessionServer, subscriptions } = createSessionServer(client);
 
       transport = new StreamableHTTPServerTransport({
@@ -690,8 +725,10 @@ const handleStreamableHttp = async (req: Request, res: Response): Promise<Respon
  * Only authentication token can be passed via Authorization header.
  * 
  * Supports configuration via:
- *   1. HTTP Authorization header: "Authorization: Token <PAT>" or "Authorization: Bearer <PAT>"
- *      (Bearer format will be automatically converted to Token format for OpenL API)
+ *   1. HTTP Authorization header (recommended): "Authorization: Token <PAT>" or
+ *      "Authorization: Bearer <PAT>" (Bearer is converted to Token for the OpenL API)
+ *   2. Query parameter: ?OPENL_PERSONAL_ACCESS_TOKEN=<PAT> — DEPRECATED and insecure;
+ *      honored for backward compatibility / local development only, emits a warning.
  */
 app.post('/mcp/sse', handleStreamableHttp);
 app.post('/sse', handleStreamableHttp); // Alias for nginx proxy compatibility

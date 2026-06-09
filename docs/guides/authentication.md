@@ -68,18 +68,29 @@ Configure authentication in the MCP client configuration file:
 
 ### For HTTP Transport (Docker)
 
-When connecting via HTTP, authentication is passed through:
+When connecting via HTTP, the base URL always comes from the **server** configuration
+(`OPENL_BASE_URL`). The client supplies only the authentication token — a base URL sent
+by the client is ignored.
 
-1. **Query parameters** in URL:
-   ```text
-   http://localhost:3000/mcp/sse?OPENL_BASE_URL=http://studio:8080&OPENL_PERSONAL_ACCESS_TOKEN=<your-token>
-   ```
+**Recommended — `Authorization` header:**
 
-2. **HTTP headers**:
-   ```text
-   X-OPENL-BASE-URL: http://studio:8080
-   X-OPENL-PERSONAL-ACCESS-TOKEN: <your-token>
-   ```
+```text
+Authorization: Token <your-token>
+```
+
+The `Bearer <your-token>` scheme is also accepted and automatically converted to `Token`
+for the OpenL API. For basic auth, use `Authorization: Basic <base64(username:password)>`.
+
+> ⚠️ **Local development only — token in the query string.** The server also accepts the
+> token as a query parameter, but this is **deprecated and insecure**: query strings are
+> routinely captured in proxy/access logs (e.g. nginx `access.log`), browser history, and
+> `Referer` headers, so the token can leak even over HTTPS. The server logs a warning when
+> a credential arrives this way. Use it only for quick local testing against `localhost`,
+> never in production — always prefer the `Authorization` header above.
+>
+> ```text
+> http://localhost:3000/mcp/sse?OPENL_PERSONAL_ACCESS_TOKEN=<your-token>
+> ```
 
 ### Docker Configuration
 
@@ -101,7 +112,8 @@ environment:
 
 ✅ **Correct**: Set secrets only in:
 - MCP client configuration files (Cursor/Claude Desktop)
-- Query parameters or headers when connecting via HTTP (for one-time connections)
+- The `Authorization` header when connecting via HTTP
+- Query parameters **only** for one-time local testing against `localhost` (deprecated, insecure — see warning above)
 
 For complete configuration examples, see [MCP Connection Guide](../setup/mcp-connection-guide.md).
 
