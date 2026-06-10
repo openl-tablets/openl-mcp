@@ -521,10 +521,21 @@ export const startTraceSchema = z.object({
   response_format: ResponseFormat.optional(),
 }).strict();
 
+/**
+ * Server-side wait parameters for trace reads (EPBDS-16089). While a trace is
+ * running the backend answers 409 Conflict; LLM agents cannot sleep between
+ * calls, so by default the SERVER retries internally until the trace completes.
+ */
+const traceWaitParams = {
+  wait: z.boolean().optional().describe("When true (DEFAULT), if the trace is still running (backend returns 409 Conflict) the server waits and retries internally until the trace completes or waitTimeoutMs elapses — no client-side polling needed. Set false to get the raw immediate 409 behavior."),
+  waitTimeoutMs: z.number().int().positive().max(600000).optional().describe("Maximum time to wait for trace completion, in milliseconds. Default 120000 (2 min), cap 600000 (10 min). On timeout an error is returned explaining that the trace is still running server-side."),
+};
+
 export const getTraceNodesSchema = z.object({
   projectId: projectIdSchema,
   nodeId: z.number().int().nonnegative().optional().describe("Parent node ID. Omit for root nodes."),
   showRealNumbers: z.boolean().optional().describe("Show exact numbers instead of formatted (default: false)."),
+  ...traceWaitParams,
   response_format: ResponseFormat.optional(),
 }).strict();
 
@@ -551,6 +562,7 @@ export const exportTraceSchema = z.object({
   projectId: projectIdSchema,
   showRealNumbers: z.boolean().optional(),
   release: z.boolean().optional().describe("Clear trace from memory after export (default: false)."),
+  ...traceWaitParams,
   response_format: ResponseFormat.optional(),
 }).strict();
 
