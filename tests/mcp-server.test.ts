@@ -439,6 +439,19 @@ describe("MCP Server Tools", () => {
         [{ value: "A2" }, { value: "B2" }],
       ],
     };
+    // RawSource appends probe the raw view first (row-width validation + identity).
+    mockAxios.onGet(`/projects/${encoded}/tables/${encodeURIComponent("RawTable_5678")}`).reply(200, {
+      id: "RawTable_5678",
+      name: "RawTable",
+      tableType: "RawSource",
+      kind: "Other",
+      file: "Rules.xlsx",
+      pos: "A1:B3",
+      source: [
+        [{ value: "H1" }, { value: "H2" }],
+        [{ value: "a" }, { value: "b" }],
+      ],
+    });
     mockAxios
       .onPost(`/projects/${encoded}/tables/${encodeURIComponent("RawTable_5678")}/lines`, appendData)
       .reply(200);
@@ -449,6 +462,197 @@ describe("MCP Server Tools", () => {
       client
     );
     expect(result.content[0].text).toContain("Successfully appended 2 row(s)");
+  });
+
+  it("openl_append_table rejects RawSource rows whose width does not match the table (EPBDS-16085)", async () => {
+    const encoded = encodeProjectPath(projectId);
+    const tableId = "WideTable_0001";
+    mockAxios.onGet(`/projects/${encoded}/tables/${tableId}`).reply(200, {
+      id: tableId,
+      name: "bankFinancialData",
+      tableType: "RawSource",
+      kind: "Data",
+      file: "Bank.xlsx",
+      pos: "A1:E4",
+      source: [
+        [{ value: "Data BankData bankFinancialData", colspan: 5 }, { covered: true }, { covered: true }, { covered: true }, { covered: true }],
+        [{ value: "id" }, { value: "date" }, { value: "a" }, { value: "b" }, { value: "c" }],
+        [{ value: "R1" }, { value: "01/01/2024" }, { value: 1 }, { value: 2 }, { value: 3 }],
+      ],
+    });
+
+    await expect(
+      executeTool(
+        "openl_append_table",
+        {
+          projectId,
+          tableId,
+          appendData: { tableType: "RawSource", rows: [[{ value: "R2" }, { value: "01/01/2025" }]] },
+        },
+        client
+      )
+    ).rejects.toThrow(/5 column\(s\) wide.*row 1 has 2 cell\(s\)/);
+
+    // Nothing must be written when validation fails.
+    expect(mockAxios.history.post.length).toBe(0);
+  });
+
+  it("openl_append_table accepts RawSource rows that cover every column", async () => {
+    const encoded = encodeProjectPath(projectId);
+    const tableId = "WideTable_0002";
+    mockAxios.onGet(`/projects/${encoded}/tables/${tableId}`).reply(200, {
+      id: tableId,
+      name: "bankFinancialData",
+      tableType: "RawSource",
+      kind: "Data",
+      file: "Bank.xlsx",
+      pos: "A1:C3",
+      source: [
+        [{ value: "h1" }, { value: "h2" }, { value: "h3" }],
+        [{ value: 1 }, { value: 2 }, { value: 3 }],
+      ],
+    });
+    mockAxios.onPost(`/projects/${encoded}/tables/${tableId}/lines`).reply(200);
+
+    const result = await executeTool(
+      "openl_append_table",
+      {
+        projectId,
+        tableId,
+        appendData: { tableType: "RawSource", rows: [[{ value: "x" }, { value: "y" }, { value: "z" }]] },
+      },
+      client
+    );
+    expect(result.content[0].text).toContain("Successfully appended 1 row(s)");
+    expect(mockAxios.history.post.length).toBe(1);
+  });
+
+  it("openl_append_table returns the table's new id after the edit (EPBDS-16084)", async () => {
+    const encoded = encodeProjectPath(projectId);
+    const oldId = "aaaa1111aaaa1111";
+    const newId = "bbbb2222bbbb2222";
+    const tableMeta = { name: "bankFinancialData", tableType: "Data", kind: "Data", file: "Bank.xlsx", pos: "A1:E4" };
+
+    // Pre-edit probe on the old id; recompile read on the NEW id.
+    mockAxios.onGet(`/projects/${encoded}/tables/${oldId}`).reply(200, { id: oldId, ...tableMeta });
+    mockAxios.onGet(`/projects/${encoded}/tables/${newId}`).reply(200, { id: newId, ...tableMeta, pos: "A1:E5" });
+    // Table listing: before the edit the old id exists, afterwards only the new one.
+    mockAxios
+      .onGet(`/projects/${encoded}/tables`)
+      .replyOnce(200, [{ id: oldId, ...tableMeta }])
+      .onGet(`/projects/${encoded}/tables`)
+      .replyOnce(200, [{ id: newId, ...tableMeta, pos: "A1:E5" }]);
+    mockAxios.onPost(`/projects/${encoded}/tables/${oldId}/lines`).reply(200);
+
+    const result = await executeTool(
+      "openl_append_table",
+      {
+        projectId,
+        tableId: oldId,
+        appendData: { tableType: "Data", rows: [{ values: ["R2", "01/01/2025", 500, 600, 700] }] },
+        response_format: "json",
+      },
+      client
+    );
+
+    const payload = JSON.parse(result.content[0].text).data;
+    expect(payload.success).toBe(true);
+    expect(payload.tableId).toBe(newId);
+    expect(payload.tableIdChanged).toBe(true);
+    expect(payload.previousTableId).toBe(oldId);
+    expect(payload.recompileTriggered).toBe(true);
+    expect(payload.note).toContain("changed the table's id");
+    // The recompile read targeted the new id (with the old id it would silently 404).
+    expect(mockAxios.history.get.some((g) => g.url === `/projects/${encoded}/tables/${newId}`)).toBe(true);
+  });
+
+  it("openl_get_table transparently resolves a stale id recorded by a previous edit (EPBDS-16084)", async () => {
+    const encoded = encodeProjectPath(projectId);
+    const oldId = "cccc3333cccc3333";
+    const newId = "dddd4444dddd4444";
+    const tableMeta = { name: "driverRating", tableType: "Data", kind: "Data", file: "Rating.xlsx", pos: "A1:C4" };
+
+    // 1) An append records the old→new rename.
+    mockAxios.onGet(`/projects/${encoded}/tables/${oldId}`).reply(200, { id: oldId, ...tableMeta });
+    mockAxios.onGet(`/projects/${encoded}/tables/${newId}`).reply(200, { id: newId, ...tableMeta, pos: "A1:C5" });
+    mockAxios
+      .onGet(`/projects/${encoded}/tables`)
+      .replyOnce(200, [{ id: oldId, ...tableMeta }])
+      .onGet(`/projects/${encoded}/tables`)
+      .replyOnce(200, [{ id: newId, ...tableMeta, pos: "A1:C5" }]);
+    mockAxios.onPost(`/projects/${encoded}/tables/${oldId}/lines`).reply(200);
+    await executeTool(
+      "openl_append_table",
+      { projectId, tableId: oldId, appendData: { tableType: "Data", rows: [{ values: [1, 2, 3] }] } },
+      client
+    );
+
+    // 2) A later read that still uses the pre-edit id is resolved automatically.
+    mockAxios.reset();
+    mockAxios.onGet(`/projects/${encoded}/tables/${oldId}`).reply(404, { message: "The table is not found." });
+    mockAxios.onGet(`/projects/${encoded}/tables/${newId}`).reply(200, { id: newId, ...tableMeta, pos: "A1:C5" });
+
+    const result = await executeTool(
+      "openl_get_table",
+      { projectId, tableId: oldId, response_format: "json" },
+      client
+    );
+    expect(result.content[0].text).toContain("stale");
+    expect(result.content[0].text).toContain(newId);
+    expect(result.content[1].text).toContain(newId);
+  });
+
+  it("openl_update_table retries with the recorded id when the given id is stale (EPBDS-16084)", async () => {
+    const encoded = encodeProjectPath(projectId);
+    const oldId = "eeee5555eeee5555";
+    const newId = "ffff6666ffff6666";
+    const tableMeta = { name: "vehicleRating", tableType: "Data", kind: "Data", file: "Rating.xlsx", pos: "A1:B4" };
+
+    // 1) An append records the old→new rename.
+    mockAxios.onGet(`/projects/${encoded}/tables/${oldId}`).reply(200, { id: oldId, ...tableMeta });
+    mockAxios.onGet(`/projects/${encoded}/tables/${newId}`).reply(200, { id: newId, ...tableMeta, pos: "A1:B5" });
+    mockAxios
+      .onGet(`/projects/${encoded}/tables`)
+      .replyOnce(200, [{ id: oldId, ...tableMeta }])
+      .onGet(`/projects/${encoded}/tables`)
+      .replyOnce(200, [{ id: newId, ...tableMeta, pos: "A1:B5" }]);
+    mockAxios.onPost(`/projects/${encoded}/tables/${oldId}/lines`).reply(200);
+    await executeTool(
+      "openl_append_table",
+      { projectId, tableId: oldId, appendData: { tableType: "Data", rows: [{ values: [1, 2] }] } },
+      client
+    );
+
+    // 2) An update that still uses the pre-edit id is retried with the current id.
+    mockAxios.reset();
+    mockAxios.onPut(`/projects/${encoded}/tables/${oldId}`).reply(404, { message: "The table is not found." });
+    mockAxios.onPut(`/projects/${encoded}/tables/${newId}`).reply(204);
+    mockAxios.onGet(`/projects/${encoded}/tables/${newId}`).reply(200, { id: newId, ...tableMeta, pos: "A1:B5" });
+
+    const view = { id: oldId, ...tableMeta, rows: [{ values: [9, 9] }] };
+    const result = await executeTool(
+      "openl_update_table",
+      { projectId, tableId: oldId, view, response_format: "json" },
+      client
+    );
+
+    const payload = JSON.parse(result.content[0].text).data;
+    expect(payload.success).toBe(true);
+    expect(payload.tableId).toBe(newId);
+    expect(payload.tableIdChanged).toBe(true);
+    expect(payload.note).toContain("stale");
+    expect(mockAxios.history.put.length).toBe(2);
+  });
+
+  it("openl_get_table 404 explains that table ids go stale after edits (EPBDS-16086)", async () => {
+    const encoded = encodeProjectPath(projectId);
+    mockAxios
+      .onGet(`/projects/${encoded}/tables/deadbeefdeadbeef`)
+      .reply(404, { message: "The table is not found." });
+
+    await expect(
+      executeTool("openl_get_table", { projectId, tableId: "deadbeefdeadbeef" }, client)
+    ).rejects.toThrow(/The table is not found.*does NOT mean the edit was rolled back.*openl_list_tables/s);
   });
 
   it("should execute openl_list_branches", async () => {

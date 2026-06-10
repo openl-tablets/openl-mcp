@@ -386,11 +386,23 @@ Error: Cannot append to table type 'Rules'
 Fix: Use openl_append_table only for Datatype and Data tables
 ```
 
+## Table Ids Change After Every Edit
+
+Table ids are derived from the table's content/position, so **every successful
+append/update gives the table a NEW id** — the id you used for the edit becomes
+stale immediately (the edit itself stays applied; a later 404 on the old id does
+NOT mean the edit was rolled back).
+
+- The `openl_append_table` / `openl_update_table` response returns the table's
+  **current** id in the `tableId` field — always use it for subsequent calls.
+- If you only have an old id, refresh ids with `openl_list_tables()`.
+
 ## Validation After Append
 
 ```text
 # After appending, always verify:
 1. openl_get_table(tableId) → Confirm fields added
+   (use the 'tableId' returned by openl_append_table — the pre-edit id is stale)
 2. Manually validate in OpenL Studio UI → Check for type errors
    (openl_validate_project is temporarily disabled)
 3. IF validation passes → openl_save_project(comment="...")
@@ -404,7 +416,7 @@ Fix: Use openl_append_table only for Datatype and Data tables
 - `openl_get_table()` → Review current structure (optional)
 
 ### After openl_append_table
-- `openl_get_table()` → Verify append succeeded
+- `openl_get_table()` → Verify append succeeded (use the `tableId` from the append response)
 - Validate in OpenL Studio UI → Check for errors
 - `openl_save_project()` → Save changes
 
