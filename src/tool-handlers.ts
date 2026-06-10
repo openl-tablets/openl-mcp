@@ -2554,8 +2554,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     description:
       "Create a new OpenL project in a design repository and commit it. Two modes, selected by the `template` argument:\n" +
       "• CREATE (omit `template`): create a BLANK project from the default empty skeleton. Committed atomically on the repository's default branch; returns the commit revision.\n" +
-      "• CLONE (pass `template` = an existing project name): copy the source project's FULL structure (rules, tests, settings, request/response examples) into the new project and rename it — the project name in rules.xml is updated to projectName, matching OpenL Studio's Copy Project. `branch` is honored.\n" +
-      "Call openl_list_repositories() / openl_list_projects() first. Returns the new project name and commit revision (hash). A name collision is rejected with 409; a missing clone source returns 404; missing permission returns 403. Note: cloning writes directly to Git via the files API (one commit per file, not atomic), so the clone may not appear in openl_list_projects until OpenL re-indexes the repository. Local repositories are not supported.",
+      "• CLONE (pass `template` = an existing project name): copy the source project's FULL structure (rules, tests, settings, request/response examples) into the new project and rename it — the project name in rules.xml is updated to projectName, matching OpenL Studio's Copy Project. The clone is committed atomically through the create-from-zip endpoint, so it is indexed and appears in openl_list_projects immediately.\n" +
+      "Call openl_list_repositories() / openl_list_projects() first. Returns the new project name and commit revision (hash). A name collision is rejected with 409; a missing clone source returns 404; missing permission returns 403. Note: `branch` is honored for clones but that path writes directly to Git via the files API (one commit per file, not atomic), so a BRANCH clone may not appear in openl_list_projects until OpenL re-indexes the repository — omit `branch` for the default, immediately-visible clone. Local repositories are not supported.",
     inputSchema: schemas.z.toJSONSchema(schemas.createProjectSchema) as Record<string, unknown>,
     annotations: {
       readOnlyHint: false,
@@ -2586,7 +2586,69 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
       // -----------------------------------------------------------------------
       // CLONE mode: `template` is the source project to copy from.
       // -----------------------------------------------------------------------
+      if (typedArgs.template && !typedArgs.branch) {
+        // EPBDS-16088: default (branch-less) clone goes through the same
+        // create-from-zip endpoint as blank create: download the source project
+        // folder as a ZIP (entries are project-root-relative) and re-upload it
+        // under the new name. The endpoint validates the archive, renames the
+        // project in rules.xml server-side (ProjectDescriptorNameAdaptor),
+        // commits ONE atomic revision, and — unlike the raw git file-copy used
+        // before — registers the project in OpenL's workspace index, so the
+        // clone appears in openl_list_projects immediately.
+        const source = typedArgs.template;
+
+        let sourceZip: Buffer;
+        try {
+          sourceZip = await client.downloadRepositoryFolderZip(repositoryId, source);
+        } catch (error) {
+          if (isNotFoundError(error)) {
+            throw new McpError(
+              ErrorCode.InvalidParams,
+              `Cannot clone: source project '${source}' was not found in repository '${typedArgs.repository}'. ` +
+                `Use openl_list_projects() to see existing project names.`
+            );
+          }
+          throw error;
+        }
+
+        let created: Types.CreateProjectResult;
+        try {
+          created = await client.createProjectFromZip(repositoryId, typedArgs.projectName, sourceZip, {
+            comment: typedArgs.comment,
+          });
+        } catch (error) {
+          rethrowConflictAsActionable(
+            error,
+            `Cannot create project: a project named '${typedArgs.projectName}' already exists in repository '${typedArgs.repository}'. ` +
+              `Choose a different projectName.`
+          );
+        }
+
+        const result = {
+          success: true,
+          mode: "clone",
+          projectId: typedArgs.projectName,
+          projectName: typedArgs.projectName,
+          source,
+          repository: typedArgs.repository,
+          branch: created.branch,
+          revision: created.revision,
+          message:
+            `Cloned '${source}' to '${typedArgs.projectName}' in repository '${typedArgs.repository}'` +
+            `${created.revision ? ` at revision ${created.revision}` : ""}. ` +
+            `The project is indexed and visible in openl_list_projects immediately; ` +
+            `the project name in rules.xml (if present) was updated by the server.`,
+        };
+
+        return {
+          content: [{ type: "text", text: formatResponse(result, format) }],
+        };
+      }
+
       if (typedArgs.template) {
+        // BRANCH clone: the create-from-zip endpoint cannot target a branch, so
+        // this path still copies through the raw git files API. The clone lands
+        // on the requested branch but bypasses OpenL's workspace indexing.
         const source = typedArgs.template;
         const branch = typedArgs.branch;
 
@@ -2641,9 +2703,10 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
             `${branch ? ` (branch '${branch}')` : ""}` +
             `${revision ? ` at revision ${revision}` : ""}.`,
           note:
-            "Cloned via the files API (one commit per file, not atomic): the new project may not appear " +
-            "in openl_list_projects (and its history/revision may be unavailable) until OpenL re-indexes the " +
-            "repository. Commit messages are system-generated." +
+            "Branch clone goes through the raw git files API (one commit per file, not atomic): the new project " +
+            "may not appear in openl_list_projects (and its history/revision may be unavailable) until OpenL " +
+            "re-indexes the repository. Commit messages are system-generated. To get an immediately-visible, " +
+            "atomically-committed clone on the default branch, omit `branch`." +
             (revision ? "" : " No commit revision could be read back yet (project not indexed)."),
         };
 

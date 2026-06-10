@@ -569,6 +569,46 @@ export class OpenLClient {
   }
 
   /**
+   * Download a repository folder (e.g. a whole project) as a ZIP archive.
+   *
+   * Maps to `GET /repos/{repo}/files/{path}/?download=true`. The backend streams
+   * the folder's readable files into a ZIP whose entry names are RELATIVE to the
+   * folder — downloading a project folder therefore yields an archive with the
+   * project files at the archive root, exactly the layout the create-from-zip
+   * endpoint (PUT /repos/{repo}/projects/{name}) expects. A missing folder
+   * returns HTTP 404.
+   *
+   * @param repositoryId - Canonical repository id
+   * @param folderPath - Mount-relative folder path (e.g. the project name)
+   * @param branch - Optional branch
+   * @returns The ZIP archive bytes
+   */
+  async downloadRepositoryFolderZip(
+    repositoryId: string,
+    folderPath: string,
+    branch?: string
+  ): Promise<Buffer> {
+    // Trailing slash marks the path as a folder to the files API.
+    const encodedPath = folderPath
+      .replace(/\/+$/, "")
+      .split("/")
+      .map(encodeURIComponent)
+      .join("/");
+    const params: Record<string, string> = { download: "true" };
+    if (branch) params.branch = branch;
+
+    const response = await this.axiosInstance.get<ArrayBuffer>(
+      `/repos/${encodeURIComponent(repositoryId)}/files/${encodedPath}/`,
+      {
+        responseType: "arraybuffer",
+        params,
+        headers: { Accept: "*/*" },
+      }
+    );
+    return Buffer.from(response.data);
+  }
+
+  /**
    * Replace a single file's contents on a design repository branch.
    *
    * Maps to the raw `PUT /repos/{repo}/files/{path}` variant (updateResource).

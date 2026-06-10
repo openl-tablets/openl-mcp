@@ -738,14 +738,12 @@ describe("MCP Server Tools", () => {
     ).rejects.toThrow(/branch is only supported when cloning/i);
   });
 
-  it("should clone a project (template), rename rules.xml, and return the revision", async () => {
+  it("should clone a project through create-from-zip so it is indexed immediately (EPBDS-16088)", async () => {
     mockAxios.onGet("/repos").reply(200, mockRepositories);
-    mockAxios.onPost("/repos/design/file-copy").reply(201);
-    mockAxios
-      .onGet("/repos/design/files/Offer-CW/rules.xml")
-      .reply(200, "<project>\n  <name>Offer-US</name>\n  <modules>\n    <module><name>Main</name></module>\n  </modules>\n</project>");
-    mockAxios.onPut("/repos/design/files/Offer-CW/rules.xml").reply(200);
-    mockAxios.onGet("/repos/design/projects/Offer-CW/history").reply(200, { content: [{ revisionNo: "def456" }] });
+    // Source project folder downloaded as a ZIP (entries are project-root-relative).
+    mockAxios.onGet("/repos/design/files/Offer-US/").reply(200, "PK-zip-bytes");
+    // Re-uploaded through the same indexing endpoint blank create uses.
+    mockAxios.onPut("/repos/design/projects/Offer-CW").reply(200, { revision: "def456", branch: "main" });
 
     const result = await executeTool(
       "openl_create_project",
@@ -755,6 +753,31 @@ describe("MCP Server Tools", () => {
 
     expect(result.content[0].text).toContain("Cloned");
     expect(result.content[0].text).toContain("def456");
+    expect(result.content[0].text).toContain("visible in openl_list_projects immediately");
+    // The raw git file-copy path (which bypasses indexing) must NOT be used.
+    expect(mockAxios.history.post.some((p) => p.url === "/repos/design/file-copy")).toBe(false);
+    const download = mockAxios.history.get.find((g) => g.url === "/repos/design/files/Offer-US/");
+    expect(download?.params?.download).toBe("true");
+  });
+
+  it("should clone onto a branch via the legacy git file-copy path", async () => {
+    mockAxios.onGet("/repos").reply(200, mockRepositories);
+    mockAxios.onPost("/repos/design/file-copy").reply(201);
+    mockAxios
+      .onGet("/repos/design/files/Offer-CW/rules.xml")
+      .reply(200, "<project>\n  <name>Offer-US</name>\n  <modules>\n    <module><name>Main</name></module>\n  </modules>\n</project>");
+    mockAxios.onPut("/repos/design/files/Offer-CW/rules.xml").reply(200);
+    mockAxios.onGet("/repos/design/branches/dev/projects/Offer-CW/history").reply(200, { content: [{ revisionNo: "def456" }] });
+
+    const result = await executeTool(
+      "openl_create_project",
+      { repository: "design", template: "Offer-US", projectName: "Offer-CW", branch: "dev", response_format: "json" },
+      client
+    );
+
+    expect(result.content[0].text).toContain("Cloned");
+    expect(result.content[0].text).toContain("def456");
+    expect(result.content[0].text).toContain("re-indexes");
 
     // rules.xml project name rewritten to the new name; module name left untouched.
     const putReq = mockAxios.history.put.find((p) => p.url === "/repos/design/files/Offer-CW/rules.xml");
@@ -763,25 +786,10 @@ describe("MCP Server Tools", () => {
     expect(body).toContain("<module><name>Main</name></module>");
   });
 
-  it("should clone a descriptor-less project without attempting a rename", async () => {
-    mockAxios.onGet("/repos").reply(200, mockRepositories);
-    mockAxios.onPost("/repos/design/file-copy").reply(201);
-    mockAxios.onGet("/repos/design/files/NoDesc/rules.xml").reply(404);
-    mockAxios.onGet("/repos/design/projects/NoDesc/history").reply(200, { content: [{ revisionNo: "zzz" }] });
-
-    const result = await executeTool(
-      "openl_create_project",
-      { repository: "design", template: "Src", projectName: "NoDesc", response_format: "json" },
-      client
-    );
-
-    expect(result.content[0].text).toContain("\"renamedDescriptor\": false");
-    expect(mockAxios.history.put.some((p) => p.url?.includes("rules.xml"))).toBe(false);
-  });
-
   it("should reject a clone when the destination already exists (409)", async () => {
     mockAxios.onGet("/repos").reply(200, mockRepositories);
-    mockAxios.onPost("/repos/design/file-copy").reply(409, { message: "file.copy.failed.message" });
+    mockAxios.onGet("/repos/design/files/Offer-US/").reply(200, "PK-zip-bytes");
+    mockAxios.onPut("/repos/design/projects/Existing").reply(409, { message: "duplicated.project.message" });
 
     await expect(
       executeTool(
@@ -794,7 +802,7 @@ describe("MCP Server Tools", () => {
 
   it("should surface a 404 when cloning a non-existent source", async () => {
     mockAxios.onGet("/repos").reply(200, mockRepositories);
-    mockAxios.onPost("/repos/design/file-copy").reply(404, { message: "Project 'Nope' not found" });
+    mockAxios.onGet("/repos/design/files/Nope/").reply(404, { message: "Project 'Nope' not found" });
 
     await expect(
       executeTool(
