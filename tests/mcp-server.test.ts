@@ -816,5 +816,60 @@ describe("MCP Server Tools", () => {
   it("should validate required params for create", async () => {
     await expect(executeTool("openl_create_project", {}, client)).rejects.toThrow(/repository|projectName/);
   });
+
+  // ---------------------------------------------------------------------------
+  // Trace (EPBDS-16089: server-side wait while the trace is running)
+  // ---------------------------------------------------------------------------
+
+  it("openl_get_trace_nodes waits out 409s until the trace completes (EPBDS-16089)", async () => {
+    const encoded = encodeProjectPath(projectId);
+    const nodes = [{ id: 1, name: "calculatePremium", type: "rule" }];
+    mockAxios
+      .onGet(`/projects/${encoded}/trace/nodes`)
+      .replyOnce(409, { message: "Trace is still running" })
+      .onGet(`/projects/${encoded}/trace/nodes`)
+      .replyOnce(200, nodes);
+
+    const result = await executeTool(
+      "openl_get_trace_nodes",
+      { projectId, response_format: "json" },
+      client
+    );
+
+    expect(result.content[0].text).toContain("calculatePremium");
+    // Two attempts: the 409 was retried server-side, not surfaced to the caller.
+    expect(mockAxios.history.get.filter((g) => g.url === `/projects/${encoded}/trace/nodes`).length).toBe(2);
+  }, 15000);
+
+  it("openl_get_trace_nodes with wait: false surfaces the 409 immediately", async () => {
+    const encoded = encodeProjectPath(projectId);
+    mockAxios.onGet(`/projects/${encoded}/trace/nodes`).reply(409, { message: "Trace is still running" });
+
+    await expect(
+      executeTool("openl_get_trace_nodes", { projectId, wait: false }, client)
+    ).rejects.toThrow(/409|still running/i);
+    expect(mockAxios.history.get.filter((g) => g.url === `/projects/${encoded}/trace/nodes`).length).toBe(1);
+  });
+
+  it("openl_get_trace_nodes reports a still-running trace when the wait times out", async () => {
+    const encoded = encodeProjectPath(projectId);
+    mockAxios.onGet(`/projects/${encoded}/trace/nodes`).reply(409, { message: "Trace is still running" });
+
+    await expect(
+      executeTool("openl_get_trace_nodes", { projectId, waitTimeoutMs: 1 }, client)
+    ).rejects.toThrow(/still running.*openl_cancel_trace/s);
+  });
+
+  it("openl_export_trace waits out 409s until the trace completes", async () => {
+    const encoded = encodeProjectPath(projectId);
+    mockAxios
+      .onGet(`/projects/${encoded}/trace/export`)
+      .replyOnce(409, { message: "Trace is still running" })
+      .onGet(`/projects/${encoded}/trace/export`)
+      .replyOnce(200, "TRACE: calculatePremium -> 42");
+
+    const result = await executeTool("openl_export_trace", { projectId }, client);
+    expect(result.content[0].text).toContain("calculatePremium -> 42");
+  }, 15000);
 });
 
