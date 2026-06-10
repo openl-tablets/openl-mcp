@@ -112,7 +112,7 @@ All tools are prefixed with `openl_` and versioned (v1.0.0+).
 ### Project Tools (15)
 - `openl_list_projects` - List projects with filters
 - `openl_get_project` - Get project details
-- `openl_create_project` - Create a new project: omit `template` for a BLANK project (atomic commit on the default branch; returns commit revision), or pass `template` = an existing project name to CLONE it (full recursive copy + rename in rules.xml; `branch` honored). Cloning writes directly to repository Git via the files API, so the clone may not appear in `openl_list_projects` (and its revision may be unavailable) until OpenL re-indexes the repository
+- `openl_create_project` - Create a new project: omit `template` for a BLANK project (atomic commit on the default branch; returns commit revision), or pass `template` = an existing project name to CLONE it (full copy + rename in rules.xml). A default (branch-less) clone is committed atomically and indexed, so it appears in `openl_list_projects` immediately. Cloning onto a specific `branch` writes directly to repository Git via the files API, so a branch clone may not appear in `openl_list_projects` (and its revision may be unavailable) until OpenL re-indexes the repository
 - `openl_open_project` - Open project for editing (supports branch/revision switching)
 - `openl_save_project` - Save project changes to Git with validation
 - `openl_close_project` - Close project with save/discard options (prevents data loss)

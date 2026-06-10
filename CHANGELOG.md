@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `openl_create_project` clone mode (default, branch-less) now goes through the same create-from-zip endpoint as blank create: the source project folder is downloaded as a ZIP and re-uploaded under the new name (EPBDS-16088). The clone is committed in ONE atomic revision, the project name in rules.xml is renamed by the server, and — critically — the project is registered in OpenL's workspace index, so it appears in `openl_list_projects` immediately instead of staying invisible until a repository re-index. A `branch` clone still uses the raw git file-copy path (the create-from-zip endpoint cannot target a branch) and keeps the re-index caveat.
 - `openl_append_table` / `openl_update_table` now handle the table id becoming stale after an edit (EPBDS-16084). OpenL Studio derives table ids from the table's content/position, so every successful edit changes the edited table's id; previously the post-edit recompile read silently failed and any client that kept the pre-edit id permanently lost access to the table. The edit tools now re-resolve the table's current id after the edit, return it as `tableId` in the response (with `previousTableId`/`tableIdChanged` when it changed), record the rename, and use the new id for the recompile read. `openl_get_table`, `openl_update_table`, and `openl_append_table` transparently resolve ids that went stale through an edit made via this server.
 - `openl_append_table` with `tableType: RawSource` now validates the row width against the table's actual column count before writing (EPBDS-16085). Previously a row with too few cells was accepted and persisted with the remaining cells silently blank; now the call fails with a clear validation error and nothing is written.
 - 404 errors from table endpoints now explain that table ids go stale after edits — that the preceding edit was applied (not rolled back) and how to refresh ids — instead of a bare "The table is not found" (EPBDS-16086).
@@ -23,8 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Notes
 
-- Cloning (`openl_create_project` with `template`) writes directly to the repository's Git via the files API, which bypasses OpenL's workspace indexing. The clone is committed, but the new project may not appear in `openl_list_projects` (and its commit revision may be unavailable) until OpenL re-indexes the repository — there is currently no API to trigger re-indexing on demand.
-- Targeting a specific `branch` is supported when cloning; a blank project is always created on the repository's default branch (the create endpoint cannot target a branch).
+- A default (branch-less) clone is committed atomically through the create-from-zip endpoint and is indexed/visible immediately (see EPBDS-16088 above). Cloning onto a specific `branch` still writes directly to the repository's Git via the files API (one commit per file, not atomic, bypassing OpenL's workspace indexing) — a branch clone may not appear in `openl_list_projects` until OpenL re-indexes the repository, and there is currently no API to trigger re-indexing on demand.
+- A blank project is always created on the repository's default branch (the create endpoint cannot target a branch).
 
 ## [1.0.0] - 2026-02-23
 
