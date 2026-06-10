@@ -228,6 +228,67 @@ describe("Tool Handler Integration Tests", () => {
       expect(result.content[0].type).toBe("text");
       expect(result.content[0].text).toContain("newRule");
     });
+
+    it("openl_create_project_table normalizes a miscased tableType to the canonical token", async () => {
+      let body: Record<string, any> = {};
+      mockAxios.onPost(/\/projects\/.*\/tables/).reply((config) => {
+        body = JSON.parse(config.data);
+        return [201, { id: "t1", name: "LoanApplication", tableType: "Datatype", file: "Main.xlsx" }];
+      });
+
+      // Agent's bug: lowercase "datatype" — must be sent to the backend as "Datatype".
+      await executeTool("openl_create_project_table", {
+        projectId: "p1",
+        moduleName: "Main",
+        table: { tableType: "datatype", kind: "Datatype", name: "LoanApplication", fields: [{ name: "age", type: "Integer" }] },
+      }, client);
+
+      expect(body.table.tableType).toBe("Datatype");
+    });
+
+    it("openl_create_project_table rejects an unknown tableType with an actionable error (no request sent)", async () => {
+      let called = false;
+      mockAxios.onPost(/\/projects\/.*\/tables/).reply(() => {
+        called = true;
+        return [201, {}];
+      });
+
+      await expect(
+        executeTool("openl_create_project_table", {
+          projectId: "p1",
+          moduleName: "Main",
+          table: { tableType: "frobnicate", name: "X" },
+        }, client)
+      ).rejects.toThrow(/not a valid table type|CASE-SENSITIVE/);
+      expect(called).toBe(false);
+    });
+
+    it("openl_create_project_table rejects an unsupported 'signature' field with guidance (no request sent)", async () => {
+      let called = false;
+      mockAxios.onPost(/\/projects\/.*\/tables/).reply(() => {
+        called = true;
+        return [201, {}];
+      });
+
+      await expect(
+        executeTool("openl_create_project_table", {
+          projectId: "p1",
+          moduleName: "Main",
+          table: { tableType: "SimpleRules", name: "CreditCategory", signature: "String CreditCategory(Integer creditScore)", rules: [] },
+        }, client)
+      ).rejects.toThrow(/signature is not a valid field|returnType.*args/);
+      expect(called).toBe(false);
+    });
+
+    it("openl_create_project_table rejects a missing tableType", async () => {
+      await expect(
+        executeTool("openl_create_project_table", {
+          projectId: "p1",
+          moduleName: "Main",
+          table: { name: "X", fields: [] },
+        }, client)
+      ).rejects.toThrow(/tableType is required/);
+    });
   });
 
   describe("File Tools", () => {
@@ -1405,6 +1466,506 @@ describe("Tool Handler Integration Tests", () => {
         }, client);
 
         expect(result.content[0].type).toBe("text");
+      });
+    });
+
+    describe("Project Files (BETA) Tools", () => {
+      it("openl_read_project_file returns UTF-8 text content verbatim", async () => {
+        mockAxios.onGet("/projects/p1/files/readme.md").reply(200, "# Title\nbody", {
+          "content-type": "text/markdown",
+          "content-disposition": "attachment; filename=readme.md",
+        });
+
+        const result = await executeTool("openl_read_project_file", {
+          projectId: "p1",
+          path: "readme.md",
+        }, client);
+
+        expect(result.content[0].text).toBe("# Title\nbody");
+      });
+
+      it("openl_read_project_file base64-encodes binary content with metadata", async () => {
+        const binary = Buffer.from([0x00, 0x01, 0x02, 0xff, 0x00]);
+        mockAxios.onGet("/projects/p1/files/data.bin").reply(200, binary, {
+          "content-type": "application/octet-stream",
+          "content-disposition": "attachment",
+        });
+
+        const result = await executeTool("openl_read_project_file", {
+          projectId: "p1",
+          path: "data.bin",
+          response_format: "json",
+        }, client);
+
+        const parsed = JSON.parse(result.content[0].text);
+        expect(parsed.data.encoding).toBe("base64");
+        expect(parsed.data.byteLength).toBe(5);
+        expect(parsed.data.content).toBe(binary.toString("base64"));
+      });
+
+      it("openl_read_project_file applies a client-side byte range", async () => {
+        mockAxios.onGet("/projects/p1/files/nums.txt").reply(200, "0123456789", {
+          "content-type": "text/plain",
+          "content-disposition": "attachment",
+        });
+
+        const result = await executeTool("openl_read_project_file", {
+          projectId: "p1",
+          path: "nums.txt",
+          offset: 2,
+          length: 3,
+        }, client);
+
+        expect(result.content[0].text).toBe("234");
+      });
+
+      it("openl_read_project_file caps oversized text at 25K and appends a continuation cursor", async () => {
+        const big = "A".repeat(30000); // > 25K chars
+        mockAxios.onGet("/projects/p1/files/big.txt").reply(200, big, {
+          "content-type": "text/plain",
+          "content-disposition": "attachment",
+        });
+
+        const result = await executeTool("openl_read_project_file", { projectId: "p1", path: "big.txt" }, client);
+        const text = result.content[0].text;
+        expect(text.startsWith("A".repeat(100))).toBe(true);
+        // First 25000 chars of content + a continuation note pointing at the next byte offset.
+        expect(text).toContain("continue with offset=25000");
+        expect(text.length).toBeLessThan(25000 + 300);
+      });
+
+      it("openl_read_project_file returns a folder listing as JSON", async () => {
+        const listing = JSON.stringify([
+          { path: "a.xlsx", name: "a.xlsx", type: "file" },
+          { path: "sub", name: "sub", type: "folder" },
+        ]);
+        mockAxios.onGet(/\/projects\/p1\/files\/?/).reply(200, listing, {
+          "content-type": "application/json",
+        });
+
+        const result = await executeTool("openl_read_project_file", {
+          projectId: "p1",
+          path: "",
+          recursive: true,
+          response_format: "json",
+        }, client);
+
+        const parsed = JSON.parse(result.content[0].text);
+        expect(Array.isArray(parsed.data)).toBe(true);
+        expect(parsed.data).toHaveLength(2);
+      });
+
+      it("openl_read_project_file returns file metadata for view=meta", async () => {
+        const meta = JSON.stringify({ path: "a.xlsx", name: "a.xlsx", type: "file", size: 100 });
+        mockAxios.onGet("/projects/p1/files/a.xlsx").reply(200, meta, {
+          "content-type": "application/json",
+        });
+
+        const result = await executeTool("openl_read_project_file", {
+          projectId: "p1",
+          path: "a.xlsx",
+          view: "meta",
+          response_format: "json",
+        }, client);
+
+        const parsed = JSON.parse(result.content[0].text);
+        expect(parsed.data.size).toBe(100);
+      });
+
+      it("openl_write_project_file decodes base64 and reports an uncommitted working-copy write", async () => {
+        let captured: { data?: unknown; params?: Record<string, unknown> } = {};
+        mockAxios.onPost("/projects/p1/files/docs/new.md").reply((config) => {
+          captured = config;
+          return [201, {}];
+        });
+
+        const result = await executeTool("openl_write_project_file", {
+          projectId: "p1",
+          path: "docs/new.md",
+          content: Buffer.from("hello").toString("base64"),
+          encoding: "base64",
+          response_format: "json",
+        }, client);
+
+        expect(Buffer.from(captured.data as Buffer).toString("utf-8")).toBe("hello");
+        // createFolders default (true) is materialized by the handler.
+        expect(captured.params?.createFolders).toBe(true);
+
+        const parsed = JSON.parse(result.content[0].text);
+        expect(parsed.data.success).toBe(true);
+        expect(parsed.data.bytesWritten).toBe(5);
+        expect(parsed.data.committed).toBe(false);
+      });
+
+      it("openl_write_project_file with 'message' commits the write (save) and reports committed:true", async () => {
+        mockAxios.onPost("/projects/p1/files/docs/x.md").reply(201, {});
+        // saveProject(): GET project (EDITING, design) -> GET validation -> PATCH commit
+        mockAxios.onGet("/projects/p1").reply(200, { id: "p1", name: "P", status: "EDITING", repository: "design" });
+        mockAxios.onGet("/projects/p1/validation").reply(200, { valid: true, errors: [] });
+        let patched: Record<string, unknown> = {};
+        mockAxios.onPatch("/projects/p1").reply((config) => {
+          patched = JSON.parse(config.data);
+          return [204];
+        });
+
+        const result = await executeTool("openl_write_project_file", {
+          projectId: "p1",
+          path: "docs/x.md",
+          content: "hello",
+          message: "add docs/x.md",
+          response_format: "json",
+        }, client);
+
+        expect(patched.comment).toBe("add docs/x.md"); // committed via save (PATCH)
+        const parsed = JSON.parse(result.content[0].text);
+        expect(parsed.data.committed).toBe(true);
+        expect(parsed.data.message).toContain("committed");
+      });
+
+      it("openl_delete_project_file deletes and reports success", async () => {
+        mockAxios.onDelete("/projects/p1/files/old.txt").reply(204);
+
+        const result = await executeTool("openl_delete_project_file", {
+          projectId: "p1",
+          path: "old.txt",
+          response_format: "json",
+        }, client);
+
+        const parsed = JSON.parse(result.content[0].text);
+        expect(parsed.data.success).toBe(true);
+        expect(parsed.data.path).toBe("old.txt");
+      });
+
+      it("openl_search_project_files builds the query body and returns matches", async () => {
+        const nodes = [{ path: "rules/M.xlsx", name: "M.xlsx", type: "file" }];
+        let body: Record<string, unknown> = {};
+        mockAxios.onPost("/projects/p1/file-search").reply((config) => {
+          body = JSON.parse(config.data);
+          return [200, nodes];
+        });
+
+        const result = await executeTool("openl_search_project_files", {
+          projectId: "p1",
+          pattern: "**/*.xlsx",
+          content: "premium",
+          response_format: "json",
+        }, client);
+
+        expect(body).toEqual({ pattern: "**/*.xlsx", content: "premium" });
+        const parsed = JSON.parse(result.content[0].text);
+        expect(parsed.data).toHaveLength(1);
+        expect(parsed.data[0].name).toBe("M.xlsx");
+      });
+
+      it("openl_search_project_files paginates the match set client-side (limit/offset)", async () => {
+        const nodes = Array.from({ length: 5 }, (_, i) => ({ path: `f${i}.xlsx`, name: `f${i}.xlsx`, type: "file" }));
+        mockAxios.onPost("/projects/p1/file-search").reply(200, nodes);
+
+        const page1 = JSON.parse((await executeTool("openl_search_project_files", {
+          projectId: "p1", pattern: "**/*.xlsx", limit: 2, offset: 0, response_format: "json",
+        }, client)).content[0].text);
+        expect(page1.data).toHaveLength(2);
+        expect(page1.data[0].name).toBe("f0.xlsx");
+        expect(page1.pagination).toMatchObject({ limit: 2, offset: 0, total_count: 5, has_more: true });
+
+        const page3 = JSON.parse((await executeTool("openl_search_project_files", {
+          projectId: "p1", pattern: "**/*.xlsx", limit: 2, offset: 4, response_format: "json",
+        }, client)).content[0].text);
+        expect(page3.data).toHaveLength(1);
+        expect(page3.data[0].name).toBe("f4.xlsx");
+        expect(page3.pagination).toMatchObject({ total_count: 5, has_more: false });
+      });
+
+      it("openl_copy_project_file copies and reports source/destination", async () => {
+        let body: Record<string, unknown> = {};
+        mockAxios.onPost("/projects/p1/file-copy").reply((config) => {
+          body = JSON.parse(config.data);
+          return [201];
+        });
+
+        const result = await executeTool("openl_copy_project_file", {
+          projectId: "p1",
+          sourcePath: "rules/M.xlsx",
+          destinationPath: "rules/M-copy.xlsx",
+          response_format: "json",
+        }, client);
+
+        expect(body).toEqual({ sourcePath: "rules/M.xlsx", destinationPath: "rules/M-copy.xlsx" });
+        const parsed = JSON.parse(result.content[0].text);
+        expect(parsed.data.success).toBe(true);
+        expect(parsed.data.destinationPath).toBe("rules/M-copy.xlsx");
+      });
+
+      it("openl_move_project_file moves and reports source/destination", async () => {
+        let body: Record<string, unknown> = {};
+        mockAxios.onPost("/projects/p1/file-move").reply((config) => {
+          body = JSON.parse(config.data);
+          return [204];
+        });
+
+        const result = await executeTool("openl_move_project_file", {
+          projectId: "p1",
+          sourcePath: "rules/M.xlsx",
+          destinationPath: "legacy/M.xlsx",
+          response_format: "json",
+        }, client);
+
+        expect(body).toEqual({ sourcePath: "rules/M.xlsx", destinationPath: "legacy/M.xlsx" });
+        const parsed = JSON.parse(result.content[0].text);
+        expect(parsed.data.success).toBe(true);
+        expect(parsed.data.sourcePath).toBe("rules/M.xlsx");
+      });
+
+      it("openl_read_project_file forwards version and branch query params", async () => {
+        let seenParams: Record<string, unknown> | undefined;
+        mockAxios.onGet("/projects/p1/files/a.xlsx").reply((config) => {
+          seenParams = config.params;
+          return [200, "x", { "content-type": "text/plain", "content-disposition": "attachment" }];
+        });
+
+        await executeTool("openl_read_project_file", {
+          projectId: "p1",
+          path: "a.xlsx",
+          version: "rev1",
+          branch: "dev",
+        }, client);
+
+        expect(seenParams).toMatchObject({ version: "rev1", branch: "dev" });
+      });
+
+      it("openl_read_project_file with encoding='utf-8' returns binary-ish bytes as raw text (no base64 envelope)", async () => {
+        const bytes = Buffer.from([0x41, 0x00, 0x42]); // 'A', NUL, 'B' -> looksBinary true
+        mockAxios.onGet("/projects/p1/files/data.bin").reply(200, bytes, {
+          "content-type": "application/octet-stream",
+          "content-disposition": "attachment",
+        });
+
+        const result = await executeTool("openl_read_project_file", {
+          projectId: "p1",
+          path: "data.bin",
+          encoding: "utf-8",
+        }, client);
+
+        expect(result.content[0].text).toBe(bytes.toString("utf-8"));
+        expect(result.content[0].text).not.toContain('"encoding":"base64"');
+      });
+
+      it("openl_read_project_file does not truncate a large base64 binary payload", async () => {
+        // 30 KB of NUL bytes -> base64 ~40 KB, well past the 25k markdown cap.
+        const big = Buffer.alloc(30000, 0);
+        mockAxios.onGet("/projects/p1/files/big.bin").reply(200, big, {
+          "content-type": "application/octet-stream",
+          "content-disposition": "attachment",
+        });
+
+        // Default response_format (markdown): binary must still come back as an
+        // intact JSON envelope, NOT a truncated markdown string.
+        const result = await executeTool("openl_read_project_file", {
+          projectId: "p1",
+          path: "big.bin",
+        }, client);
+
+        const parsed = JSON.parse(result.content[0].text);
+        expect(parsed.data.encoding).toBe("base64");
+        expect(parsed.data.byteLength).toBe(30000);
+        expect(Buffer.from(parsed.data.content, "base64").length).toBe(30000);
+      });
+
+      it("openl_read_project_file download=true returns a base64 ZIP and passes download=true", async () => {
+        const zip = Buffer.from("PKfakezip");
+        let seenParams: Record<string, unknown> | undefined;
+        mockAxios.onGet(/\/projects\/p1\/files\//).reply((config) => {
+          seenParams = config.params;
+          return [200, zip, { "content-type": "application/zip", "content-disposition": "attachment; filename=rules.zip" }];
+        });
+
+        const result = await executeTool("openl_read_project_file", {
+          projectId: "p1",
+          path: "rules/",
+          download: true,
+          response_format: "json",
+        }, client);
+
+        expect(seenParams?.download).toBe("true");
+        const parsed = JSON.parse(result.content[0].text);
+        expect(parsed.data.encoding).toBe("base64");
+        expect(parsed.data.content).toBe(zip.toString("base64"));
+      });
+
+      it("openl_read_project_file auto-encoding boundary: 1/10 control chars stays text, 2/10 becomes base64", async () => {
+        const oneCtrl = Buffer.concat([Buffer.from("A".repeat(9)), Buffer.from([0x01])]); // 1/10 -> text
+        mockAxios.onGet("/projects/p1/files/a.txt").reply(200, oneCtrl, {
+          "content-type": "application/octet-stream",
+          "content-disposition": "attachment",
+        });
+        const textResult = await executeTool("openl_read_project_file", { projectId: "p1", path: "a.txt" }, client);
+        expect(textResult.content[0].text).toBe(oneCtrl.toString("utf-8"));
+
+        mockAxios.reset();
+        const twoCtrl = Buffer.concat([Buffer.from("A".repeat(8)), Buffer.from([0x01, 0x01])]); // 2/10 -> binary
+        mockAxios.onGet("/projects/p1/files/b.txt").reply(200, twoCtrl, {
+          "content-type": "application/octet-stream",
+          "content-disposition": "attachment",
+        });
+        const binResult = await executeTool("openl_read_project_file", { projectId: "p1", path: "b.txt", response_format: "json" }, client);
+        expect(JSON.parse(binResult.content[0].text).data.encoding).toBe("base64");
+      });
+
+      it("openl_write_project_file create POSTs (no conflictPolicy param) and forwards branch", async () => {
+        let captured: { params?: Record<string, unknown> } = {};
+        mockAxios.onPost("/projects/p1/files/docs/x.md").reply((config) => {
+          captured = config;
+          return [201, {}];
+        });
+
+        const result = await executeTool("openl_write_project_file", {
+          projectId: "p1",
+          path: "docs/x.md",
+          content: "hi",
+          branch: "dev",
+          response_format: "json",
+        }, client);
+
+        // conflictPolicy must NOT be sent to the backend (it ignores it for single files).
+        expect(captured.params).not.toHaveProperty("conflictPolicy");
+        expect(captured.params?.branch).toBe("dev");
+        const parsed = JSON.parse(result.content[0].text);
+        expect(parsed.data.action).toBe("created");
+        expect(parsed.data.branch).toBe("dev");
+      });
+
+      it("openl_write_project_file conflictPolicy=OVERWRITE replaces an existing file via PUT", async () => {
+        let putBody = "";
+        mockAxios.onPost("/projects/p1/files/docs/x.md").reply(409, { message: "already exists" });
+        mockAxios.onPut("/projects/p1/files/docs/x.md").reply((config) => {
+          putBody = Buffer.from(config.data as Buffer).toString("utf-8");
+          return [204];
+        });
+
+        const result = await executeTool("openl_write_project_file", {
+          projectId: "p1",
+          path: "docs/x.md",
+          content: "v2-overwrite",
+          conflictPolicy: "OVERWRITE",
+          response_format: "json",
+        }, client);
+
+        expect(putBody).toBe("v2-overwrite");
+        const parsed = JSON.parse(result.content[0].text);
+        expect(parsed.data.success).toBe(true);
+        expect(parsed.data.action).toBe("overwritten");
+      });
+
+      it("openl_write_project_file conflictPolicy=SKIP leaves an existing file unchanged (no PUT)", async () => {
+        let putCalled = false;
+        mockAxios.onPost("/projects/p1/files/docs/x.md").reply(409, { message: "already exists" });
+        mockAxios.onPut("/projects/p1/files/docs/x.md").reply(() => {
+          putCalled = true;
+          return [204];
+        });
+
+        const result = await executeTool("openl_write_project_file", {
+          projectId: "p1",
+          path: "docs/x.md",
+          content: "v2",
+          conflictPolicy: "SKIP",
+          response_format: "json",
+        }, client);
+
+        expect(putCalled).toBe(false);
+        const parsed = JSON.parse(result.content[0].text);
+        expect(parsed.data.success).toBe(true);
+        expect(parsed.data.skipped).toBe(true);
+        expect(parsed.data.written).toBe(false);
+      });
+
+      it("openl_write_project_file rejects invalid base64 content before calling the API", async () => {
+        let called = false;
+        mockAxios.onPost("/projects/p1/files/x.bin").reply(() => {
+          called = true;
+          return [201, {}];
+        });
+
+        await expect(
+          executeTool("openl_write_project_file", {
+            projectId: "p1",
+            path: "x.bin",
+            content: "not valid base64 @@@!!!",
+            encoding: "base64",
+          }, client)
+        ).rejects.toThrow(/base64/i);
+        expect(called).toBe(false);
+      });
+
+      it("openl_write_project_file surfaces a 409 conflict as an actionable error", async () => {
+        mockAxios.onPost("/projects/p1/files/exists.md").reply(409, { message: "already exists" });
+
+        await expect(
+          executeTool("openl_write_project_file", { projectId: "p1", path: "exists.md", content: "x" }, client)
+        ).rejects.toThrow(/already exists|conflictPolicy/);
+      });
+
+      it("openl_search_project_files forwards extensions/type/scope=ANCESTORS/recursive/from/version", async () => {
+        let body: Record<string, unknown> = {};
+        mockAxios.onPost("/projects/p1/file-search").reply((config) => {
+          body = JSON.parse(config.data);
+          return [200, []];
+        });
+
+        await executeTool("openl_search_project_files", {
+          projectId: "p1",
+          extensions: ["xlsx", "xml"],
+          type: "FOLDER",
+          scope: "ANCESTORS",
+          recursive: true,
+          from: "rules",
+          version: "abc123",
+        }, client);
+
+        expect(body).toEqual({
+          extensions: ["xlsx", "xml"],
+          type: "FOLDER",
+          scope: "ANCESTORS",
+          recursive: true,
+          from: "rules",
+          version: "abc123",
+        });
+      });
+
+      it("openl_copy_project_file surfaces a 409 destination conflict as an actionable error", async () => {
+        mockAxios.onPost("/projects/p1/file-copy").reply(409, { message: "exists" });
+
+        await expect(
+          executeTool("openl_copy_project_file", {
+            projectId: "p1",
+            sourcePath: "a.xlsx",
+            destinationPath: "b.xlsx",
+          }, client)
+        ).rejects.toThrow(/already exists|different destinationPath/);
+      });
+
+      it("openl_move_project_file surfaces a 409 destination conflict as an actionable error", async () => {
+        mockAxios.onPost("/projects/p1/file-move").reply(409, { message: "exists" });
+
+        await expect(
+          executeTool("openl_move_project_file", {
+            projectId: "p1",
+            sourcePath: "a.xlsx",
+            destinationPath: "b.xlsx",
+          }, client)
+        ).rejects.toThrow(/already exists|different destinationPath/);
+      });
+
+      it("openl_read_project_file rejects a path-traversal attempt", async () => {
+        await expect(
+          executeTool("openl_read_project_file", { projectId: "p1", path: "rules/../../etc/passwd" }, client)
+        ).rejects.toThrow(/project-relative|not allowed/);
+      });
+
+      it("openl_read_project_file requires projectId", async () => {
+        await expect(
+          executeTool("openl_read_project_file", { path: "x" }, client)
+        ).rejects.toThrow(/projectId/);
       });
     });
   });

@@ -66,30 +66,38 @@ This MCP server enables AI agents to:
 - Upload Excel files containing rules
 - Download Excel files (current or historical versions)
 
-### 4. Version Control
+### 4. Project Files (BETA)
+- Read any project file by path (text returned verbatim, binary as base64) with optional byte range
+- List folders (flat or nested, recursive, with extension/name filters) and read file metadata
+- Write files to the project working copy (UTF-8 or base64; commit via save)
+- Delete files/folders (auto-cleans dangling config references)
+- Search by glob pattern, extensions, type, or case-insensitive content substring
+- Copy and move/rename files within a project
+
+### 5. Version Control
 - View Git commit history for projects
 - View Git commit history for specific files
 - Revert to previous Git commits
 - Compare versions (planned)
 
-### 5. Testing & Validation
+### 6. Testing & Validation
 - Run project tests (all or specific tables)
 - Execute individual rules with test data
 - Get project errors and validation results (planned)
 
-### 6. Trace (BETA)
+### 7. Trace (BETA)
 - Start trace execution for rules/test tables
 - Get trace tree nodes and node details
 - Inspect parameters, context, and results
 - Export trace as text
 - Cancel ongoing trace
 
-### 7. Deployment
+### 8. Deployment
 - List active deployments
 - Deploy projects to production
 - Redeploy with new versions
 
-## Tools (33 Active, 6 Disabled, 39 Total Defined)
+## Tools (39 Active, 6 Disabled, 45 Total Defined)
 
 All tools are prefixed with `openl_` and versioned (v1.0.0+).
 
@@ -125,6 +133,15 @@ All tools are prefixed with `openl_` and versioned (v1.0.0+).
 - `openl_append_table` - Add rows/fields to table
 - `openl_create_project_table` - Create new table
 - `openl_execute_rule` - Execute rule with test data
+
+### Project Files Tools (6, BETA)
+Operate on ANY file in a project by exact project-relative path (not just Excel rule files). Writes/deletes/copies/moves land in the project **working copy** — commit them with `openl_save_project`. Use the optional `branch` to pin the project's branch (omit for `local`/non-branch repositories).
+- `openl_read_project_file` - Read a file (text verbatim, binary as base64; optional `offset`/`length` byte range), read file metadata (`view: "meta"`), or list a folder (`recursive`, `viewMode` FLAT/NESTED, `extensions`, `namePattern`, `foldersOnly`); optional `version` reads a historical revision
+- `openl_write_project_file` - Create/replace a file from UTF-8 or base64 `content`; `createFolders` (default true), `conflictPolicy` FAIL/OVERWRITE/SKIP
+- `openl_delete_project_file` - Delete a file/folder (auto-cleans dangling config references)
+- `openl_search_project_files` - Search by glob `pattern`, `extensions`, `type`, or case-insensitive `content` substring; `scope` SUBTREE (default) or ANCESTORS
+- `openl_copy_project_file` - Copy a file within the project (no overwrite — destination collision returns 409)
+- `openl_move_project_file` - Move or rename a file within the project
 
 ### Trace Tools (6, BETA)
 - `openl_start_trace` - Start trace execution for a table

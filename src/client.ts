@@ -1152,6 +1152,319 @@ export class OpenLClient {
     throw lastError;
   }
 
+  // =============================================================================
+  // Project Files (BETA)
+  // =============================================================================
+  //
+  // Thin wrappers over the "Projects: Files (BETA)" REST API
+  // (/projects/{projectId}/files/{path}, /file-search, /file-copy, /file-move).
+  // Unlike the legacy uploadFile/downloadFile (Excel-only, path-guessing), these
+  // operate on ANY repo file by exact project-relative path and expose the raw
+  // API surface (branch, version, conflictPolicy, glob/content search, copy/move).
+
+  /**
+   * Percent-encode each segment of a project-relative file path while preserving
+   * '/' separators and any trailing slash (which denotes a folder to the API).
+   * Leading slashes are dropped — paths are always project-relative.
+   */
+  private encodeProjectFilePath(path: string): string {
+    const trimmed = (path ?? "").replace(/^\/+/, "");
+    if (trimmed === "") return "";
+    const hasTrailingSlash = trimmed.endsWith("/");
+    const segments = trimmed.split("/").filter((seg) => seg.length > 0);
+    this.assertSafeProjectPath(path);
+    const encoded = segments.map(encodeURIComponent).join("/");
+    return hasTrailingSlash ? `${encoded}/` : encoded;
+  }
+
+  /**
+   * Defense-in-depth path validation: reject '.'/'..' segments so a caller-supplied
+   * path can't escape the project subtree. URL-path operations (read/write/delete)
+   * also need this because encodeURIComponent leaves '.'/'..' untouched (both are
+   * RFC 3986 unreserved) and a downstream URL normalizer could collapse them; body-
+   * path operations (copy/move source & destination, search 'from') don't go through
+   * encodeProjectFilePath, so they call this directly rather than trusting the backend.
+   *
+   * @param path - Project-relative path to validate (no-op for empty/undefined).
+   */
+  private assertSafeProjectPath(path: string | undefined): void {
+    if (!path) return;
+    const segments = path.split("/").filter((seg) => seg.length > 0);
+    if (segments.some((seg) => seg === "." || seg === "..")) {
+      throw new Error(
+        "Invalid path: '.' and '..' segments are not allowed; paths must be project-relative."
+      );
+    }
+  }
+
+  /**
+   * Normalize a file path carried in a JSON request BODY (copy/move source &
+   * destination, search 'from'): strip leading slashes so it's consistently
+   * project-relative (matching the URL-path encoder), and validate it. Unlike
+   * encodeProjectFilePath this does NOT percent-encode — body paths are sent raw
+   * in JSON, so encoding would corrupt names containing spaces or reserved chars
+   * (e.g. "My File.xlsx" -> "My%20File.xlsx", a literal name the backend can't find).
+   */
+  private normalizeBodyPath(path: string): string {
+    const normalized = (path ?? "").replace(/^\/+/, "");
+    this.assertSafeProjectPath(normalized);
+    return normalized;
+  }
+
+  /**
+   * Read a file's bytes, a file's metadata, or a folder listing from a project.
+   *
+   * Maps to `GET /projects/{projectId}/files/{path}`. The single endpoint serves
+   * several response shapes depending on the path and query params:
+   *  - file path                -> the file's raw bytes (Content-Disposition: attachment)
+   *  - file path + view=meta    -> JSON metadata (FsNode)
+   *  - folder path              -> JSON array of FsNode (or a tree when viewMode=NESTED)
+   *  - folder path + download   -> a ZIP archive of the folder (attachment)
+   *
+   * The raw body is returned as a Buffer together with the Content-Type and
+   * Content-Disposition headers so the caller can distinguish a file/ZIP download
+   * (attachment) from a JSON listing/metadata response and decode accordingly.
+   *
+   * @param projectId - Opaque project ID returned by backend.
+   * @param path - Project-relative path; empty or trailing-slash lists a folder.
+   * @param options - Query parameters mirroring the REST API.
+   */
+  async readProjectFile(
+    projectId: string,
+    path: string,
+    options?: {
+      view?: "meta";
+      download?: boolean;
+      recursive?: boolean;
+      viewMode?: "FLAT" | "NESTED";
+      extensions?: string[];
+      namePattern?: string;
+      foldersOnly?: boolean;
+      version?: string;
+      branch?: string;
+      fields?: string;
+    }
+  ): Promise<Types.ProjectFileResponse> {
+    const projectPath = this.buildProjectPath(projectId);
+    const encodedPath = this.encodeProjectFilePath(path);
+
+    const params: Record<string, unknown> = {};
+    if (options?.view) params.view = options.view;
+    if (options?.download) params.download = "true";
+    if (options?.recursive !== undefined) params.recursive = options.recursive;
+    if (options?.viewMode) params.viewMode = options.viewMode;
+    if (options?.extensions && options.extensions.length > 0) {
+      // Spring binds a Set<String> query param from either repeated keys or a
+      // comma-separated value; the comma form is the most portable.
+      params.extensions = options.extensions.join(",");
+    }
+    if (options?.namePattern) params.namePattern = options.namePattern;
+    if (options?.foldersOnly !== undefined) params.foldersOnly = options.foldersOnly;
+    if (options?.version) params.version = options.version;
+    if (options?.branch) params.branch = options.branch;
+    if (options?.fields) params.fields = options.fields;
+
+    const response = await this.axiosInstance.get<ArrayBuffer>(
+      `${projectPath}/files/${encodedPath}`,
+      {
+        responseType: "arraybuffer",
+        params,
+        headers: { Accept: "*/*" },
+      }
+    );
+
+    const headers = (response.headers ?? {}) as Record<string, unknown>;
+    const headerValue = (name: string): string => {
+      const v = headers[name] ?? headers[name.toLowerCase()];
+      return typeof v === "string" ? v : "";
+    };
+    return {
+      data: Buffer.from(response.data),
+      contentType: headerValue("content-type").toLowerCase(),
+      contentDisposition: headerValue("content-disposition"),
+    };
+  }
+
+  /**
+   * Write (create or replace) a file in a project's working copy.
+   *
+   * CREATE-only: maps to `POST /projects/{projectId}/files/{path}` with the raw
+   * bytes as an `application/octet-stream` body. POST is create semantics — a
+   * pre-existing target yields HTTP 409 (the backend does NOT apply conflictPolicy
+   * to a single-file POST; to replace an existing file use {@link updateProjectFile}
+   * / PUT). The write lands in the project working copy (NOT committed to Git) —
+   * commit via {@link saveProject}.
+   *
+   * @param projectId - Opaque project ID returned by backend.
+   * @param path - Project-relative file path.
+   * @param content - Raw file bytes.
+   * @param options - createFolders / branch.
+   * @returns The backend's file-metadata response (may be empty).
+   */
+  async writeProjectFile(
+    projectId: string,
+    path: string,
+    content: Buffer,
+    options?: { createFolders?: boolean; branch?: string }
+  ): Promise<unknown> {
+    const projectPath = this.buildProjectPath(projectId);
+    const encodedPath = this.encodeProjectFilePath(path);
+
+    const params: Record<string, unknown> = {};
+    if (options?.createFolders !== undefined) params.createFolders = options.createFolders;
+    if (options?.branch) params.branch = options.branch;
+
+    const response = await this.axiosInstance.post(
+      `${projectPath}/files/${encodedPath}`,
+      content,
+      {
+        headers: { "Content-Type": "application/octet-stream" },
+        params,
+      }
+    );
+    return response.data;
+  }
+
+  /**
+   * OVERWRITE an existing file: maps to `PUT /projects/{projectId}/files/{path}`
+   * with the raw bytes as an `application/octet-stream` body (the backend's
+   * `updateResource`). PUT is update semantics — it replaces the content of an
+   * EXISTING file in place (HTTP 204) and returns 404 if the file does not exist
+   * (it does not create). The update lands in the project working copy (NOT
+   * committed to Git) — commit via {@link saveProject}.
+   *
+   * @param projectId - Opaque project ID returned by backend.
+   * @param path - Project-relative file path (must already exist).
+   * @param content - Raw replacement bytes.
+   * @param options - branch.
+   */
+  async updateProjectFile(
+    projectId: string,
+    path: string,
+    content: Buffer,
+    options?: { branch?: string }
+  ): Promise<void> {
+    const projectPath = this.buildProjectPath(projectId);
+    const encodedPath = this.encodeProjectFilePath(path);
+    await this.axiosInstance.put(
+      `${projectPath}/files/${encodedPath}`,
+      content,
+      {
+        headers: { "Content-Type": "application/octet-stream" },
+        params: options?.branch ? { branch: options.branch } : undefined,
+      }
+    );
+  }
+
+  /**
+   * Delete a file or folder from a project by its project-relative path.
+   *
+   * Maps to `DELETE /projects/{projectId}/files/{path}` (HTTP 204). The backend
+   * auto-cleans dangling references to the deleted resource from project config.
+   *
+   * @param projectId - Opaque project ID returned by backend.
+   * @param path - Project-relative path to the resource.
+   * @param options - Optional branch.
+   */
+  async deleteProjectFile(
+    projectId: string,
+    path: string,
+    options?: { branch?: string }
+  ): Promise<void> {
+    const projectPath = this.buildProjectPath(projectId);
+    const encodedPath = this.encodeProjectFilePath(path);
+    await this.axiosInstance.delete(`${projectPath}/files/${encodedPath}`, {
+      params: options?.branch ? { branch: options.branch } : undefined,
+    });
+  }
+
+  /**
+   * Search a project's files/folders by glob pattern, extensions, type and a
+   * case-insensitive content substring.
+   *
+   * Maps to `POST /projects/{projectId}/file-search` (body = FileSearchQuery).
+   * Returns the matching nodes. SUBTREE scope (default) may target a historical
+   * `version`; ANCESTORS walks up to the repository root.
+   *
+   * @param projectId - Opaque project ID returned by backend.
+   * @param query - Search criteria (all fields optional).
+   * @param options - branch / fields query params.
+   */
+  async searchProjectFiles(
+    projectId: string,
+    query: Types.FileSearchQuery,
+    options?: { branch?: string; fields?: string }
+  ): Promise<Types.FsNode[]> {
+    const body = query.from !== undefined ? { ...query, from: this.normalizeBodyPath(query.from) } : query;
+    const projectPath = this.buildProjectPath(projectId);
+    const params: Record<string, unknown> = {};
+    if (options?.branch) params.branch = options.branch;
+    if (options?.fields) params.fields = options.fields;
+
+    const response = await this.axiosInstance.post<Types.FsNode[]>(
+      `${projectPath}/file-search`,
+      body,
+      Object.keys(params).length > 0 ? { params } : undefined
+    );
+    return response.data;
+  }
+
+  /**
+   * Copy a file within a project to a new location.
+   *
+   * Maps to `POST /projects/{projectId}/file-copy` (body = {sourcePath,
+   * destinationPath}, HTTP 201). Intermediate destination folders are created
+   * automatically. A destination collision returns HTTP 409 (no overwrite option).
+   *
+   * @param projectId - Opaque project ID returned by backend.
+   * @param pair - Source and destination project-relative paths.
+   * @param options - Optional branch.
+   */
+  async copyProjectFile(
+    projectId: string,
+    pair: Types.FilePathPairRequest,
+    options?: { branch?: string }
+  ): Promise<void> {
+    const body: Types.FilePathPairRequest = {
+      sourcePath: this.normalizeBodyPath(pair.sourcePath),
+      destinationPath: this.normalizeBodyPath(pair.destinationPath),
+    };
+    const projectPath = this.buildProjectPath(projectId);
+    await this.axiosInstance.post(
+      `${projectPath}/file-copy`,
+      body,
+      options?.branch ? { params: { branch: options.branch } } : undefined
+    );
+  }
+
+  /**
+   * Move or rename a file within a project.
+   *
+   * Maps to `POST /projects/{projectId}/file-move` (body = {sourcePath,
+   * destinationPath}, HTTP 204). Intermediate destination folders are created
+   * automatically; the source file is deleted after the move.
+   *
+   * @param projectId - Opaque project ID returned by backend.
+   * @param pair - Source and destination project-relative paths.
+   * @param options - Optional branch.
+   */
+  async moveProjectFile(
+    projectId: string,
+    pair: Types.FilePathPairRequest,
+    options?: { branch?: string }
+  ): Promise<void> {
+    const body: Types.FilePathPairRequest = {
+      sourcePath: this.normalizeBodyPath(pair.sourcePath),
+      destinationPath: this.normalizeBodyPath(pair.destinationPath),
+    };
+    const projectPath = this.buildProjectPath(projectId);
+    await this.axiosInstance.post(
+      `${projectPath}/file-move`,
+      body,
+      options?.branch ? { params: { branch: options.branch } } : undefined
+    );
+  }
+
   /**
    * Create a new branch in a project
    *

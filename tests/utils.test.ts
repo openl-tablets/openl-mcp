@@ -6,6 +6,7 @@
 import { describe, it, expect } from "@jest/globals";
 import {
   sanitizeError,
+  sanitizeJson,
   isAxiosError,
   validateTimeout,
   normalizeOpenLBaseUrl,
@@ -114,6 +115,55 @@ describe("utils", () => {
       expect(result).not.toContain("token123");
       expect(result).not.toContain("user:");
       expect(result).not.toContain(":pass");
+    });
+  });
+
+  describe("sanitizeJson", () => {
+    it("redacts a Buffer body to a length marker instead of a per-byte map", () => {
+      // Regression: openl_write_project_file sends an octet-stream Buffer; if it
+      // reached error context it must NOT serialize byte-for-byte.
+      const secret = Buffer.from("api content with SUPER_SECRET_VALUE_12345");
+      const result = sanitizeJson(secret) as string;
+      expect(result).toBe(`[binary: ${secret.length} bytes]`);
+      expect(result).not.toContain("SUPER_SECRET");
+      expect(result).not.toMatch(/"0":/);
+    });
+
+    it("redacts a Buffer nested inside an object", () => {
+      const out = sanitizeJson({ requestData: Buffer.from("secret file body") }) as Record<string, unknown>;
+      expect(out.requestData).toBe(`[binary: 16 bytes]`);
+    });
+
+    it("redacts an ArrayBuffer / typed array", () => {
+      const ab = new ArrayBuffer(8);
+      expect(sanitizeJson(ab)).toBe("[binary: 8 bytes]");
+      expect(sanitizeJson(new Uint8Array([1, 2, 3]))).toBe("[binary: 3 bytes]");
+    });
+
+    it("redacts an oversized string value (e.g. a raw file content arg)", () => {
+      const big = "x".repeat(5000);
+      const out = sanitizeJson({ content: big }) as Record<string, unknown>;
+      expect(out.content).toBe("[redacted: 5000 chars]");
+    });
+
+    it("leaves short non-sensitive string values intact (after pattern redaction)", () => {
+      const out = sanitizeJson({ path: "rules/Model.xlsx" }) as Record<string, unknown>;
+      expect(out.path).toBe("rules/Model.xlsx");
+    });
+
+    it("redacts a sensitive substring in a non-sensitive key's value via pattern matching", () => {
+      // 'note' is not a sensitive key, so the value is pattern-scanned.
+      const out = sanitizeJson({ note: "Bearer abc123secrettoken" }) as Record<string, unknown>;
+      expect(out.note).toBe("Bearer [REDACTED]");
+      expect(out.note).not.toContain("abc123secrettoken");
+    });
+
+    it("applies the 2048-char length cap at the boundary", () => {
+      const exactly2048 = "x".repeat(2048);
+      const over = "x".repeat(2049);
+      // > 2048 is redacted to a length marker; exactly 2048 passes through.
+      expect(sanitizeJson(exactly2048)).toBe(exactly2048);
+      expect(sanitizeJson(over)).toBe("[redacted: 2049 chars]");
     });
   });
 

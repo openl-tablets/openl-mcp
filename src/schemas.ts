@@ -126,7 +126,7 @@ export const getTableSchema = z.object({
 export const updateTableSchema = z.object({
   projectId: projectIdSchema,
   tableId: tableIdSchema,
-  view: z.record(z.string(), z.any()).describe("FULL table structure from get_table() with your modifications applied. MUST include: id, tableType, kind, name, plus type-specific data (rules for SimpleRules, rows for Spreadsheet, fields for Datatype). Do NOT send only the changed fields - send the complete structure. Workflow: 1) currentTable = get_table(), 2) currentTable.rules[0]['Column'] = newValue, 3) update_table(view=currentTable)"),
+  view: z.record(z.string(), z.any()).describe("FULL table structure from get_table() with your modifications applied. MUST include: id, tableType, kind, name, plus type-specific data (rules for SimpleRules, rows for Spreadsheet, fields for Datatype). Keep 'tableType' EXACTLY as get_table() returned it (it is a CASE-SENSITIVE discriminator: Datatype, Spreadsheet, SimpleRules, SmartRules, SimpleSpreadsheet, Vocabulary, Data, Test, SimpleLookup, SmartLookup, RawSource — lowercase is rejected). Do NOT send only the changed fields - send the complete structure. Workflow: 1) currentTable = get_table(), 2) currentTable.rules[0]['Column'] = newValue, 3) update_table(view=currentTable)"),
   response_format: ResponseFormat.optional(),
 }).strict();
 
@@ -140,7 +140,7 @@ export const appendTableSchema = z.object({
       fields: z.array(z.object({
         name: z.string().describe("Field name"),
         type: z.string().describe("Field type (e.g., 'String', 'int', 'double')"),
-        required: z.boolean().optional().describe("Whether field is required"),
+        required: z.union([z.boolean(), z.string()]).optional().describe("Whether the field is required (backend field is a String; a boolean is accepted and coerced)."),
         defaultValue: z.any().optional().describe("Default value for the field"),
       })).describe("Array of field definitions to append"),
     }),
@@ -152,7 +152,11 @@ export const appendTableSchema = z.object({
     // SimpleSpreadsheetAppend
     z.object({
       tableType: z.literal("SimpleSpreadsheet"),
-      steps: z.array(z.unknown()).describe("Array of spreadsheet step objects to append"),
+      steps: z.array(z.object({
+        name: z.string().describe("Step name (referenced elsewhere as $StepName)."),
+        type: z.string().optional().describe("Step result type, e.g. 'Double'."),
+        value: z.any().describe("The step's formula or value, e.g. '= app.annualIncome / 12'. NOT 'formula'."),
+      })).describe("Array of spreadsheet steps to append: [{ name, type?, value }]."),
     }),
     // SmartRulesAppend
     z.object({
@@ -162,14 +166,34 @@ export const appendTableSchema = z.object({
     // VocabularyAppend
     z.object({
       tableType: z.literal("Vocabulary"),
-      values: z.array(z.unknown()).describe("Array of vocabulary value objects to append"),
+      values: z.array(z.object({ value: z.any() })).describe("Array of vocabulary values to append: [{ value }]."),
+    }),
+    // LookupAppend (SimpleLookup / SmartLookup) — rows are an array of maps.
+    z.object({
+      tableType: z.literal("SimpleLookup"),
+      rows: z.array(z.record(z.string(), z.unknown())).describe("Array of lookup rows to append; each row is a map keyed by the table's columns."),
+    }),
+    z.object({
+      tableType: z.literal("SmartLookup"),
+      rows: z.array(z.record(z.string(), z.unknown())).describe("Array of lookup rows to append; each row is a map keyed by the table's columns."),
+    }),
+    // DataAppend — rows are positional { values: [...] }.
+    z.object({
+      tableType: z.literal("Data"),
+      rows: z.array(z.object({ values: z.array(z.any()) })).describe("Array of data rows to append: [{ values: [...] }] (one value per column)."),
+    }),
+    // TestAppend — rows are positional { values: [...] }; use this to add test cases
+    // to an existing Test table (create writes only the header, then append the cases).
+    z.object({
+      tableType: z.literal("Test"),
+      rows: z.array(z.object({ values: z.array(z.any()) })).describe("Array of test cases to append: [{ values: [...] }] (one value per header column)."),
     }),
     // RawSourceAppend
     z.object({
       tableType: z.literal("RawSource"),
       rows: z.array(z.array(z.record(z.string(), z.unknown()))).describe("Array of rows to append; each row is an array of cell objects (e.g. { value: string, colspan?: number } or { covered?: boolean })"),
     }),
-  ]).describe("Data structure to append to the table. Structure depends on tableType: Datatype uses 'fields', SimpleRules/SmartRules use 'rules', SimpleSpreadsheet uses 'steps', Vocabulary uses 'values', RawSource uses 'rows' (array of rows)"),
+  ]).describe("Data structure to append to the table. Structure depends on tableType: Datatype uses 'fields'; SimpleRules/SmartRules use 'rules'; SimpleLookup/SmartLookup use 'rows' (array of maps); Data/Test use 'rows' (array of { values }); SimpleSpreadsheet uses 'steps'; Vocabulary uses 'values'; RawSource uses 'rows' (array of cell-arrays)."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
@@ -281,11 +305,184 @@ export const createRuleSchema = z.object({
   response_format: ResponseFormat.optional(),
 }).strict();
 
+// -----------------------------------------------------------------------------
+// EditableTableView — discriminated union on the CASE-SENSITIVE `tableType`.
+//
+// The backend EditableTableView is a polymorphic Jackson type (one shape per
+// tableType) that rejects unknown fields with an opaque 400 "Failed to read
+// request". Modelling it as a discriminated union (mirroring appendTableSchema)
+// publishes the correct REQUIRED/allowed fields PER table type in the tool's JSON
+// Schema, so an LLM picks the right shape up front instead of reusing, say, the
+// SimpleRules shape (args/returnType/headers[title]/rules) for a Test table — which
+// actually needs the data-table shape (testedTableName/headers[fieldName]/rows[values]).
+// Field sets mirror the backend view classes (TableView + per-type subtypes).
+// -----------------------------------------------------------------------------
+const commonTableFields = {
+  name: z.string().describe("Table name (a valid Java identifier, e.g. 'calculatePremium')."),
+  id: z.string().optional().describe("Optional; ignored on create."),
+  kind: z.string().optional().describe("Informational only — NOT the discriminator (that is tableType)."),
+  properties: z.record(z.string(), z.any()).optional().describe("Dimension/table properties, e.g. { state: 'CA', lob: 'Auto' }."),
+  messages: z.array(z.any()).optional().describe("Read-only diagnostics; tolerated if a payload is copied from openl_get_table()."),
+};
+// ExecutableView base (rules, lookups, spreadsheets): the method signature is
+// defined by name + returnType + args — there is NO 'signature' field.
+const executableFields = {
+  returnType: z.string().optional().describe("Return type, e.g. 'String', 'Double', 'EligibilityResult', 'SpreadsheetResult'."),
+  args: z.array(z.object({
+    name: z.string().describe("Parameter name, e.g. 'app'."),
+    type: z.string().describe("Parameter type, e.g. 'LoanApplication', 'Integer'."),
+  })).optional().describe("Input parameters: [{ name, type }]. There is NO 'signature' field — use this instead."),
+};
+const rulesHeaderView = z.object({ title: z.string().describe("Column caption.") });
+const dataHeaderView = z.object({
+  fieldName: z.string().describe("Column accessor, e.g. 'app.age' (an input) or '_res_.eligible' (an expected result)."),
+  displayName: z.string().optional(),
+  foreignKey: z.string().optional(),
+});
+const dataRowView = z.object({
+  values: z.array(z.any()).describe("Positional cell values — one per header, in header order."),
+});
+// Spreadsheet step/row/column/cell shapes (backend SpreadsheetStepView etc.).
+// IMPORTANT: a step's formula goes in `value` (e.g. "= app.annualIncome / 12"),
+// NOT a `formula` field.
+const spreadsheetStepView = z.object({
+  name: z.string().describe("Step name (referenced elsewhere as $StepName)."),
+  type: z.string().optional().describe("Step result type, e.g. 'Double', 'String'."),
+  value: z.any().describe("The step's formula or value, e.g. '= app.annualIncome / 12'. NOT 'formula'."),
+});
+const spreadsheetRowColView = z.object({
+  name: z.string(),
+  type: z.string().optional(),
+});
+// Lookup column header (LookupView/LookupHeaderView): a caption plus optional
+// nested sub-columns for multi-level column grouping (modelled one level deep —
+// nested children are open maps of the same {title, children} shape).
+const lookupHeaderView = z.object({
+  title: z.string().optional().describe("Header caption."),
+  children: z.array(z.record(z.string(), z.any())).optional().describe("Nested sub-column headers ({ title, children }) for multi-level grouping."),
+});
+
+const editableTableViewSchema = z.discriminatedUnion("tableType", [
+  // Datatype — a data structure definition.
+  z.object({
+    tableType: z.literal("Datatype"),
+    ...commonTableFields,
+    extends: z.string().optional().describe("Parent datatype to extend, if any."),
+    fields: z.array(z.object({
+      name: z.string(),
+      type: z.string(),
+      required: z.union([z.boolean(), z.string()]).optional().describe("Whether the field is required (backend stores a String; a boolean is accepted and coerced)."),
+      defaultValue: z.any().optional(),
+    })).optional().describe("Field definitions: [{ name, type }]."),
+  }),
+  // Vocabulary — an enumeration of values.
+  z.object({
+    tableType: z.literal("Vocabulary"),
+    ...commonTableFields,
+    type: z.string().optional().describe("Vocabulary element type."),
+    values: z.array(z.object({ value: z.any() })).optional().describe("Vocabulary values: [{ value }]."),
+  }),
+  // SimpleRules / SmartRules — decision tables. headers are captions [{title}];
+  // each rules row is a MAP keyed by those titles (return column usually 'RET1').
+  z.object({
+    tableType: z.literal("SimpleRules"),
+    ...commonTableFields,
+    ...executableFields,
+    collect: z.boolean().optional(),
+    headers: z.array(rulesHeaderView).optional().describe("Column captions, e.g. [{title:'creditScore'},{title:'RET1'}]."),
+    rules: z.array(z.record(z.string(), z.any())).optional().describe("Rows as maps keyed by the header titles, e.g. { creditScore: '< 580', RET1: 'Poor' }."),
+  }),
+  z.object({
+    tableType: z.literal("SmartRules"),
+    ...commonTableFields,
+    ...executableFields,
+    collect: z.boolean().optional(),
+    headers: z.array(z.object({
+      title: z.string().optional().describe("Condition column caption."),
+      width: z.number().int().optional().describe("Number of condition columns this header spans (defaults to 1)."),
+    })).optional().describe("Condition column headers: [{ title, width? }]."),
+    rules: z.array(z.record(z.string(), z.any())).optional().describe("Rows as maps keyed by the header captions."),
+  }),
+  // SimpleLookup / SmartLookup — lookup tables (LookupView): rows is an array of maps.
+  z.object({
+    tableType: z.literal("SimpleLookup"),
+    ...commonTableFields,
+    ...executableFields,
+    collect: z.boolean().optional(),
+    headers: z.array(lookupHeaderView).optional().describe("Lookup column headers: [{ title?, children? }] — children nest for multi-level column grouping."),
+    rows: z.array(z.record(z.string(), z.any())).optional().describe("Lookup rows as maps keyed by the columns."),
+  }),
+  z.object({
+    tableType: z.literal("SmartLookup"),
+    ...commonTableFields,
+    ...executableFields,
+    collect: z.boolean().optional(),
+    headers: z.array(lookupHeaderView).optional().describe("Lookup column headers: [{ title?, children? }] — children nest for multi-level column grouping."),
+    rows: z.array(z.record(z.string(), z.any())).optional().describe("Lookup rows as maps keyed by the columns."),
+  }),
+  // SimpleSpreadsheet — a single-column spreadsheet of named steps. Each step's
+  // formula goes in `value` (e.g. value: "= app.annualIncome / 12"), NOT 'formula'.
+  z.object({
+    tableType: z.literal("SimpleSpreadsheet"),
+    ...commonTableFields,
+    ...executableFields,
+    steps: z.array(spreadsheetStepView).optional().describe(
+      "Named steps: [{ name, type?, value }]. The formula goes in 'value' (e.g. value: '= app.annualIncome / 12'); there is NO 'formula' field. Reference earlier steps as $StepName."
+    ),
+  }),
+  // Spreadsheet — full row/column/cell grid.
+  z.object({
+    tableType: z.literal("Spreadsheet"),
+    ...commonTableFields,
+    ...executableFields,
+    rows: z.array(spreadsheetRowColView).optional().describe("Row headers: [{ name, type? }]."),
+    columns: z.array(spreadsheetRowColView).optional().describe("Column headers: [{ name, type? }]."),
+    cells: z.array(z.array(z.object({ value: z.any() }))).optional().describe("2D matrix of cells: [[{ value }]]. The formula/value goes in each cell's 'value'."),
+  }),
+  // Data — a data table (AbstractDataView): headers[fieldName] + rows[{values}].
+  z.object({
+    tableType: z.literal("Data"),
+    ...commonTableFields,
+    dataType: z.string().optional().describe("Element type of the data table."),
+    headers: z.array(dataHeaderView).optional().describe("Columns: [{fieldName}]."),
+    rows: z.array(dataRowView).optional().describe("Rows as positional { values: [...] }."),
+  }),
+  // Test — a test table (AbstractDataView). NOTE: 'testedTableName' (NOT
+  // 'testedMethodName'), headers use 'fieldName' (NOT 'title'), and test cases go
+  // in 'rows' as positional { values } (NOT 'rules').
+  z.object({
+    tableType: z.literal("Test"),
+    ...commonTableFields,
+    testedTableName: z.string().describe("Name of the table/method under test (NOT 'testedMethodName')."),
+    headers: z.array(dataHeaderView).optional().describe("Test columns: [{fieldName}] — inputs like 'app.age' and expected results like '_res_.eligible'."),
+    rows: z.array(dataRowView).optional().describe("Test cases as positional { values: [...] } (NOT 'rules'); one value per header."),
+  }),
+  // RawSource — raw 2D cell matrix.
+  z.object({
+    tableType: z.literal("RawSource"),
+    ...commonTableFields,
+    pos: z.string().optional(),
+    source: z.array(z.array(z.object({
+      value: z.any().optional(),
+      colspan: z.number().int().optional(),
+      rowspan: z.number().int().optional(),
+      covered: z.boolean().optional(),
+    }))).optional().describe("2D matrix of raw cells: [[{ value, colspan?, rowspan?, covered? }]]."),
+  }),
+]).describe(
+  "Complete table structure (EditableTableView), selected by the CASE-SENSITIVE 'tableType' discriminator " +
+  "(Datatype, Vocabulary, Spreadsheet, SimpleSpreadsheet, SimpleRules, SmartRules, SimpleLookup, SmartLookup, Data, Test, RawSource — " +
+  "lowercase like 'datatype' is rejected). Each table type has a DIFFERENT shape (shown per branch); the backend rejects unknown/extra " +
+  "fields with a 400 'Failed to read request'. Rules tables use args/returnType/headers[{title}]/rules; Data and Test tables use " +
+  "headers[{fieldName}]/rows[{values}] (Test also needs testedTableName) — do NOT mix the two. There is NO 'signature' field. " +
+  "Tip: openl_get_table() on an existing table of the SAME type returns this exact shape to copy."
+);
+
 export const createProjectTableSchema = z.object({
   projectId: projectIdSchema,
-  moduleName: z.string().min(1).describe("Name of an existing project module where the table will be created (for example, 'Rules')."),
+  moduleName: z.string().min(1).describe("Name of an existing project module where the table will be created (for example, 'Main' or 'Rules')."),
   sheetName: z.string().optional().describe("Name of the sheet where the table will be created within the Excel file. If not provided, the table name will be used as the sheet name."),
-  table: z.record(z.string(), z.any()).describe("Complete table structure (EditableTableView). Must include at least tableType, kind, and name, plus type-specific data (for example rules/headers for Rules tables, rows for Spreadsheet, fields for Datatype). id is optional for create requests."),
+  table: editableTableViewSchema,
   response_format: ResponseFormat.optional(),
 }).strict();
 
@@ -502,6 +699,199 @@ export const getTestResultsByTableSchema = z.object({
     message: "Invalid pagination parameters: page and offset are mutually exclusive; unpaged is mutually exclusive with page, offset, size, and limit",
   }
 );
+
+// =============================================================================
+// Project Files (BETA) Schemas
+// =============================================================================
+// Map 1:1 onto the "Projects: Files (BETA)" REST API:
+//   GET    /projects/{projectId}/files/{path}     -> openl_read_project_file
+//   POST   /projects/{projectId}/files/{path}     -> openl_write_project_file
+//   DELETE /projects/{projectId}/files/{path}     -> openl_delete_project_file
+//   POST   /projects/{projectId}/file-search      -> openl_search_project_files
+//   POST   /projects/{projectId}/file-copy        -> openl_copy_project_file
+//   POST   /projects/{projectId}/file-move        -> openl_move_project_file
+
+const filePathSchema = z
+  .string()
+  .min(1)
+  .describe(
+    "Project-relative path to the resource (e.g. 'rules/Model.xlsx'). Do NOT include the project name itself; paths are relative to the project root. A trailing slash denotes a folder."
+  );
+
+const fileBranchSchema = branchNameSchema
+  .optional()
+  .describe(
+    "Branch the project must be on for this operation. Ignored when blank. Fails if the repository has no branches or the project is on another branch. Omit for repository 'local' and non-branch repositories."
+  );
+
+export const readProjectFileSchema = z.object({
+  projectId: projectIdSchema,
+  path: z
+    .string()
+    .default("")
+    .describe(
+      "Project-relative path to a file or folder (e.g. 'rules/Model.xlsx' or 'rules/'). Empty string (default) or a path ending in '/' lists the project root / that folder; a file path returns the file content."
+    ),
+  view: z
+    .enum(["meta"])
+    .optional()
+    .describe(
+      "For a file, set to 'meta' to return JSON metadata (name, size, extension, lastModified) instead of the file content. Omit to read content (files) or list entries (folders)."
+    ),
+  download: z
+    .boolean()
+    .optional()
+    .describe(
+      "For a folder, set true to download the folder and its contents as a ZIP archive (returned base64-encoded). Ignored for files."
+    ),
+  recursive: z
+    .boolean()
+    .optional()
+    .describe("Folder listing only: include nested resources recursively (default false)."),
+  viewMode: z
+    .enum(["FLAT", "NESTED"])
+    .optional()
+    .describe("Folder listing only: FLAT returns a flat list, NESTED returns a tree (default FLAT)."),
+  extensions: z
+    .array(z.string())
+    .optional()
+    .describe("Folder listing only: filter by file extensions without the dot, e.g. ['xlsx','xml']."),
+  namePattern: z
+    .string()
+    .optional()
+    .describe("Folder listing only: filter by name (case-insensitive contains match)."),
+  foldersOnly: z
+    .boolean()
+    .optional()
+    .describe("Folder listing only: if true, return only folders (default false)."),
+  version: z
+    .string()
+    .optional()
+    .describe(
+      "Historical revision (commit hash) to read. Omit to read the latest revision. Applies to file content/metadata and folder listing/ZIP. An unknown revision yields 404."
+    ),
+  branch: fileBranchSchema,
+  fields: z
+    .string()
+    .optional()
+    .describe(
+      "Comma-separated response fields to return for metadata/listing responses, including nested selection (e.g. 'id,name'). When omitted, the full response is returned."
+    ),
+  encoding: z
+    .enum(["auto", "utf-8", "base64"])
+    .default("auto")
+    .describe(
+      "How to return file content. 'auto' (default) returns text as UTF-8 and binary as base64; 'utf-8' forces text; 'base64' forces base64. Ignored for metadata/listing responses."
+    ),
+  offset: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional()
+    .describe(
+      "Byte offset to start reading file content from (default 0). NOTE: the backend does not support partial transfers, so the whole file is fetched and then sliced client-side. offset/length are BYTE offsets — a range boundary that lands inside a multi-byte UTF-8 character makes that character decode to U+FFFD (�) at the seam; for exact bytes use encoding='base64'."
+    ),
+  length: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe("Maximum number of bytes of file content to return starting at 'offset'. Omit for the rest of the file. Byte count, not character count (see the note on 'offset')."),
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+export const writeProjectFileSchema = z.object({
+  projectId: projectIdSchema,
+  path: filePathSchema,
+  content: z
+    .string()
+    .describe("File content, interpreted according to 'encoding'. Use base64 for binary files (xlsx, images, zip)."),
+  encoding: z
+    .enum(["utf-8", "base64"])
+    .default("utf-8")
+    .describe("How 'content' is encoded: 'utf-8' (default) for text, 'base64' for binary."),
+  createFolders: z
+    .boolean()
+    .default(true)
+    .describe("If true (default), missing intermediate folders are created automatically; otherwise the parent folder must already exist."),
+  conflictPolicy: z
+    .enum(["FAIL", "OVERWRITE", "SKIP"])
+    .optional()
+    .describe("How to handle a target file that already exists: FAIL (default) returns an error; OVERWRITE replaces its content in place; SKIP leaves the existing file unchanged and reports it skipped. Has no effect when creating a new file."),
+  message: z
+    .string()
+    .optional()
+    .describe("Optional commit message. PRESENT → the write is committed to Git after saving the project (a new revision is created). ABSENT → the write stays in the project WORKING COPY (commit it later with openl_save_project). NOTE: committing saves ALL pending project changes (OpenL has no per-file commit), and only works for design (Git) repositories — not 'local'."),
+  branch: fileBranchSchema,
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+export const deleteProjectFileSchema = z.object({
+  projectId: projectIdSchema,
+  path: filePathSchema,
+  branch: fileBranchSchema,
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+export const searchProjectFilesSchema = z.object({
+  projectId: projectIdSchema,
+  pattern: z
+    .string()
+    .optional()
+    .describe("Ant-glob path pattern, e.g. 'rules/**/*.xlsx' or '**/*.xml'."),
+  content: z
+    .string()
+    .optional()
+    .describe("Case-insensitive content substring to match inside files (full-text search)."),
+  extensions: z
+    .array(z.string())
+    .optional()
+    .describe("Filter by file extensions without the dot, e.g. ['xlsx','xml']."),
+  type: z
+    .enum(["FILE", "FOLDER", "ANY"])
+    .optional()
+    .describe("Restrict results to files, folders, or both (ANY, default)."),
+  scope: z
+    .enum(["SUBTREE", "ANCESTORS"])
+    .optional()
+    .describe("SUBTREE (default) searches within the project; ANCESTORS walks up to the repository root."),
+  recursive: z
+    .boolean()
+    .optional()
+    .describe("Whether to descend into nested folders. IMPORTANT: defaults to false (top level only) — set true to search the whole project/subtree. A '**' glob still needs recursive:true to actually descend."),
+  from: z
+    .string()
+    .optional()
+    .describe("Project-relative path to start the search from."),
+  version: z
+    .string()
+    .optional()
+    .describe("Historical revision (commit hash) to search; SUBTREE scope only."),
+  branch: fileBranchSchema,
+  fields: z
+    .string()
+    .optional()
+    .describe("Comma-separated response fields to return per result (e.g. 'path,name,type'). When omitted, the full response is returned."),
+  response_format: ResponseFormat.optional(),
+}).merge(PaginationParams).strict();
+
+const copyMovePairSchema = {
+  projectId: projectIdSchema,
+  sourcePath: z
+    .string()
+    .min(1)
+    .describe("Project-relative path of the source file (e.g. 'rules/Model.xlsx')."),
+  destinationPath: z
+    .string()
+    .min(1)
+    .describe("Project-relative destination path (e.g. 'rules/Model-copy.xlsx'). Intermediate folders are created automatically."),
+  branch: fileBranchSchema,
+  response_format: ResponseFormat.optional(),
+};
+
+export const copyProjectFileSchema = z.object(copyMovePairSchema).strict();
+
+export const moveProjectFileSchema = z.object(copyMovePairSchema).strict();
 
 // =============================================================================
 // Redeploy Schema
