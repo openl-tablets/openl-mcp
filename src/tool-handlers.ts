@@ -1328,7 +1328,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     name: "openl_list_tables",
     title: "List Project Tables",
     version: "1.0.0",
-    description: "List all tables/rules in a project with optional filters for type, name, and file. Returns table metadata including 'tableId' (the 'id' field) which is required for calling get_table(), update_table(), append_table(), or run_project_tests(). Use the 'tableId' field from the response to reference specific tables in other API calls.",
+    description: "List all tables/rules in a project with optional filters for type, name, and file. Returns table metadata including 'tableId' (the 'id' field) which is required for calling get_table(), update_table(), append_table(), or run_project_tests(). Use the 'tableId' field from the response to reference specific tables in other API calls. IMPORTANT: table ids are volatile — every successful edit changes the edited table's id. After openl_update_table/openl_append_table, use the 'tableId' those tools return (or re-run openl_list_tables); ids from a listing taken before the edit are stale.",
     inputSchema: schemas.z.toJSONSchema(schemas.listTablesSchema) as Record<string, unknown>,
     annotations: {
       readOnlyHint: true,
@@ -1446,7 +1446,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "Get Table Structure & Data",
     version: "1.0.0",
     description:
-      "Get detailed information about a specific table/rule. By default returns a parsed table structure with signature, conditions, actions, dimension properties, and row data. Set raw=true to get an unparsed 2D cell matrix (RawTableView) instead — useful for unknown/custom table types or preserving exact cell layout. Note: raw output cannot be passed directly to openl_update_table (which expects the parsed form).",
+      "Get detailed information about a specific table/rule. By default returns a parsed table structure with signature, conditions, actions, dimension properties, and row data. Set raw=true to get an unparsed 2D cell matrix (RawTableView) instead — useful for unknown/custom table types or preserving exact cell layout. Note: raw output cannot be passed directly to openl_update_table (which expects the parsed form). Table ids change after every successful edit; if the given id went stale through an edit made via this server, it is resolved to the current id automatically — otherwise refresh ids with openl_list_tables().",
     inputSchema: schemas.z.toJSONSchema(schemas.getTableSchema) as Record<string, unknown>,
     annotations: {
       readOnlyHint: true,
@@ -1467,14 +1467,37 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
       const format = validateResponseFormat(typedArgs.response_format);
 
-      const table = typedArgs.raw
-        ? await client.getTable(typedArgs.projectId, typedArgs.tableId, true)
-        : await client.getTable(typedArgs.projectId, typedArgs.tableId);
+      const fetchTable = (id: string): Promise<Types.TableView | Types.RawTableView> =>
+        typedArgs.raw
+          ? client.getTable(typedArgs.projectId, id, true)
+          : client.getTable(typedArgs.projectId, id);
+
+      // EPBDS-16084: a table's id changes after every edit. If this id went
+      // stale through an edit made via this server, resolve it transparently.
+      let table: Types.TableView | Types.RawTableView;
+      let staleIdNote: string | undefined;
+      try {
+        table = await fetchTable(typedArgs.tableId);
+      } catch (error) {
+        const aliased = isNotFoundError(error)
+          ? resolveTableIdAlias(typedArgs.projectId, typedArgs.tableId)
+          : undefined;
+        if (aliased === undefined) {
+          throw error;
+        }
+        table = await fetchTable(aliased);
+        staleIdNote =
+          `Note: the provided tableId '${typedArgs.tableId}' is stale — the table was edited after that id was issued. ` +
+          `It was automatically resolved to the current id '${aliased}'. ${STALE_TABLE_ID_HINT}`;
+      }
 
       const formattedResult = formatResponse(table, format);
 
       return {
-        content: [{ type: "text", text: formattedResult }],
+        content: [
+          ...(staleIdNote ? [{ type: "text", text: staleIdNote }] : []),
+          { type: "text", text: formattedResult },
+        ],
       };
     },
   });
@@ -1484,7 +1507,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "Replace Entire Table",
     version: "1.0.0",
     description:
-      "Replace the ENTIRE table structure with a modified version. Use for MODIFYING existing rows, DELETING rows, REORDERING rows, or STRUCTURAL changes. CRITICAL: Must send the FULL table structure (not just modified fields). DO NOT use for simple additions - use append_table instead. Required workflow: 1) Call get_table() to retrieve complete structure, 2) Modify the returned object, 3) Pass the ENTIRE modified object to update_table(). Note: the studio does not auto-compile after an edit (it only resets the previous compile status); this tool reads the table back after updating to trigger the recompile, so a subsequent openl_project_status reflects the change.",
+      "Replace the ENTIRE table structure with a modified version. Use for MODIFYING existing rows, DELETING rows, REORDERING rows, or STRUCTURAL changes. CRITICAL: Must send the FULL table structure (not just modified fields). DO NOT use for simple additions - use append_table instead. Required workflow: 1) Call get_table() to retrieve complete structure, 2) Modify the returned object, 3) Pass the ENTIRE modified object to update_table(). IMPORTANT: a successful edit CHANGES the table's id (ids are derived from table content/position) — the response returns the table's CURRENT id as 'tableId'; use it for all subsequent calls. Note: the studio does not auto-compile after an edit (it only resets the previous compile status); this tool reads the table back after updating to trigger the recompile, so a subsequent openl_project_status reflects the change.",
     inputSchema: schemas.z.toJSONSchema(schemas.updateTableSchema) as Record<string, unknown>,
     annotations: {
       idempotentHint: true,
@@ -1509,16 +1532,73 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
       // becomes an opaque backend 400.
       const view = normalizeEditableTableType(typedArgs.view, "view");
 
-      await client.updateTable(typedArgs.projectId, typedArgs.tableId, view);
+      const projectId = typedArgs.projectId;
+      const requestedId = typedArgs.tableId;
+      const notes: string[] = [];
+
+      // EPBDS-16084: capture the table's identity (and which same-name ids exist)
+      // before the edit so its new content-derived id can be found afterwards.
+      const identity: TableIdentity | undefined =
+        typeof view.name === "string" && view.name
+          ? { name: view.name, kind: view.kind, file: view.file, pos: view.pos }
+          : undefined;
+      let idsBeforeEdit: Set<string> | undefined;
+      if (identity) {
+        const before = await listTablesByExactName(client, projectId, identity.name);
+        if (before) {
+          idsBeforeEdit = new Set(before.map((t) => t.id));
+        }
+      }
+
+      let tableId = requestedId;
+      try {
+        await client.updateTable(projectId, tableId, view);
+      } catch (error) {
+        // A 404 writes nothing, so retrying with a known rename is safe.
+        const aliased = isNotFoundError(error) ? resolveTableIdAlias(projectId, tableId) : undefined;
+        if (aliased === undefined) {
+          throw error;
+        }
+        await client.updateTable(projectId, aliased, { ...view, id: aliased });
+        notes.push(
+          `The provided tableId '${requestedId}' was stale (the table was edited after that id was issued) and was automatically resolved to '${aliased}'.`,
+        );
+        tableId = aliased;
+      }
+
+      // The edit just invalidated `tableId` too — find the table's current id so
+      // the recompile read targets the right table and the caller gets a usable id.
+      let currentId = tableId;
+      if (identity) {
+        const resolved = await resolveCurrentTableId(client, projectId, tableId, identity, idsBeforeEdit);
+        if (resolved) {
+          currentId = resolved;
+        }
+      }
+      if (currentId !== tableId) {
+        recordTableIdAlias(projectId, tableId, currentId);
+        notes.push(
+          `This edit changed the table's id from '${tableId}' to '${currentId}' (ids are derived from table content/position). Use 'tableId' from this response for subsequent calls.`,
+        );
+      }
 
       // The studio resets (does not recompile) compile status on edit; reading the
       // table back triggers its recompile so openl_project_status reflects the change.
-      await triggerTableRecompile(client, typedArgs.projectId, typedArgs.tableId);
+      const recompileTriggered = await triggerTableRecompile(client, projectId, currentId);
+      if (!recompileTriggered) {
+        notes.push(
+          `The post-edit read could not locate the table under id '${currentId}' — the update WAS applied, but the table's id likely changed. Refresh ids with openl_list_tables().`,
+        );
+      }
 
+      const idChanged = currentId !== requestedId;
       const result = {
         success: true,
-        message: `Successfully updated table ${typedArgs.tableId}`,
-        recompileTriggered: true,
+        message: `Successfully updated table ${requestedId}`,
+        recompileTriggered,
+        tableId: currentId,
+        ...(idChanged ? { tableIdChanged: true, previousTableId: requestedId } : {}),
+        ...(notes.length > 0 ? { note: notes.join(" ") } : {}),
       };
 
       const formattedResult = formatResponse(result, format);
@@ -1534,7 +1614,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "Append Rows/Fields to Table",
     version: "1.0.0",
     description:
-      "Add new rows/fields to an existing table (additions only). Payload by type: Datatype→fields, SimpleRules/SmartRules→rules, SimpleSpreadsheet→steps, Vocabulary→values, RawSource→rows. For modifying, deleting, or reordering use update_table instead. Note: the studio does not auto-compile after an edit (it only resets the previous compile status); this tool reads the table back after appending to trigger the recompile, so a subsequent openl_project_status reflects the change.",
+      "Add new rows/fields to an existing table (additions only). Payload by type: Datatype→fields, SimpleRules/SmartRules→rules, SimpleSpreadsheet→steps, Vocabulary→values, RawSource→rows. For RawSource, each row must cover ALL columns of the table (one cell object per column; rows with a wrong cell count are rejected before anything is written). For modifying, deleting, or reordering use update_table instead. IMPORTANT: a successful edit CHANGES the table's id (ids are derived from table content/position) — the response returns the table's CURRENT id as 'tableId'; use it for all subsequent calls. Note: the studio does not auto-compile after an edit (it only resets the previous compile status); this tool reads the table back after appending to trigger the recompile, so a subsequent openl_project_status reflects the change.",
     inputSchema: schemas.z.toJSONSchema(schemas.appendTableSchema) as Record<string, unknown>,
     annotations: {
       idempotentHint: true,
@@ -1564,11 +1644,91 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
       // Convert to AppendTableView format expected by client
       const appendData: Types.AppendTableView = typedArgs.appendData as any;
 
-      await client.appendProjectTable(typedArgs.projectId, typedArgs.tableId, appendData);
+      const projectId = typedArgs.projectId;
+      const requestedId = typedArgs.tableId;
+      const notes: string[] = [];
+
+      // Probe the table before editing. This (a) fails fast on a stale id —
+      // resolving it transparently when the rename is known (EPBDS-16084),
+      // (b) captures the identity needed to find the table's new id after the
+      // edit, and (c) for RawSource provides the source matrix used to validate
+      // row width before anything is written (EPBDS-16085).
+      const needsRawProbe = appendData.tableType === "RawSource";
+      let tableId = requestedId;
+      let probedView: Types.TableView | Types.RawTableView | undefined;
+      try {
+        probedView = needsRawProbe
+          ? await client.getTable(projectId, tableId, true)
+          : await client.getTable(projectId, tableId);
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          const aliased = resolveTableIdAlias(projectId, tableId);
+          if (aliased === undefined) {
+            throw error;
+          }
+          probedView = needsRawProbe
+            ? await client.getTable(projectId, aliased, true)
+            : await client.getTable(projectId, aliased);
+          notes.push(
+            `The provided tableId '${requestedId}' was stale (the table was edited after that id was issued) and was automatically resolved to '${aliased}'.`,
+          );
+          tableId = aliased;
+        }
+        // Non-404 probe failures are tolerated: the append call itself decides.
+      }
+
+      if (
+        needsRawProbe &&
+        probedView &&
+        Array.isArray((probedView as Types.RawTableView).source) &&
+        Array.isArray((appendData as { rows?: unknown }).rows)
+      ) {
+        validateRawSourceAppendRows(
+          (appendData as { rows: Array<Array<Record<string, unknown>>> }).rows,
+          (probedView as Types.RawTableView).source,
+          probedView.name || tableId,
+        );
+      }
+
+      // EPBDS-16084: snapshot which same-name ids exist before the edit so the
+      // table's new content-derived id can be found afterwards.
+      const identity: TableIdentity | undefined = probedView?.name
+        ? { name: probedView.name, kind: probedView.kind, file: probedView.file, pos: probedView.pos }
+        : undefined;
+      let idsBeforeEdit: Set<string> | undefined;
+      if (identity) {
+        const before = await listTablesByExactName(client, projectId, identity.name);
+        if (before) {
+          idsBeforeEdit = new Set(before.map((t) => t.id));
+        }
+      }
+
+      await client.appendProjectTable(projectId, tableId, appendData);
+
+      // The edit just invalidated `tableId` — find the table's current id so the
+      // recompile read targets the right table and the caller gets a usable id.
+      let currentId = tableId;
+      if (identity) {
+        const resolved = await resolveCurrentTableId(client, projectId, tableId, identity, idsBeforeEdit);
+        if (resolved) {
+          currentId = resolved;
+        }
+      }
+      if (currentId !== tableId) {
+        recordTableIdAlias(projectId, tableId, currentId);
+        notes.push(
+          `This edit changed the table's id from '${tableId}' to '${currentId}' (ids are derived from table content/position). Use 'tableId' from this response for subsequent calls.`,
+        );
+      }
 
       // The studio resets (does not recompile) compile status on edit; reading the
       // table back triggers its recompile so openl_project_status reflects the change.
-      await triggerTableRecompile(client, typedArgs.projectId, typedArgs.tableId);
+      const recompileTriggered = await triggerTableRecompile(client, projectId, currentId);
+      if (!recompileTriggered) {
+        notes.push(
+          `The post-edit read could not locate the table under id '${currentId}' — the append WAS applied, but the table's id likely changed. Refresh ids with openl_list_tables().`,
+        );
+      }
 
       // Generate appropriate success message based on table type
       let itemCount = 0;
@@ -1590,10 +1750,14 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
         itemType = "row(s)";
       }
 
+      const idChanged = currentId !== requestedId;
       const result = {
         success: true,
-        message: `Successfully appended ${itemCount} ${itemType} to table ${typedArgs.tableId}`,
-        recompileTriggered: true,
+        message: `Successfully appended ${itemCount} ${itemType} to table ${requestedId}`,
+        recompileTriggered,
+        tableId: currentId,
+        ...(idChanged ? { tableIdChanged: true, previousTableId: requestedId } : {}),
+        ...(notes.length > 0 ? { note: notes.join(" ") } : {}),
       };
 
       const formattedResult = formatResponse(result, format);
@@ -2983,17 +3147,245 @@ function rethrowConflictAsActionable(error: unknown, conflictMessage: string): n
  * the table is read (GET /projects/{id}/tables/{tableId}). So after an edit we
  * read the table by id, which makes a subsequent openl_project_status reflect the
  * change. Best-effort: the edit has already been committed, so a failure here is
- * swallowed (the status simply refreshes on the next table read).
+ * swallowed (the status simply refreshes on the next table read) and reported via
+ * the boolean result so callers don't claim `recompileTriggered: true` falsely.
  */
 async function triggerTableRecompile(
   client: OpenLClient,
   projectId: string,
   tableId: string,
-): Promise<void> {
+): Promise<boolean> {
   try {
     await client.getTable(projectId, tableId);
+    return true;
   } catch {
     // Best-effort: the edit already applied; compile status refreshes on next read.
+    return false;
+  }
+}
+
+// =============================================================================
+// Table id volatility helpers (EPBDS-16084 / EPBDS-16085 / EPBDS-16086)
+// =============================================================================
+
+/**
+ * Guidance attached wherever a stale table id may be involved. Studio table ids
+ * are derived from the table's content/position, so every successful edit gives
+ * the edited table a NEW id and silently invalidates the old one. Without this
+ * hint an agent reads the resulting 404 as "the edit was rolled back" and gives
+ * up (EPBDS-16086) — the edit is in fact applied.
+ */
+const STALE_TABLE_ID_HINT =
+  "Table ids are derived from the table's content/position and change after every successful edit, " +
+  "so an id obtained before an edit becomes stale while the edit itself remains applied " +
+  "(a 404 here does NOT mean the edit was rolled back). Use the 'tableId' returned by the last " +
+  "openl_update_table/openl_append_table response, or refresh ids with openl_list_tables().";
+
+/**
+ * Bounded process-wide registry of table-id renames observed by the edit tools
+ * (EPBDS-16084). When an edit changes a table's id, the old→new pair is recorded
+ * here so later calls that still carry the pre-edit id can be resolved
+ * transparently instead of failing with a misleading 404. Keys are
+ * projectId-scoped; oldest entries are evicted first.
+ */
+const TABLE_ID_ALIAS_LIMIT = 5000;
+const tableIdAliases = new Map<string, string>();
+
+function tableIdAliasKey(projectId: string, tableId: string): string {
+  return `${projectId} ${tableId}`;
+}
+
+function recordTableIdAlias(projectId: string, oldId: string, newId: string): void {
+  if (oldId === newId) {
+    return;
+  }
+  const key = tableIdAliasKey(projectId, oldId);
+  tableIdAliases.delete(key); // re-insert to refresh eviction order
+  tableIdAliases.set(key, newId);
+  while (tableIdAliases.size > TABLE_ID_ALIAS_LIMIT) {
+    const oldest = tableIdAliases.keys().next().value;
+    if (oldest === undefined) {
+      break;
+    }
+    tableIdAliases.delete(oldest);
+  }
+}
+
+/**
+ * Resolve a possibly-stale table id to the most recent id recorded for it,
+ * following rename chains (id1→id2→id3) with cycle protection. Returns
+ * undefined when nothing is known about the id.
+ */
+function resolveTableIdAlias(projectId: string, tableId: string): string | undefined {
+  let current = tableId;
+  let resolved: string | undefined;
+  const seen = new Set<string>([tableId]);
+  for (;;) {
+    const next = tableIdAliases.get(tableIdAliasKey(projectId, current));
+    if (next === undefined || seen.has(next)) {
+      break;
+    }
+    seen.add(next);
+    resolved = next;
+    current = next;
+  }
+  return resolved;
+}
+
+function isNotFoundError(error: unknown): boolean {
+  return isAxiosError(error) && error.response?.status === 404;
+}
+
+/** The fields used to find a table again after an edit changed its id. */
+interface TableIdentity {
+  name: string;
+  kind?: string;
+  file?: string;
+  pos?: string;
+}
+
+/** Start cell of a `pos` range like "A1:R10" (appends grow the end, not the start). */
+function rangeStart(pos: string | undefined): string | undefined {
+  const start = pos?.split(":")[0]?.trim();
+  return start || undefined;
+}
+
+/**
+ * List the project's tables whose name EXACTLY matches `name` (the backend's
+ * `name` query param is a fragment filter). Best-effort: returns undefined on
+ * any API failure so callers degrade gracefully.
+ */
+async function listTablesByExactName(
+  client: OpenLClient,
+  projectId: string,
+  name: string,
+): Promise<Types.TableMetadata[] | undefined> {
+  try {
+    const tables = await client.listTables(projectId, { name });
+    return tables.filter((t) => t.name === name);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Re-resolve a table's CURRENT id after an edit (EPBDS-16084).
+ *
+ * A successful update/append changes the table's content-derived id, so the id
+ * the caller used is stale the moment the edit lands. This looks the table up
+ * again by its identity captured before the edit: exact name, then kind/file
+ * narrowing, then (for same-name siblings such as dimension-versioned tables)
+ * the range start cell, and finally "which candidate id did not exist before
+ * the edit". Returns undefined when the new id cannot be determined
+ * unambiguously.
+ */
+async function resolveCurrentTableId(
+  client: OpenLClient,
+  projectId: string,
+  previousId: string,
+  identity: TableIdentity,
+  idsBeforeEdit: Set<string> | undefined,
+): Promise<string | undefined> {
+  const tables = await listTablesByExactName(client, projectId, identity.name);
+  if (!tables || tables.length === 0) {
+    return undefined;
+  }
+
+  let candidates = tables;
+  if (identity.kind) {
+    const sameKind = candidates.filter((t) => t.kind === identity.kind);
+    if (sameKind.length > 0) {
+      candidates = sameKind;
+    }
+  }
+  if (identity.file) {
+    const sameFile = candidates.filter((t) => t.file === identity.file);
+    if (sameFile.length > 0) {
+      candidates = sameFile;
+    }
+  }
+
+  if (candidates.some((t) => t.id === previousId)) {
+    return previousId; // the id survived this edit
+  }
+  if (candidates.length === 1) {
+    return candidates[0].id;
+  }
+
+  const start = rangeStart(identity.pos);
+  if (start) {
+    const samePos = candidates.filter((t) => rangeStart(t.pos) === start);
+    if (samePos.length === 1) {
+      return samePos[0].id;
+    }
+  }
+  if (idsBeforeEdit) {
+    const fresh = candidates.filter((t) => !idsBeforeEdit.has(t.id));
+    if (fresh.length === 1) {
+      return fresh[0].id;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * EPBDS-16085: reject RawSource append rows whose width does not match the
+ * table, BEFORE anything is posted. The backend accepts short rows and silently
+ * pads the missing cells with blanks — corrupt data with success:true.
+ *
+ * The table width comes from the raw source matrix (which includes covered
+ * placeholder cells, so every row has one entry per column). A submitted row is
+ * accepted when either its entry count matches the width (placeholder style,
+ * mirroring openl_get_table raw output) or the columns covered via colspan add
+ * up to the width (no-placeholder style). If the matrix is ragged the width
+ * cannot be trusted and validation is skipped rather than blocking valid
+ * appends.
+ */
+function validateRawSourceAppendRows(
+  rows: Array<Array<Record<string, unknown>>>,
+  source: Types.RawTableCell[][],
+  tableLabel: string,
+): void {
+  if (!Array.isArray(source) || source.length === 0 || rows.length === 0) {
+    return;
+  }
+  const widths = new Set(source.map((row) => (Array.isArray(row) ? row.length : -1)));
+  if (widths.size !== 1 || widths.has(-1)) {
+    return;
+  }
+  const width = source[0].length;
+  if (width === 0) {
+    return;
+  }
+
+  const problems: string[] = [];
+  rows.forEach((row, index) => {
+    const entryCount = row.length;
+    let coveredColumns = 0;
+    for (const cell of row) {
+      if (cell && cell.covered === true) {
+        coveredColumns += 1;
+        continue;
+      }
+      const colspan = Number(cell?.colspan);
+      coveredColumns += Number.isFinite(colspan) && colspan >= 2 ? colspan : 1;
+    }
+    if (entryCount !== width && coveredColumns !== width) {
+      problems.push(
+        `row ${index + 1} has ${entryCount} cell(s)` +
+          (coveredColumns !== entryCount ? ` covering ${coveredColumns} column(s)` : ""),
+      );
+    }
+  });
+
+  if (problems.length > 0) {
+    throw new McpError(
+      ErrorCode.InvalidParams,
+      `Cannot append to table '${tableLabel}': the table is ${width} column(s) wide, but ${problems.join("; ")}. ` +
+        `Each appended RawSource row must cover all ${width} column(s) — provide one cell object per column ` +
+        `(use { "value": "" } for intentionally blank cells). Nothing was appended. ` +
+        `Call openl_get_table(raw=true) to inspect the table's exact column layout.`,
+    );
   }
 }
 
@@ -3182,6 +3574,12 @@ function handleToolError(error: unknown, toolName: string, toolArgs?: unknown): 
     finalMessage += `: ${errorMessage}`;
     if (method && endpoint) {
       finalMessage += ` [${method} ${endpoint}]`;
+    }
+
+    // EPBDS-16086: a bare "The table is not found" after an edit reads as a
+    // rollback. Explain that table ids go stale on every edit and how to recover.
+    if (status === 404 && typeof endpoint === "string" && /\/tables\/[^/?]+/.test(endpoint)) {
+      finalMessage += ` Hint: ${STALE_TABLE_ID_HINT}`;
     }
 
     // Log one-line summary first (status or network code + message) so it's visible at a glance in VS Code/Copilot output

@@ -41,7 +41,7 @@ export const repositoryNameSchema = z.string().describe("Repository identifier. 
 
 export const projectNameSchema = z.string().describe("Project name within the repository (e.g., 'InsuranceRules', 'AutoPremium', 'ClaimProcessing')");
 
-export const tableIdSchema = z.string().describe("Table identifier - unique ID assigned by OpenL Studio when table is created (e.g., 'calculatePremium_1234')");
+export const tableIdSchema = z.string().describe("Table identifier - unique ID assigned by OpenL Studio (e.g., 'calculatePremium_1234'). VOLATILE: ids are derived from the table's content/position and change after every successful edit — use the 'tableId' returned by the latest openl_update_table/openl_append_table response, or refresh via openl_list_tables().");
 
 export const branchNameSchema = z.string().describe("Git branch name (e.g., 'main', 'development', 'feature/new-rules')");
 
