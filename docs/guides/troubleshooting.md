@@ -9,6 +9,7 @@ This guide covers common issues and their solutions when working with the OpenL 
 - [Connection Issues](#connection-issues)
 - [Remote SSE Connection Issues](#remote-sse-connection-issues)
 - [Configuration Issues](#configuration-issues)
+- [WebSocket Wait Issues (compile / trace status)](#websocket-wait-issues-compile--trace-status)
 
 ---
 
@@ -401,6 +402,21 @@ If you still see timeouts, check:
 3. Restart your AI client after changing configuration
 
 ---
+
+## WebSocket Wait Issues (compile / trace status)
+
+Some tools wait for the studio's asynchronous work over a STOMP WebSocket instead of polling: `openl_project_status` with `wait: true`, the `openl://status/...` resource, and `openl_get_trace_nodes` / `openl_export_trace` while a trace is running. See [WebSockets (STOMP)](../development/websockets.md) for how this works.
+
+**`wait: true` returns before compilation finished, or trace wait errors with "session cookie"**
+- The WebSocket must join the **same studio session** as the REST calls (compile/trace registries are session-scoped). The session cookie is issued by the studio on the first REST call; if the studio issues no session, the compile wait falls back to a snapshot and the trace wait reports that the websocket is unavailable.
+- In CLI mode each invocation is a new process/session — pass `--cookie-jar <path>` to share the session between `openl_start_trace` and the subsequent read, and pass `tableId` to the read tool.
+
+**Wait hangs until timeout, nothing arrives**
+- The WS upgrade must carry an `Authorization` header (Basic or PAT). Anonymous WebSocket sessions cannot subscribe to user-routed topics in multi-user mode — the server logs a warning when this happens. Provide credentials.
+- Verify the studio is reachable at `<base-url>/ws` (e.g. `http://host:8080/rest/ws`) — proxies must allow WebSocket upgrade on that path.
+
+**Diagnosing**
+- Set `DEBUG_STOMP=true` to log the WebSocket URL, CONNECT/SUBSCRIBE frames, and every inbound frame to stderr.
 
 ## Additional Information
 

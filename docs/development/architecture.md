@@ -14,14 +14,19 @@
 │   MCP Server    │  ← Standalone repository
 │  (Node.js/TS)   │
 └────────┬────────┘
-         │ HTTP API
-         │ (JSON)
+         │ HTTP API (JSON)
+         │ + WebSocket/STOMP (async waits: compile & trace status)
          ▼
 ┌─────────────────┐
 │  OpenL Studio  │  ← Rules server
 │   (Java/Jetty)  │     (port 8080)
 └─────────────────┘
 ```
+
+Most traffic is plain REST. The WebSocket channel is used only to **wait for the
+studio's asynchronous work** (project compilation, trace execution) inside a single
+tool call instead of polling — see [WebSockets (STOMP)](websockets.md) for what is
+subscribed, why, and how authentication works.
 
 ## Components
 

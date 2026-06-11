@@ -28,14 +28,17 @@ This MCP server enables AI agents to:
 │  MCP Server     │  ← This Agent (Node.js/TypeScript)
 │  (openl-mcp)    │
 └────────┬────────┘
-         │ HTTP API
-         │ (JSON, Basic Auth / PAT)
+         │ HTTP API (JSON, Basic Auth / PAT)
+         │ + WebSocket/STOMP (waits for async studio work:
+         │   compile status & trace status topics)
          ▼
 ┌─────────────────┐
 │ OpenL Studio   │  ← Business Rules Server
 │  (Java/Jetty)   │     (port 8080)
 └─────────────────┘
 ```
+
+Most traffic is plain REST. The WebSocket (STOMP) channel is used only to wait, inside a single tool call, for the studio's asynchronous work — project compilation (`openl_project_status` with `wait: true`, the `openl://status/...` resource) and trace execution (`openl_get_trace_nodes` / `openl_export_trace` while the trace is running) — instead of forcing the agent to poll. Details: [docs/development/websockets.md](docs/development/websockets.md).
 
 ## Capabilities
 
