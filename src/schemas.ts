@@ -191,7 +191,7 @@ export const appendTableSchema = z.object({
     // RawSourceAppend
     z.object({
       tableType: z.literal("RawSource"),
-      rows: z.array(z.array(z.record(z.string(), z.unknown()))).describe("Array of rows to append; each row is an array of cell objects (e.g. { value: string, colspan?: number } or { covered?: boolean })"),
+      rows: z.array(z.array(z.record(z.string(), z.unknown()))).describe("Array of rows to append; each row is an array of cell objects (e.g. { value: string, colspan?: number } or { covered?: boolean }). Each row must cover ALL columns of the table (read it back with openl_get_table(raw=true) to see the width) — use { value: \"\" } for intentionally blank cells; a row narrower than the table is rejected before anything is written."),
     }),
   ]).describe("Data structure to append to the table. Structure depends on tableType: Datatype uses 'fields'; SimpleRules/SmartRules use 'rules'; SimpleLookup/SmartLookup use 'rows' (array of maps); Data/Test use 'rows' (array of { values }); SimpleSpreadsheet uses 'steps'; Vocabulary uses 'values'; RawSource uses 'rows' (array of cell-arrays)."),
   response_format: ResponseFormat.optional(),
