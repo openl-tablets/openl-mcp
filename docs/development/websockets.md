@@ -92,13 +92,12 @@ For the trace flow (`openl_start_trace` → `openl_get_trace_nodes`) across sepa
 | Module | Responsibility |
 |---|---|
 | [`src/stomp-client.ts`](../../src/stomp-client.ts) | the only place that opens WebSockets: URL derivation, auth headers, connect/error/abort lifecycle; generic `subscribeTopic` (raw frames) + `subscribeProjectStatus` (status JSON) + destination builders |
-| [`src/wait-for-compilation.ts`](../../src/wait-for-compilation.ts) | compile wait orchestration: REST seed → subscribe → race-close re-fetch → terminal frame / timeout / abort |
-| [`src/wait-for-trace.ts`](../../src/wait-for-trace.ts) | trace wait orchestration: optimistic read → on 409 subscribe → race-close re-read → terminal frame → final read |
+| [`src/stomp-waits.ts`](../../src/stomp-waits.ts) | both waits + their shared primitive (`awaitTerminal`: bounded, abortable, self-cleaning wait for one out-of-band value). `waitForCompilation`: REST seed → subscribe → race-close re-fetch → terminal frame / timeout / abort. `executeTraceReadWithWait`: optimistic read → on 409 subscribe → race-close re-read → terminal frame → final read |
 | [`src/resource-subscriptions.ts`](../../src/resource-subscriptions.ts) | long-lived status subscriptions backing the `openl://status/...` MCP resource |
 
-Both wait modules expose an injectable subscriber (`subscribeImpl` parameter) as a test
+Both waits expose an injectable subscriber (`subscribeImpl` parameter) as a test
 seam — unit tests drive the orchestration with fake STOMP frames and never touch the
-network (`tests/wait-for-compilation.test.ts`, `tests/wait-for-trace.test.ts`).
+network (`tests/stomp-waits.compilation.test.ts`, `tests/stomp-waits.trace.test.ts`).
 
 ## Debugging
 

@@ -821,7 +821,7 @@ describe("MCP Server Tools", () => {
   // Trace (EPBDS-16089: websocket-based wait while the trace is running).
   // The full wait orchestration (subscribe → race-close re-read → terminal
   // frame → final read) is unit-tested with an injected STOMP fake in
-  // tests/wait-for-trace.test.ts; here we cover the tool-layer glue.
+  // tests/stomp-waits.trace.test.ts; here we cover the tool-layer glue.
   // ---------------------------------------------------------------------------
 
   it("openl_get_trace_nodes returns nodes when the trace is already complete", async () => {

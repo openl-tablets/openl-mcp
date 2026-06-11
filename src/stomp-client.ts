@@ -12,9 +12,9 @@
  * piggybacks on the HTTP handshake's JSESSIONID cookie / Authorization header.
  *
  * This module is intentionally narrow: one subscription per call, no pooling,
- * no global state. It's invoked from `wait-for-compilation.ts` /
- * `wait-for-trace.ts` inside a single tool invocation and torn down when the
- * call returns (the `openl://status/...` resource holds one longer).
+ * no global state. It's invoked from `stomp-waits.ts` inside a single tool
+ * invocation and torn down when the call returns (the `openl://status/...`
+ * resource holds one longer).
  */
 
 import { Client, IFrame, IMessage } from "@stomp/stompjs";

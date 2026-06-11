@@ -22,14 +22,14 @@ import { formatResponse, paginateResults } from "./formatters.js";
 import { validateResponseFormat, validatePagination } from "./validators.js";
 import { logger } from "./logger.js";
 import { isAxiosError, sanitizeError, extractApiErrorInfo, sanitizeJson, setRulesXmlProjectName } from "./utils.js";
-import { waitForCompilation } from "./wait-for-compilation.js";
 import {
+  waitForCompilation,
   executeTraceReadWithWait,
   TraceExecutionFailedError,
   TraceWaitTimeoutError,
   TraceWaitUnavailableError,
   MAX_TRACE_WAIT_TIMEOUT_MS,
-} from "./wait-for-trace.js";
+} from "./stomp-waits.js";
 import { getProjectTemplateZip } from "./project-templates.js";
 import { RESPONSE_LIMITS } from "./constants.js";
 import type * as Types from "./types.js";

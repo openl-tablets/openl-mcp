@@ -1,8 +1,8 @@
 /**
- * Unit tests for the websocket-based trace wait (EPBDS-16089).
+ * Unit tests for the websocket-based trace wait in stomp-waits.ts (EPBDS-16089).
  *
  * The STOMP subscription is injected via the `subscribeImpl` test seam (same
- * pattern as wait-for-compilation.test.ts), so these tests run entirely
+ * pattern as stomp-waits.compilation.test.ts), so these tests run entirely
  * in-memory — no network, no axios mocks.
  */
 
@@ -15,7 +15,7 @@ import {
   TraceExecutionFailedError,
   TraceWaitTimeoutError,
   TraceWaitUnavailableError,
-} from "../src/wait-for-trace.js";
+} from "../src/stomp-waits.js";
 import type { OpenLClient } from "../src/client.js";
 import type { SubscribeTopicOpts, Subscription } from "../src/stomp-client.js";
 
