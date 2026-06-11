@@ -818,17 +818,16 @@ describe("MCP Server Tools", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Trace (EPBDS-16089: server-side wait while the trace is running)
+  // Trace (EPBDS-16089: websocket-based wait while the trace is running).
+  // The full wait orchestration (subscribe → race-close re-read → terminal
+  // frame → final read) is unit-tested with an injected STOMP fake in
+  // tests/wait-for-trace.test.ts; here we cover the tool-layer glue.
   // ---------------------------------------------------------------------------
 
-  it("openl_get_trace_nodes waits out 409s until the trace completes (EPBDS-16089)", async () => {
+  it("openl_get_trace_nodes returns nodes when the trace is already complete", async () => {
     const encoded = encodeProjectPath(projectId);
     const nodes = [{ id: 1, name: "calculatePremium", type: "rule" }];
-    mockAxios
-      .onGet(`/projects/${encoded}/trace/nodes`)
-      .replyOnce(409, { message: "Trace is still running" })
-      .onGet(`/projects/${encoded}/trace/nodes`)
-      .replyOnce(200, nodes);
+    mockAxios.onGet(`/projects/${encoded}/trace/nodes`).reply(200, nodes);
 
     const result = await executeTool(
       "openl_get_trace_nodes",
@@ -837,9 +836,7 @@ describe("MCP Server Tools", () => {
     );
 
     expect(result.content[0].text).toContain("calculatePremium");
-    // Two attempts: the 409 was retried server-side, not surfaced to the caller.
-    expect(mockAxios.history.get.filter((g) => g.url === `/projects/${encoded}/trace/nodes`).length).toBe(2);
-  }, 15000);
+  });
 
   it("openl_get_trace_nodes with wait: false surfaces the 409 immediately", async () => {
     const encoded = encodeProjectPath(projectId);
@@ -851,25 +848,65 @@ describe("MCP Server Tools", () => {
     expect(mockAxios.history.get.filter((g) => g.url === `/projects/${encoded}/trace/nodes`).length).toBe(1);
   });
 
-  it("openl_get_trace_nodes reports a still-running trace when the wait times out", async () => {
-    const encoded = encodeProjectPath(projectId);
+  it("openl_get_trace_nodes asks for tableId when the trace's table is unknown (EPBDS-16089)", async () => {
+    // Unique project id: nothing recorded by openl_start_trace for it.
+    const unknownProjectId = "design:trace-unknown:1";
+    const encoded = encodeProjectPath(unknownProjectId);
     mockAxios.onGet(`/projects/${encoded}/trace/nodes`).reply(409, { message: "Trace is still running" });
 
     await expect(
-      executeTool("openl_get_trace_nodes", { projectId, waitTimeoutMs: 1 }, client)
-    ).rejects.toThrow(/still running.*openl_cancel_trace/s);
+      executeTool("openl_get_trace_nodes", { projectId: unknownProjectId }, client)
+    ).rejects.toThrow(/Pass 'tableId'/);
   });
 
-  it("openl_export_trace waits out 409s until the trace completes", async () => {
-    const encoded = encodeProjectPath(projectId);
-    mockAxios
-      .onGet(`/projects/${encoded}/trace/export`)
-      .replyOnce(409, { message: "Trace is still running" })
-      .onGet(`/projects/${encoded}/trace/export`)
-      .replyOnce(200, "TRACE: calculatePremium -> 42");
+  it("openl_get_trace_nodes explains when the websocket wait is unavailable (no studio session)", async () => {
+    // The mocked axios layer never issues a JSESSIONID, so once the 409 arrives
+    // the handler cannot join the trace-status websocket and must say so.
+    const wsProjectId = "design:trace-no-session:1";
+    const encoded = encodeProjectPath(wsProjectId);
+    mockAxios.onGet(`/projects/${encoded}/trace/nodes`).reply(409, { message: "Trace is still running" });
 
-    const result = await executeTool("openl_export_trace", { projectId }, client);
+    await expect(
+      executeTool("openl_get_trace_nodes", { projectId: wsProjectId, tableId: "rule_1" }, client)
+    ).rejects.toThrow(/websocket.*unavailable.*session cookie|session cookie.*websocket/is);
+  });
+
+  it("openl_start_trace records the traced table so reads can subscribe without tableId (EPBDS-16089)", async () => {
+    const traceProjectId = "design:trace-recorded:1";
+    const encoded = encodeProjectPath(traceProjectId);
+    mockAxios.onPost(new RegExp(`/projects/${encodeURIComponent(encoded)}.*`)).reply(202);
+    mockAxios.onPost(/\/projects\/.*\/trace.*/).reply(202);
+    mockAxios.onGet(`/projects/${encoded}/trace/nodes`).reply(409, { message: "Trace is still running" });
+
+    const started = await executeTool(
+      "openl_start_trace",
+      { projectId: traceProjectId, tableId: "calcRule_42", inputJson: { params: { x: 1 } } },
+      client
+    );
+    expect(started.content[0].text).toContain("websocket");
+
+    // No explicit tableId here — the handler must find the recorded one and
+    // proceed to the websocket path (which then fails on the missing session
+    // cookie rather than asking for tableId).
+    await expect(
+      executeTool("openl_get_trace_nodes", { projectId: traceProjectId }, client)
+    ).rejects.toThrow(/session cookie/i);
+  });
+
+  it("openl_export_trace supports the same websocket wait glue", async () => {
+    const wsProjectId = "design:trace-export:1";
+    const encoded = encodeProjectPath(wsProjectId);
+    mockAxios.onGet(`/projects/${encoded}/trace/export`).reply(409, { message: "Trace is still running" });
+
+    await expect(
+      executeTool("openl_export_trace", { projectId: wsProjectId, tableId: "rule_1" }, client)
+    ).rejects.toThrow(/websocket.*unavailable|session cookie/is);
+
+    // And returns the export verbatim when the trace is already complete.
+    mockAxios.reset();
+    mockAxios.onGet(`/projects/${encoded}/trace/export`).reply(200, "TRACE: calculatePremium -> 42");
+    const result = await executeTool("openl_export_trace", { projectId: wsProjectId, tableId: "rule_1" }, client);
     expect(result.content[0].text).toContain("calculatePremium -> 42");
-  }, 15000);
+  });
 });
 

@@ -23,6 +23,13 @@ import { validateResponseFormat, validatePagination } from "./validators.js";
 import { logger } from "./logger.js";
 import { isAxiosError, sanitizeError, extractApiErrorInfo, sanitizeJson, setRulesXmlProjectName } from "./utils.js";
 import { waitForCompilation } from "./wait-for-compilation.js";
+import {
+  executeTraceReadWithWait,
+  TraceExecutionFailedError,
+  TraceWaitTimeoutError,
+  TraceWaitUnavailableError,
+  MAX_TRACE_WAIT_TIMEOUT_MS,
+} from "./wait-for-trace.js";
 import { getProjectTemplateZip } from "./project-templates.js";
 import { RESPONSE_LIMITS } from "./constants.js";
 import type * as Types from "./types.js";
@@ -1987,7 +1994,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "Start Rule Trace",
     version: "1.0.0",
     description:
-      "Start trace execution for a table. Trace is asynchronous (returns 202 Accepted). For regular rules: provide inputJson with { params: {...}, runtimeContext?: {...} }. For test tables: use testRanges (e.g. '1-3,5'). After starting, call openl_get_trace_nodes once — it waits server-side until the trace completes (no manual polling/retrying on 409 needed).",
+      "Start trace execution for a table. Trace is asynchronous (returns 202 Accepted). For regular rules: provide inputJson with { params: {...}, runtimeContext?: {...} }. For test tables: use testRanges (e.g. '1-3,5'). After starting, call openl_get_trace_nodes once — while the trace is still running it subscribes to the studio's trace-status websocket and waits for completion server-side (no manual polling/retrying on 409 needed).",
     inputSchema: schemas.z.toJSONSchema(schemas.startTraceSchema) as Record<string, unknown>,
     annotations: {
       openWorldHint: true,
@@ -2014,10 +2021,14 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
         inputJson: typedArgs.inputJson,
       });
 
+      // The trace-status websocket topic is per-table; remember which table this
+      // trace runs for so the read tools can subscribe while waiting (EPBDS-16089).
+      recordActiveTrace(typedArgs.projectId, typedArgs.tableId);
+
       const msg =
         "Trace execution started (202 Accepted). Call openl_get_trace_nodes(projectId) once to retrieve results — " +
-        "it waits server-side until the trace completes (default timeout 120s; tune with waitTimeoutMs). " +
-        "No manual polling or retrying on 409 is needed.";
+        "while the trace is still running it waits for completion via the studio's trace-status websocket " +
+        "(default timeout 120s; tune with waitTimeoutMs). No manual polling or retrying on 409 is needed.";
 
       return {
         content: [{ type: "text", text: msg }],
@@ -2030,7 +2041,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "Get Trace Tree Nodes",
     version: "1.0.0",
     description:
-      "Get trace node children (or root nodes if nodeId omitted). Use openl_start_trace first. While the trace is still running the backend answers 409 Conflict; by DEFAULT this tool waits server-side (retrying internally, up to waitTimeoutMs, default 120s) until the trace completes — call it once after openl_start_trace, no manual polling needed. Set wait: false for the raw immediate-409 behavior.",
+      "Get trace node children (or root nodes if nodeId omitted). Use openl_start_trace first. While the trace is still running the backend answers 409 Conflict; by DEFAULT this tool subscribes to the studio's trace-status websocket and waits (up to waitTimeoutMs, default 120s) until the trace completes — call it once after openl_start_trace, no manual polling needed. Pass 'tableId' (the id given to openl_start_trace) when the trace was started by a different server/CLI process; otherwise the table is remembered automatically. Set wait: false for the raw immediate-409 behavior.",
     inputSchema: schemas.z.toJSONSchema(schemas.getTraceNodesSchema) as Record<string, unknown>,
     annotations: {
       readOnlyHint: true,
@@ -2042,6 +2053,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
         projectId: string;
         nodeId?: number;
         showRealNumbers?: boolean;
+        tableId?: string;
         wait?: boolean;
         waitTimeoutMs?: number;
         response_format?: "json" | "markdown";
@@ -2053,13 +2065,16 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
       const format = validateResponseFormat(typedArgs.response_format);
 
-      const nodes = await runTraceReadWithWait(
+      const nodes = await readTraceWithWait(
+        client,
         () =>
           client.getTraceNodes(typedArgs.projectId, {
             nodeId: typedArgs.nodeId,
             showRealNumbers: typedArgs.showRealNumbers,
           }),
         {
+          projectId: typedArgs.projectId,
+          tableId: typedArgs.tableId,
           wait: typedArgs.wait !== false,
           timeoutMs: typedArgs.waitTimeoutMs,
           toolName: "openl_get_trace_nodes",
@@ -2175,7 +2190,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "Export Trace as Text",
     version: "1.0.0",
     description:
-      "Export trace as plain text. Returns full trace content. Use release: true to clear trace from memory after export. While the trace is still running the backend answers 409 Conflict; by DEFAULT this tool waits server-side (retrying internally, up to waitTimeoutMs, default 120s) until the trace completes. Set wait: false for the raw immediate-409 behavior.",
+      "Export trace as plain text. Returns full trace content. Use release: true to clear trace from memory after export. While the trace is still running the backend answers 409 Conflict; by DEFAULT this tool subscribes to the studio's trace-status websocket and waits (up to waitTimeoutMs, default 120s) until the trace completes. Pass 'tableId' (the id given to openl_start_trace) when the trace was started by a different server/CLI process; otherwise the table is remembered automatically. Set wait: false for the raw immediate-409 behavior.",
     inputSchema: schemas.z.toJSONSchema(schemas.exportTraceSchema) as Record<string, unknown>,
     annotations: {
       readOnlyHint: true,
@@ -2187,6 +2202,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
         projectId: string;
         showRealNumbers?: boolean;
         release?: boolean;
+        tableId?: string;
         wait?: boolean;
         waitTimeoutMs?: number;
         response_format?: "json" | "markdown";
@@ -2196,13 +2212,16 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
         throw new McpError(ErrorCode.InvalidParams, "Missing required argument: projectId");
       }
 
-      const text = await runTraceReadWithWait(
+      const text = await readTraceWithWait(
+        client,
         () =>
           client.exportTrace(typedArgs.projectId, {
             showRealNumbers: typedArgs.showRealNumbers,
             release: typedArgs.release,
           }),
         {
+          projectId: typedArgs.projectId,
+          tableId: typedArgs.tableId,
           wait: typedArgs.wait !== false,
           timeoutMs: typedArgs.waitTimeoutMs,
           toolName: "openl_export_trace",
@@ -3254,44 +3273,47 @@ async function triggerTableRecompile(
 // Trace wait helpers (EPBDS-16089)
 // =============================================================================
 
-/** How long to sleep between retries while a trace is still running (409). */
-const TRACE_POLL_INTERVAL_MS = 2000;
-/** Default/maximum bounded wait for trace completion (mirrors openl_project_status). */
-const TRACE_WAIT_DEFAULT_TIMEOUT_MS = 120_000;
-const TRACE_WAIT_MAX_TIMEOUT_MS = 600_000;
+/**
+ * Which table the most recent trace was started for, per project
+ * (`projectId → tableId`). The studio publishes the trace lifecycle on a
+ * PER-TABLE websocket topic (`/user/topic/projects/{id}/tables/{tableId}/trace/status`),
+ * but the trace READ endpoints take only the projectId — so openl_start_trace
+ * records the pair here and the read tools use it to subscribe while waiting
+ * out the 409 window. Callers in a different process (e.g. separate CLI runs)
+ * pass `tableId` explicitly instead. Bounded: oldest entries evicted first.
+ * The studio itself keeps at most one trace per session, so one entry per
+ * project is sufficient.
+ */
+const ACTIVE_TRACE_LIMIT = 500;
+const activeTraceTables = new Map<string, string>();
 
-/** Sleep that resolves early when the MCP request is cancelled. */
-function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(done, ms);
-    function done(): void {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", done);
-      resolve();
+function recordActiveTrace(projectId: string, tableId: string): void {
+  activeTraceTables.delete(projectId); // re-insert to refresh eviction order
+  activeTraceTables.set(projectId, tableId);
+  while (activeTraceTables.size > ACTIVE_TRACE_LIMIT) {
+    const oldest = activeTraceTables.keys().next().value;
+    if (oldest === undefined) {
+      break;
     }
-    if (signal) {
-      if (signal.aborted) {
-        done();
-        return;
-      }
-      signal.addEventListener("abort", done);
-    }
-  });
+    activeTraceTables.delete(oldest);
+  }
 }
 
 /**
- * Run a trace read, retrying server-side while the trace is still running
- * (EPBDS-16089). The studio answers 409 Conflict until the trace completes; an
- * LLM agent cannot sleep between calls, so each immediate client-side retry
- * burns one of its limited reasoning steps (a cold project compile takes tens
- * of seconds — enough to exhaust an agent's whole budget). This loop does the
- * waiting INSIDE the tool call: retry every {@link TRACE_POLL_INTERVAL_MS}
- * until success, a non-409 error, cancellation, or the bounded timeout.
- * Progress notifications are emitted when the client supplied a progressToken.
+ * Run a trace read, waiting out the "trace still running" 409 window by
+ * subscribing to the studio's trace-status websocket topic (EPBDS-16089) —
+ * see {@link executeTraceReadWithWait} in wait-for-trace.ts for the mechanism.
+ * An LLM agent cannot sleep between calls, so the waiting happens INSIDE the
+ * tool call. This wrapper supplies the tool-layer glue: resolving the tableId
+ * (explicit arg, or the one recorded by openl_start_trace), MCP progress
+ * notifications, and mapping the wait outcomes to actionable McpErrors.
  */
-async function runTraceReadWithWait<T>(
+async function readTraceWithWait<T>(
+  client: OpenLClient,
   read: () => Promise<T>,
   options: {
+    projectId: string;
+    tableId?: string;
     wait: boolean;
     timeoutMs?: number;
     toolName: string;
@@ -3301,49 +3323,76 @@ async function runTraceReadWithWait<T>(
   if (!options.wait) {
     return read();
   }
-  const timeoutMs = Math.min(
-    options.timeoutMs ?? TRACE_WAIT_DEFAULT_TIMEOUT_MS,
-    TRACE_WAIT_MAX_TIMEOUT_MS,
-  );
-  const startedAt = Date.now();
-  const deadline = startedAt + timeoutMs;
-  const progressToken = options.extra?._meta?.progressToken;
-  const sendNotification = options.extra?.sendNotification;
 
-  for (;;) {
+  const tableId = options.tableId ?? activeTraceTables.get(options.projectId);
+  if (!tableId) {
+    // Without the tableId there is no way to know the trace-status destination.
+    // Do the plain read; if the trace is still running, say how to enable waiting.
     try {
       return await read();
     } catch (error) {
-      if (!(isAxiosError(error) && error.response?.status === 409)) {
-        throw error;
-      }
-      if (options.extra?.signal?.aborted) {
-        throw new McpError(ErrorCode.InvalidRequest, `${options.toolName}: request cancelled while waiting for the trace to complete.`);
-      }
-      const waitedMs = Date.now() - startedAt;
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) {
+      if (isAxiosError(error) && error.response?.status === 409) {
         throw new McpError(
-          ErrorCode.InternalError,
-          `Trace is still running after waiting ${Math.round(waitedMs / 1000)}s (a cold project compile can take tens of seconds). ` +
-            `The trace keeps running server-side — call ${options.toolName} again (optionally with a larger waitTimeoutMs, max ${TRACE_WAIT_MAX_TIMEOUT_MS} ms), ` +
-            `or stop it with openl_cancel_trace.`,
+          ErrorCode.InvalidRequest,
+          `Trace is still running (409 Conflict), and the table it was started for is unknown to this server instance, ` +
+            `so the studio's trace-status websocket cannot be joined to wait for completion. ` +
+            `Pass 'tableId' (the same id given to openl_start_trace) to enable the server-side wait, or retry shortly.`,
         );
       }
-      if (progressToken !== undefined && sendNotification) {
-        // Notification failures are non-fatal — the wait resolves on the next poll.
-        void sendNotification({
-          method: "notifications/progress",
-          params: {
-            progressToken,
-            progress: Math.round(waitedMs / 1000),
-            total: Math.round(timeoutMs / 1000),
-            message: `Trace still running (waited ${Math.round(waitedMs / 1000)}s)…`,
-          },
-        }).catch(() => { /* ignore */ });
-      }
-      await sleepWithSignal(Math.min(TRACE_POLL_INTERVAL_MS, remaining), options.extra?.signal);
+      throw error;
     }
+  }
+
+  const progressToken = options.extra?._meta?.progressToken;
+  const sendNotification = options.extra?.sendNotification;
+  const startedAt = Date.now();
+  const onProgress =
+    progressToken !== undefined && sendNotification
+      ? (status: string): void => {
+          // Notification failures are non-fatal — the wait resolves on the terminal frame.
+          void sendNotification({
+            method: "notifications/progress",
+            params: {
+              progressToken,
+              progress: Math.round((Date.now() - startedAt) / 1000),
+              message: `Trace ${status.toLowerCase()} — waiting for completion…`,
+            },
+          }).catch(() => { /* ignore */ });
+        }
+      : undefined;
+
+  try {
+    return await executeTraceReadWithWait(client, options.projectId, tableId, read, {
+      onProgress,
+      signal: options.extra?.signal,
+      timeoutMs: options.timeoutMs,
+    });
+  } catch (error) {
+    if (error instanceof TraceWaitTimeoutError) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Trace is still running after waiting ${Math.round(error.waitedMs / 1000)}s (a cold project compile can take tens of seconds). ` +
+          `The trace keeps running server-side — call ${options.toolName} again (optionally with a larger waitTimeoutMs, max ${MAX_TRACE_WAIT_TIMEOUT_MS} ms), ` +
+          `or stop it with openl_cancel_trace.`,
+      );
+    }
+    if (error instanceof TraceExecutionFailedError) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Trace execution failed in the studio: ${error.message} Start a new trace with openl_start_trace.`,
+      );
+    }
+    if (error instanceof TraceWaitUnavailableError) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Trace is still running (409 Conflict), and waiting over the studio websocket is unavailable: ${error.message}. ` +
+          `Retry shortly, or stop the trace with openl_cancel_trace.`,
+      );
+    }
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new McpError(ErrorCode.InvalidRequest, `${options.toolName}: request cancelled while waiting for the trace to complete.`);
+    }
+    throw error;
   }
 }
 
