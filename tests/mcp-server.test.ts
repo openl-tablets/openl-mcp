@@ -874,7 +874,6 @@ describe("MCP Server Tools", () => {
   it("openl_start_trace records the traced table so reads can subscribe without tableId (EPBDS-16089)", async () => {
     const traceProjectId = "design:trace-recorded:1";
     const encoded = encodeProjectPath(traceProjectId);
-    mockAxios.onPost(new RegExp(`/projects/${encodeURIComponent(encoded)}.*`)).reply(202);
     mockAxios.onPost(/\/projects\/.*\/trace.*/).reply(202);
     mockAxios.onGet(`/projects/${encoded}/trace/nodes`).reply(409, { message: "Trace is still running" });
 
