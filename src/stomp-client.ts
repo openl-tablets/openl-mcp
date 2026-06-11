@@ -1,16 +1,20 @@
 /**
- * Minimal STOMP client for the OpenL Studio project-status topic.
+ * Minimal STOMP client for the OpenL Studio websocket topics.
  *
- * The studio publishes `ProjectStatusViewModel` JSON on
- * `/topic/projects/{encoded}/branches/{encoded}/status` (or the no-branch variant)
- * via Spring's `convertAndSendToUser`. The broker prefix is `/user`, the broker
- * resolves the principal from the WebSocket session, and STOMP CONNECT frames
- * carry no credentials — authentication piggybacks on the HTTP handshake's
- * JSESSIONID cookie.
+ * The studio publishes per-user notifications via Spring's
+ * `convertAndSendToUser` (see `ProjectSocketNotificationService`): project
+ * compile status on `/topic/projects/{encoded}[/branches/{encoded}]/status`
+ * (`ProjectStatusViewModel` JSON) and trace execution status on
+ * `/topic/projects/{encoded}/tables/{encoded}/trace/status` (a plain
+ * `ExecutionStatus` name, or a small JSON object for errors). The broker
+ * prefix is `/user`, the broker resolves the principal from the WebSocket
+ * session, and STOMP CONNECT frames carry no credentials — authentication
+ * piggybacks on the HTTP handshake's JSESSIONID cookie / Authorization header.
  *
  * This module is intentionally narrow: one subscription per call, no pooling,
- * no reconnect, no global state. It's invoked from `wait-for-compilation.ts`
- * inside a single tool invocation and torn down when the call returns.
+ * no global state. It's invoked from `stomp-waits.ts` inside a single tool
+ * invocation and torn down when the call returns (the `openl://status/...`
+ * resource holds one longer).
  */
 
 import { Client, IFrame, IMessage } from "@stomp/stompjs";
@@ -79,18 +83,69 @@ export interface Subscription {
 }
 
 /**
- * Open a STOMP subscription and call `onMessage` for each frame.
+ * Destination-agnostic variant of {@link SubscribeProjectStatusOpts}: same
+ * connection/auth/lifecycle options, but the caller supplies the full STOMP
+ * destination and receives RAW frame bodies (no payload parsing) — different
+ * topics carry different payload shapes (the trace topic sends plain status
+ * strings, the project-status topic sends JSON).
+ */
+export interface SubscribeTopicOpts {
+  studioBaseUrl: string;
+  cookieHeader: string;
+  authorizationHeader?: string;
+  /** Full STOMP destination including the `/user` prefix (already URL-encoded). */
+  destination: string;
+  /** Called once per STOMP frame with the raw body text. */
+  onFrame: (body: string) => void;
+  onError?: (error: Error) => void;
+  signal?: AbortSignal;
+  reconnectDelay?: number;
+}
+
+/**
+ * Open a STOMP subscription to the project-status topic and call `onMessage`
+ * with the parsed `ProjectStatusView` for each frame. Thin wrapper over
+ * {@link subscribeTopic} that builds the status destination and parses JSON.
+ */
+export async function subscribeProjectStatus(
+  opts: SubscribeProjectStatusOpts
+): Promise<Subscription> {
+  return subscribeTopic({
+    studioBaseUrl: opts.studioBaseUrl,
+    cookieHeader: opts.cookieHeader,
+    authorizationHeader: opts.authorizationHeader,
+    destination: buildDestination(opts.projectId, opts.branch),
+    signal: opts.signal,
+    reconnectDelay: opts.reconnectDelay,
+    onError: opts.onError,
+    onFrame: (body) => {
+      try {
+        opts.onMessage(JSON.parse(body) as Types.ProjectStatusView);
+      } catch (err) {
+        opts.onError?.(
+          err instanceof Error
+            ? err
+            : new Error(`Failed to parse STOMP frame: ${String(err)}`)
+        );
+      }
+    },
+  });
+}
+
+/**
+ * Open a STOMP subscription to an arbitrary studio topic and call `onFrame`
+ * with each raw frame body.
  *
  * Resolves once the underlying STOMP CONNECT has succeeded and the SUBSCRIBE
  * frame has been sent. Rejects if the WebSocket / STOMP handshake fails — the
  * caller should treat that as a hard error (typically: missing/expired cookie,
  * wrong URL, or studio not reachable).
  */
-export async function subscribeProjectStatus(
-  opts: SubscribeProjectStatusOpts
+export async function subscribeTopic(
+  opts: SubscribeTopicOpts
 ): Promise<Subscription> {
   const wsUrl = deriveWsUrl(opts.studioBaseUrl);
-  const destination = buildDestination(opts.projectId, opts.branch);
+  const destination = opts.destination;
   debug("subscribe.config", {
     wsUrl,
     destination,
@@ -140,13 +195,12 @@ export async function subscribeProjectStatus(
             bytes: frame.body?.length ?? 0,
           });
           try {
-            const parsed = JSON.parse(frame.body) as Types.ProjectStatusView;
-            opts.onMessage(parsed);
+            opts.onFrame(frame.body);
           } catch (err) {
             opts.onError?.(
               err instanceof Error
                 ? err
-                : new Error(`Failed to parse STOMP frame: ${String(err)}`)
+                : new Error(`STOMP frame handler failed: ${String(err)}`)
             );
           }
         });
@@ -219,6 +273,19 @@ export function buildDestination(projectId: string, branch?: string): string {
     return `/user/topic/projects/${encodedProject}/branches/${encodeURIComponent(branch)}/status`;
   }
   return `/user/topic/projects/${encodedProject}/status`;
+}
+
+/**
+ * Build the STOMP destination for a table's trace-execution status topic.
+ *
+ * Mirrors `ProjectSocketNotificationService.notifyTraceExecutionStatus` in the
+ * studio: `/topic/projects/{id}/tables/{tableId}/trace/status`, published per
+ * user (subscribe with the `/user` prefix). Frames are the plain
+ * `ExecutionStatus` name (`PENDING`/`STARTED`/`COMPLETED`/`INTERRUPTED`) or a
+ * JSON object `{"status":"ERROR","message":...}` on failure.
+ */
+export function buildTraceStatusDestination(projectId: string, tableId: string): string {
+  return `/user/topic/projects/${encodeURIComponent(projectId)}/tables/${encodeURIComponent(tableId)}/trace/status`;
 }
 
 /**

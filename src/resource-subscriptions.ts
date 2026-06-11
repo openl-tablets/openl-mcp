@@ -22,7 +22,7 @@
  * studio cookies and may have different identities.
  *
  * The `subscribeImpl` test seam mirrors the pattern used by
- * `wait-for-compilation.ts`: production code uses `subscribeProjectStatus`
+ * `stomp-waits.ts`: production code uses `subscribeProjectStatus`
  * from `stomp-client.ts`; tests inject a fake that delivers scripted frames.
  */
 
@@ -121,7 +121,7 @@ export class ResourceSubscriptionManager {
 
     // Step 1: seed the JSESSIONID cookie and (when the URI omits a branch)
     // discover the project's actual branch from the response. The wait flow
-    // uses the same pattern (`wait-for-compilation.ts`).
+    // uses the same pattern (`stomp-waits.ts`).
     debug("subscribe.seed", { projectId: parsed.projectId, branchInUri: parsed.branch ?? null });
     const initial = await this.client.getProjectStatus(parsed.projectId);
     const cookie = this.client.getSessionCookie();

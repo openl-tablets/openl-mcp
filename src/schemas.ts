@@ -527,7 +527,8 @@ export const startTraceSchema = z.object({
  * calls, so by default the SERVER retries internally until the trace completes.
  */
 const traceWaitParams = {
-  wait: z.boolean().optional().describe("When true (DEFAULT), if the trace is still running (backend returns 409 Conflict) the server waits and retries internally until the trace completes or waitTimeoutMs elapses — no client-side polling needed. Set false to get the raw immediate 409 behavior."),
+  tableId: z.string().optional().describe("Table id the trace was started for (the same value passed to openl_start_trace). Used to subscribe to the studio's per-table trace-status websocket topic while waiting out the 409 window. OPTIONAL when openl_start_trace ran through this same server instance — the table is remembered automatically; pass it explicitly when the trace was started by another process (e.g. a separate CLI run)."),
+  wait: z.boolean().optional().describe("When true (DEFAULT), if the trace is still running (backend returns 409 Conflict) the server subscribes to the studio's trace-status websocket and waits until the trace completes or waitTimeoutMs elapses — no client-side polling needed. Set false to get the raw immediate 409 behavior."),
   waitTimeoutMs: z.number().int().positive().max(600000).optional().describe("Maximum time to wait for trace completion, in milliseconds. Default 120000 (2 min), cap 600000 (10 min). On timeout an error is returned explaining that the trace is still running server-side."),
 };
 

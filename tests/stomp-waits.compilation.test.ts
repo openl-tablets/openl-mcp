@@ -1,5 +1,5 @@
 /**
- * Unit tests for waitForCompilation orchestration.
+ * Unit tests for the waitForCompilation orchestration in stomp-waits.ts.
  *
  * The STOMP subscription is injected via the `subscribeImpl` test seam, so
  * these tests run entirely in-memory — no network, no axios mocks.
@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeEach, jest } from "@jest/globals";
 
-import { waitForCompilation, isResolvedCompileState } from "../src/wait-for-compilation.js";
+import { waitForCompilation, isResolvedCompileState } from "../src/stomp-waits.js";
 import type { OpenLClient } from "../src/client.js";
 import type { SubscribeProjectStatusOpts, Subscription } from "../src/stomp-client.js";
 import type * as Types from "../src/types.js";

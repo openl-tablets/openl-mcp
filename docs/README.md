@@ -23,6 +23,7 @@ Learn how to use the MCP server:
 Contributing to the project:
 - **[Contributing Guide](development/contributing.md)** - How to contribute
 - **[Architecture](development/architecture.md)** - System architecture
+- **[WebSockets (STOMP)](development/websockets.md)** - Why and how the server waits for async studio work (compile & trace status) over WebSocket
 - **[Testing Guide](development/testing.md)** - Testing strategy
 - **[Code Standards](development/code-standards.md)** - Coding standards
 
