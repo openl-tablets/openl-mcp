@@ -566,6 +566,94 @@ describe("MCP Server Tools", () => {
     expect(mockAxios.history.get.some((g) => g.url === `/projects/${encoded}/tables/${newId}`)).toBe(true);
   });
 
+  it("openl_append_table uses the studio-reported new id from the 200/{id}+Location response (EPBDS-16086)", async () => {
+    const encoded = encodeProjectPath(projectId);
+    const oldId = "aaaa0000aaaa0000";
+    const newId = "bbbb1111bbbb1111";
+    const tableMeta = { name: "bankFinancialData", tableType: "Data", kind: "Data", file: "Bank.xlsx", pos: "A1:E4" };
+
+    mockAxios.onGet(`/projects/${encoded}/tables/${oldId}`).reply(200, { id: oldId, ...tableMeta });
+    mockAxios.onGet(`/projects/${encoded}/tables/${newId}`).reply(200, { id: newId, ...tableMeta, pos: "A1:E5" });
+    // listTables would feed the LEGACY heuristic the OLD id (i.e. "unchanged"),
+    // so asserting newId below proves the studio-reported id was used instead.
+    mockAxios.onGet(`/projects/${encoded}/tables`).reply(200, [{ id: oldId, ...tableMeta }]);
+    mockAxios
+      .onPost(`/projects/${encoded}/tables/${oldId}/lines`)
+      .reply(200, { id: newId }, { Location: `http://localhost:8080/rest/projects/${encoded}/tables/${newId}` });
+
+    const result = await executeTool(
+      "openl_append_table",
+      {
+        projectId,
+        tableId: oldId,
+        appendData: { tableType: "Data", rows: [{ values: ["R2", "01/01/2025", 500, 600, 700] }] },
+        response_format: "json",
+      },
+      client
+    );
+
+    const payload = JSON.parse(result.content[0].text).data;
+    expect(payload.success).toBe(true);
+    expect(payload.tableId).toBe(newId);
+    expect(payload.tableIdChanged).toBe(true);
+    expect(payload.previousTableId).toBe(oldId);
+    expect(payload.recompileTriggered).toBe(true);
+    // Recompile read targeted the studio-reported id.
+    expect(mockAxios.history.get.some((g) => g.url === `/projects/${encoded}/tables/${newId}`)).toBe(true);
+  });
+
+  it("openl_update_table reads the new id from the Location header when the body has none (EPBDS-16086)", async () => {
+    const encoded = encodeProjectPath(projectId);
+    const oldId = "cccc0000cccc0000";
+    const newId = "dddd1111dddd1111";
+    const tableMeta = { tableType: "Data", kind: "Data", name: "vehicleRating", file: "Rating.xlsx", pos: "A1:B4" };
+
+    // before-snapshot / would-be heuristic input: only the OLD id (→ "unchanged" if it ran)
+    mockAxios.onGet(`/projects/${encoded}/tables`).reply(200, [{ id: oldId, ...tableMeta }]);
+    // 200 with EMPTY body but a Location header pointing at the new id.
+    mockAxios
+      .onPut(`/projects/${encoded}/tables/${oldId}`)
+      .reply(200, "", { Location: `http://example.com/rest/projects/${encoded}/tables/${newId}` });
+    mockAxios.onGet(`/projects/${encoded}/tables/${newId}`).reply(200, { id: newId, ...tableMeta, pos: "A1:B5" });
+
+    const view = { id: oldId, ...tableMeta, rows: [{ values: [1, 2] }] };
+    const result = await executeTool(
+      "openl_update_table",
+      { projectId, tableId: oldId, view, response_format: "json" },
+      client
+    );
+
+    const payload = JSON.parse(result.content[0].text).data;
+    expect(payload.success).toBe(true);
+    expect(payload.tableId).toBe(newId);
+    expect(payload.tableIdChanged).toBe(true);
+    expect(payload.previousTableId).toBe(oldId);
+    expect(payload.recompileTriggered).toBe(true);
+  });
+
+  it("openl_append_table reports 204 (in-place edit) as an unchanged id", async () => {
+    const encoded = encodeProjectPath(projectId);
+    const tableId = "eeee2222eeee2222";
+    const tableMeta = { name: "ratesTable", tableType: "Data", kind: "Data", file: "Rates.xlsx", pos: "A1:C9" };
+
+    mockAxios.onGet(`/projects/${encoded}/tables/${tableId}`).reply(200, { id: tableId, ...tableMeta });
+    // Same id before and after — an in-place edit that did not relocate the table.
+    mockAxios.onGet(`/projects/${encoded}/tables`).reply(200, [{ id: tableId, ...tableMeta }]);
+    mockAxios.onPost(`/projects/${encoded}/tables/${tableId}/lines`).reply(204);
+
+    const result = await executeTool(
+      "openl_append_table",
+      { projectId, tableId, appendData: { tableType: "Data", rows: [{ values: [1, 2, 3] }] }, response_format: "json" },
+      client
+    );
+
+    const payload = JSON.parse(result.content[0].text).data;
+    expect(payload.success).toBe(true);
+    expect(payload.tableId).toBe(tableId);
+    expect(payload.tableIdChanged).toBeUndefined();
+    expect(payload.previousTableId).toBeUndefined();
+  });
+
   it("openl_get_table transparently resolves a stale id recorded by a previous edit (EPBDS-16084)", async () => {
     const encoded = encodeProjectPath(projectId);
     const oldId = "cccc3333cccc3333";

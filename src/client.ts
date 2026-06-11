@@ -5,7 +5,7 @@
  * Handles all HTTP communication, error handling, and response parsing.
  */
 
-import axios, { AxiosInstance } from "axios";
+import axios, { AxiosInstance, AxiosResponse } from "axios";
 import FormData from "form-data";
 import type * as Types from "./types.js";
 import { AuthenticationManager } from "./auth.js";
@@ -1718,20 +1718,52 @@ export class OpenLClient {
   }
 
   /**
+   * Extract the table's post-write id reported by an update/append response.
+   *
+   * Studio PR #1778 (EPBDS-16086): a write that RELOCATES the table (it had no
+   * room to grow in place, so it moved to a free area and its content/position-
+   * derived id changed) responds 200 with body `{ id }` and a `Location` header
+   * pointing at the table under its new id; an in-place write responds 204.
+   * Studios without that change always respond 204/empty.
+   *
+   * @returns the new table id when the studio reported one, else undefined
+   *   (the id is unchanged on a current studio, or unknown on an older one —
+   *   the caller falls back to resolving it heuristically).
+   */
+  private parseWrittenTableId(response: AxiosResponse): string | undefined {
+    const body = response.data as { id?: unknown } | undefined;
+    if (body && typeof body.id === "string" && body.id.length > 0) {
+      return body.id;
+    }
+    // Fallback: last `/tables/{id}` segment of the Location header. Prefer the
+    // body above — Location is request-derived and a reverse proxy may rewrite it.
+    const headers = (response.headers ?? {}) as Record<string, unknown>;
+    const location = headers.location ?? headers.Location;
+    if (typeof location === "string") {
+      const match = location.match(/\/tables\/([^/?#]+)/);
+      if (match) {
+        return decodeURIComponent(match[1]);
+      }
+    }
+    return undefined;
+  }
+
+  /**
    * Update table content
    *
    * @param projectId - Opaque project ID returned by backend.
    * @param tableId - Table identifier
    * @param view - Updated table view with modifications (MUST include full table structure from get_table)
    * @param comment - Optional comment describing the changes (NOTE: not supported by OpenAPI schema, will be ignored)
-   * @returns void (204 No Content on success)
+   * @returns the table's id after the write when the studio relocated it (id
+   *   changed), otherwise undefined (204 — id unchanged, or older studio)
    * @throws Error if view is missing required fields
    */
   async updateTable(
     projectId: string,
     tableId: string,
     view: Types.EditableTableView
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     // Validate that view contains required fields
     // OpenL API requires the FULL table structure, not just modified fields
     const requiredFields = ['id', 'tableType', 'kind', 'name'];
@@ -1755,11 +1787,12 @@ export class OpenLClient {
 
     const projectPath = this.buildProjectPath(projectId);
     // OpenAPI schema expects EditableTableView directly as request body
-    await this.axiosInstance.put(
+    const response = await this.axiosInstance.put(
       `${projectPath}/tables/${encodeURIComponent(tableId)}`,
       view
     );
-    // Returns 204 No Content
+    // 204 No Content when the id is unchanged; 200 + { id } + Location when relocated.
+    return this.parseWrittenTableId(response);
   }
 
   /**
@@ -1768,18 +1801,20 @@ export class OpenLClient {
    * @param projectId - Opaque project ID returned by backend.
    * @param tableId - Table identifier
    * @param appendData - Data to append with fields and table type
-   * @returns void (200 OK on success per schema)
+   * @returns the table's id after the append when the studio relocated it (id
+   *   changed), otherwise undefined (204 — id unchanged, or older studio)
    */
   async appendProjectTable(
     projectId: string,
     tableId: string,
     appendData: Types.AppendTableView
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     const projectPath = this.buildProjectPath(projectId);
-    await this.axiosInstance.post(
+    const response = await this.axiosInstance.post(
       `${projectPath}/tables/${encodeURIComponent(tableId)}/lines`,
       appendData
     );
+    return this.parseWrittenTableId(response);
   }
 
   // =============================================================================
