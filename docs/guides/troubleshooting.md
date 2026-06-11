@@ -413,7 +413,7 @@ Some tools wait for the studio's asynchronous work over a STOMP WebSocket instea
 
 **Wait hangs until timeout, nothing arrives**
 - The WS upgrade must carry an `Authorization` header (Basic or PAT). Anonymous WebSocket sessions cannot subscribe to user-routed topics in multi-user mode — the server logs a warning when this happens. Provide credentials.
-- Verify the studio is reachable at `<base-url>/ws` (e.g. `http://host:8080/rest/ws`) — proxies must allow WebSocket upgrade on that path.
+- Verify the studio is reachable at `<base-url>/ws` (e.g. `http://<host>:8080/rest/ws`) — proxies must allow WebSocket upgrade on that path.
 
 **Diagnosing**
 - Set `DEBUG_STOMP=true` to log the WebSocket URL, CONNECT/SUBSCRIBE frames, and every inbound frame to stderr.
