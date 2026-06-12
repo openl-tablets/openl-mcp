@@ -297,6 +297,32 @@ export const TOOLS: ToolDefinition[] = [
   },
 
   // =============================================================================
+  // Project Files Tools (BETA)
+  // =============================================================================
+  {
+    name: "openl_search_project_files",
+    description:
+      "Search a project's files and folders by ant-glob path 'pattern', file 'extensions', resource 'type' (FILE/FOLDER/ANY), and/or a case-insensitive 'content' substring (full-text). Maps to POST /projects/{projectId}/file-search. Set recursive=true to search nested folders (default false = top level only). Scope SUBTREE (default) searches within the project and may target a historical 'version'; scope ANCESTORS walks up to the repository root.",
+    inputSchema: schemas.z.toJSONSchema(schemas.searchProjectFilesSchema) as Record<string, unknown>,
+    _meta: {
+      version: "1.0.0",
+      category: TOOL_CATEGORIES.PROJECT,
+      requiresAuth: true,
+    },
+  },
+  {
+    name: "openl_get_project_agents_md",
+    description:
+      "Load the AGENTS.md guidance that applies to a project as a single aggregated markdown document. Walks UP from the project directory — or the optional 'folder' sub-directory — to the repository root, collecting every AGENTS.md, and returns them concatenated in one response ordered from the root folder (lowest priority) to the project folder (highest priority); later sections override earlier ones. Also exposed as the openl://docs/{project}/AGENTS.md resource.",
+    inputSchema: schemas.z.toJSONSchema(schemas.getProjectAgentsMdSchema) as Record<string, unknown>,
+    _meta: {
+      version: "1.0.0",
+      category: TOOL_CATEGORIES.PROJECT,
+      requiresAuth: true,
+    },
+  },
+
+  // =============================================================================
   // Deployment Tools
   // =============================================================================
   {

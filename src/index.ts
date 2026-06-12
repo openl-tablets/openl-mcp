@@ -32,9 +32,6 @@ import {
   ErrorCode,
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
-import { writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 // Import our modular components
 import { OpenLClient } from "./client.js";
@@ -45,9 +42,10 @@ import {
   STATIC_RESOURCES,
   RESOURCE_TEMPLATES,
   handleCompleteRequest,
+  handleResourceRead,
 } from "./resources-catalog.js";
 import { ResourceSubscriptionManager } from "./resource-subscriptions.js";
-import { safeStringify, sanitizeError } from "./utils.js";
+import { sanitizeError } from "./utils.js";
 import type * as Types from "./types.js";
 
 /**
@@ -162,9 +160,9 @@ class OpenLMCPServer {
       handleCompleteRequest(this.client, request.params)
     );
 
-    // Handle resource reads
+    // Handle resource reads (shared routing lives in resources-catalog.ts)
     this.server.setRequestHandler(ReadResourceRequestSchema, async (request) =>
-      this.handleResourceRead(request.params.uri)
+      handleResourceRead(request.params.uri, this.client)
     );
 
     // resources/subscribe — wire status URIs to STOMP-backed notifications.
@@ -244,147 +242,6 @@ class OpenLMCPServer {
   REMOVED METHOD - The switch statement handleToolCall has been completely removed.
   All tool handling is now done through tool-handlers.ts
   */
-
-  /**
-   * Handle resource read requests
-   *
-   * @param uri - Resource URI
-   * @returns Resource content
-   */
-  private async handleResourceRead(
-    uri: string
-  ): Promise<{ contents: Array<{ uri: string; mimeType: string; text: string }> }> {
-    try {
-      let data: unknown;
-      let mimeType = "application/json";
-
-      // Parse URI and extract parameters
-      const uriMatch = uri.match(/^openl:\/\/([^\/]+)(?:\/(.+))?$/);
-      if (!uriMatch) {
-        throw new McpError(ErrorCode.InvalidRequest, `Invalid resource URI: ${uri}`);
-      }
-
-      const [, resourceType, path] = uriMatch;
-
-      switch (resourceType) {
-        case "repositories": {
-          data = await this.client.listRepositories();
-          break;
-        }
-
-        case "projects": {
-          if (!path) {
-            // openl://projects - List all projects
-            data = await this.client.listProjects();
-          } else {
-            // Parse projects/{projectId} or projects/{projectId}/...
-            const projectMatch = path.match(/^([^\/]+)(?:\/(.+))?$/);
-            if (!projectMatch) {
-              throw new McpError(ErrorCode.InvalidRequest, `Invalid project URI: ${uri}`);
-            }
-
-            const [, projectId, subPath] = projectMatch;
-
-            if (!subPath) {
-              // openl://projects/{projectId} - Get project details
-              data = await this.client.getProject(projectId);
-            } else if (subPath === "history") {
-              // openl://projects/{projectId}/history - Get project history
-              data = await this.client.getProjectHistory({ projectId });
-            } else if (subPath.startsWith("tables")) {
-              // Parse tables or tables/{tableId}
-              const tableMatch = subPath.match(/^tables(?:\/(.+))?$/);
-              if (!tableMatch) {
-                throw new McpError(ErrorCode.InvalidRequest, `Invalid tables URI: ${uri}`);
-              }
-
-              const [, tableId] = tableMatch;
-
-              if (!tableId) {
-                // openl://projects/{projectId}/tables - List tables
-                data = await this.client.listTables(projectId);
-              } else {
-                // openl://projects/{projectId}/tables/{tableId} - Get table
-                data = await this.client.getTable(projectId, tableId);
-              }
-            } else if (subPath.startsWith("files/")) {
-              // openl://projects/{projectId}/files/{filePath} - Download file
-              const filePath = subPath.substring(6); // Remove "files/" prefix
-              if (!filePath) {
-                throw new McpError(ErrorCode.InvalidRequest, `File path is required: ${uri}`);
-              }
-
-              const fileBuffer = await this.client.downloadFile(projectId, filePath);
-              mimeType = "application/octet-stream";
-
-              const tempFileName = `openl-resource-${Date.now()}-${Math.random().toString(16).slice(2)}-${filePath.split("/").pop() || "file.bin"}`;
-              const tempFilePath = join(tmpdir(), tempFileName);
-              await writeFile(tempFilePath, fileBuffer);
-
-              return {
-                contents: [
-                  {
-                    uri,
-                    mimeType: "application/json",
-                    text: safeStringify({
-                      filePath,
-                      downloadedTo: tempFilePath,
-                      size: fileBuffer.length,
-                      mode: "binary-file-path",
-                    }),
-                  },
-                ],
-              };
-            } else {
-              throw new McpError(ErrorCode.InvalidRequest, `Unknown project subresource: ${subPath}`);
-            }
-          }
-          break;
-        }
-
-        case "deployments": {
-          data = await this.client.listDeployments();
-          break;
-        }
-
-        case "status": {
-          if (!path) {
-            throw new McpError(ErrorCode.InvalidRequest, `Project ID is required: ${uri}`);
-          }
-          const statusMatch = path.match(/^([^\/]+)(?:\/(.+))?$/);
-          if (!statusMatch) {
-            throw new McpError(ErrorCode.InvalidRequest, `Invalid status URI: ${uri}`);
-          }
-          const [, statusProjectId, statusBranch] = statusMatch;
-          data = await this.client.getProjectStatus(statusProjectId, statusBranch);
-          break;
-        }
-
-        default:
-          throw new McpError(ErrorCode.InvalidRequest, `Unknown resource type: ${resourceType}`);
-      }
-
-      return {
-        contents: [
-          {
-            uri,
-            mimeType,
-            text: safeStringify(data, 2),
-          },
-        ],
-      };
-    } catch (error: unknown) {
-      if (error instanceof McpError) {
-        throw error;
-      }
-
-      const sanitizedMessage = sanitizeError(error);
-      throw new McpError(
-        ErrorCode.InternalError,
-        `Error reading resource ${uri}: ${sanitizedMessage}`
-      );
-    }
-  }
 
   /**
    * Start the MCP server

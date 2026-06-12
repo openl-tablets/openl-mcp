@@ -563,7 +563,7 @@ function categoryOf(toolName: string): string {
   if (/^openl_(list_tables|get_table|update_table|append_table|create_project_table|execute_rule)$/.test(toolName)) {
     return "Rules & Tables";
   }
-  if (/^openl_(read|write|delete|search|copy|move)_project_file(s)?$/.test(toolName)) {
+  if (/^openl_(read|write|delete|search|copy|move)_project_file(s)?$/.test(toolName) || toolName === "openl_get_project_agents_md") {
     return "Project Files";
   }
   if (/^openl_(get_project_history|get_file_history|revert_version)$/.test(toolName)) {

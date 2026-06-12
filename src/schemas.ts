@@ -888,6 +888,21 @@ export const searchProjectFilesSchema = z.object({
   response_format: ResponseFormat.optional(),
 }).merge(PaginationParams).strict();
 
+// Intentionally has no `response_format` or pagination: the tool returns a single
+// aggregated markdown document (one AGENTS.md chain), which has no alternate format
+// or pages — do not add them to match the other tools.
+export const getProjectAgentsMdSchema = z.object({
+  projectId: projectIdSchema,
+  folder: z
+    .string()
+    .max(1024)
+    .optional()
+    .describe(
+      "Optional project-relative sub-folder to start the walk-up from, e.g. 'rules' or 'rules/pricing'. Use this to get the AGENTS.md chain that applies to a file deeper inside the project ('the AGENTS.md nearest the edited file wins'). Omit to start at the project root. Do NOT include the project name; the path is relative to the project root."
+    ),
+  branch: fileBranchSchema,
+}).strict();
+
 const copyMovePairSchema = {
   projectId: projectIdSchema,
   sourcePath: z

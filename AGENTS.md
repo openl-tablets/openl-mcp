@@ -100,7 +100,7 @@ Most traffic is plain REST. The WebSocket (STOMP) channel is used only to wait, 
 - Deploy projects to production
 - Redeploy with new versions
 
-## Tools (39 Active, 6 Disabled, 45 Total Defined)
+## Tools (40 Active, 6 Disabled, 46 Total Defined)
 
 All tools are prefixed with `openl_` and versioned (v1.0.0+).
 
@@ -137,7 +137,7 @@ All tools are prefixed with `openl_` and versioned (v1.0.0+).
 - `openl_create_project_table` - Create new table
 - `openl_execute_rule` - Execute rule with test data
 
-### Project Files Tools (6, BETA)
+### Project Files Tools (7, BETA)
 Operate on ANY file in a project by exact project-relative path (not just Excel rule files). Writes/deletes/copies/moves land in the project **working copy** — commit them with `openl_save_project`. Use the optional `branch` to pin the project's branch (omit for `local`/non-branch repositories).
 - `openl_read_project_file` - Read a file (text verbatim, binary as base64; optional `offset`/`length` byte range), read file metadata (`view: "meta"`), or list a folder (`recursive`, `viewMode` FLAT/NESTED, `extensions`, `namePattern`, `foldersOnly`); optional `version` reads a historical revision
 - `openl_write_project_file` - Create/replace a file from UTF-8 or base64 `content`; `createFolders` (default true), `conflictPolicy` FAIL/OVERWRITE/SKIP
@@ -145,6 +145,7 @@ Operate on ANY file in a project by exact project-relative path (not just Excel 
 - `openl_search_project_files` - Search by glob `pattern`, `extensions`, `type`, or case-insensitive `content` substring; `scope` SUBTREE (default) or ANCESTORS
 - `openl_copy_project_file` - Copy a file within the project (no overwrite — destination collision returns 409)
 - `openl_move_project_file` - Move or rename a file within the project
+- `openl_get_project_agents_md` - Load the **AGENTS.md** guidance for a project as a **single aggregated markdown document**: walks UP from the project (or an optional `folder`) to the repository root, collects every applicable `AGENTS.md`, and returns them concatenated in one response — ordered from the root folder (lowest priority) down to the project folder (highest priority), later sections winning on conflict. (Also exposed as the `openl://docs/{project}/AGENTS.md` resource.)
 
 ### Trace Tools (6, BETA)
 - `openl_start_trace` - Start trace execution for a table
@@ -181,7 +182,7 @@ Projects with `repository: 'local'` are stored on disk without Git; **OPENED/EDI
 
 Deployment (`openl_deploy_project`, `openl_redeploy_project`) for projects with `repository: 'local'` is typically not used via the studio.
 
-## Prompts (15 Total)
+## Prompts (17 Total)
 
 Expert guidance templates for complex OpenL workflows:
 
@@ -200,6 +201,8 @@ Expert guidance templates for complex OpenL workflows:
 13. **get_project_errors** - Error analysis workflow
 14. **file_history** - File version history
 15. **project_history** - Project audit trail
+16. **validate_after_edit** - Post-edit validation workflow (compile state, error surfacing, re-validation)
+17. **project_agents_md** - Load and apply a project's AGENTS.md guidance (walk up to repo root; nearest-file-wins)
 
 ## Resources
 
@@ -212,6 +215,7 @@ MCP resources provide read-only access to OpenL data:
 - `openl://projects/{projectId}/tables/{tableId}` - Specific table
 - `openl://projects/{projectId}/history` - Project Git history
 - `openl://projects/{projectId}/files/{filePath}` - Download file
+- `openl://docs/{project}/AGENTS.md` - The project's applicable **AGENTS.md** guidance as one aggregated markdown document (root-first, later sections win); mirrors `openl_get_project_agents_md`
 - `openl://deployments` - All deployments
 
 ## Authentication Methods

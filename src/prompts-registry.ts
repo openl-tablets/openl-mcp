@@ -242,6 +242,23 @@ export const PROMPTS: PromptDefinition[] = [
       },
     ],
   },
+  {
+    name: "project_agents_md",
+    title: "Use Project AGENTS.md",
+    description: "How to load and correctly apply a project's AGENTS.md guidance with openl_get_project_agents_md: walk up to the repo root, read every applicable file, and apply nearest-file-wins precedence",
+    arguments: [
+      {
+        name: "projectId",
+        description: "ID or name of the project to load AGENTS.md guidance for",
+        required: false,
+      },
+      {
+        name: "folder",
+        description: "Project-relative sub-folder you are about to work in (for 'the AGENTS.md nearest the edited file')",
+        required: false,
+      },
+    ],
+  },
 ];
 
 /**

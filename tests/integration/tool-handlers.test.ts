@@ -329,6 +329,36 @@ describe("Tool Handler Integration Tests", () => {
     });
   });
 
+  describe("AGENTS.md Tool", () => {
+    it("should execute openl_get_project_agents_md (aggregated document, root-first)", async () => {
+      mockAxios.onPost(/\/projects\/.*\/file-search/).reply(200, [
+        { path: "foo/P1/AGENTS.md", name: "AGENTS.md", type: "file", basePath: "foo/P1", content: "project guidance" },
+        { path: "foo/AGENTS.md", name: "AGENTS.md", type: "file", basePath: "foo", content: "root guidance" },
+      ]);
+
+      const result = await executeTool("openl_get_project_agents_md", {
+        projectId: "design-P1",
+      }, client);
+
+      expect(result.content[0].type).toBe("text");
+      const text = result.content[0].text;
+      expect(text).toContain("*Important note about this document*");
+      // Root file precedes the project file (root-first, project last = highest priority).
+      expect(text.indexOf("## /foo/AGENTS.md")).toBeLessThan(text.indexOf("## /foo/P1/AGENTS.md"));
+      expect(text.indexOf("root guidance")).toBeLessThan(text.indexOf("project guidance"));
+    });
+
+    it("returns a 'no files' note when the project has no AGENTS.md", async () => {
+      mockAxios.onPost(/\/projects\/.*\/file-search/).reply(200, []);
+
+      const result = await executeTool("openl_get_project_agents_md", {
+        projectId: "design-P2",
+      }, client);
+
+      expect(result.content[0].text).toBe("No AGENTS.md files apply to this project.");
+    });
+  });
+
   describe("Response Format Variants", () => {
     it("should support json response format", async () => {
       mockAxios.onGet("/repos").reply(200, [
