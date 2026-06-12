@@ -10,7 +10,10 @@ import {
   toMarkdown,
   toMarkdownConcise,
   toMarkdownDetailed,
+  formatAgentsDocument,
 } from "../src/formatters.js";
+import { RESPONSE_LIMITS } from "../src/constants.js";
+import type { AgentsFile } from "../src/types.js";
 
 describe("formatters", () => {
   describe("paginateResults", () => {
@@ -511,6 +514,54 @@ describe("formatters", () => {
       }
 
       expect(() => formatResponse(deep, "json")).not.toThrow();
+    });
+  });
+
+  describe("formatAgentsDocument", () => {
+    // getProjectAgentsMd returns nearest-first (project first); the document is root-first.
+    const chain: AgentsFile[] = [
+      { path: "foo/Project-1/AGENTS.md", content: "project guidance" },
+      { path: "foo/AGENTS.md", content: "root guidance" },
+    ];
+
+    it("includes the precedence note header", () => {
+      const doc = formatAgentsDocument(chain);
+      expect(doc).toContain("*Important note about this document*");
+      expect(doc).toContain("each later AGENTS.md file takes precedence over the earlier ones");
+    });
+
+    it("orders sections root-first (project folder last = highest priority)", () => {
+      const doc = formatAgentsDocument(chain);
+      expect(doc.indexOf("## /foo/AGENTS.md")).toBeLessThan(doc.indexOf("## /foo/Project-1/AGENTS.md"));
+      expect(doc.indexOf("root guidance")).toBeLessThan(doc.indexOf("project guidance"));
+    });
+
+    it("prefixes each path with '/' and separates sections with '-----'", () => {
+      const doc = formatAgentsDocument(chain);
+      expect(doc).toContain("-----\n## /foo/AGENTS.md\n\nroot guidance");
+      expect(doc).toContain("-----\n## /foo/Project-1/AGENTS.md\n\nproject guidance");
+    });
+
+    it("does not double-prefix a path that already starts with '/'", () => {
+      const doc = formatAgentsDocument([{ path: "/abs/AGENTS.md", content: "x" }]);
+      expect(doc).toContain("## /abs/AGENTS.md");
+      expect(doc).not.toContain("## //abs/AGENTS.md");
+    });
+
+    it("trims trailing whitespace from content so section spacing stays uniform", () => {
+      const doc = formatAgentsDocument([{ path: "a/AGENTS.md", content: "hello\n\n\n" }]);
+      expect(doc).toContain("## /a/AGENTS.md\n\nhello\n");
+      expect(doc).not.toContain("hello\n\n\n");
+    });
+
+    it("caps an oversized document and appends the truncation message", () => {
+      const huge = formatAgentsDocument([{ path: "big/AGENTS.md", content: "x".repeat(60_000) }]);
+      expect(huge.length).toBeLessThanOrEqual(RESPONSE_LIMITS.MAX_CHARACTERS + RESPONSE_LIMITS.TRUNCATION_MESSAGE.length + 2);
+      expect(huge).toContain(RESPONSE_LIMITS.TRUNCATION_MESSAGE);
+    });
+
+    it("returns a short note when there are no files", () => {
+      expect(formatAgentsDocument([])).toBe("No AGENTS.md files apply to this project.");
     });
   });
 });
