@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **clone** (`template` = an existing project name): copy the source project's full structure (rules, tests, settings, examples) into the new project and rename it in `rules.xml`, matching OpenL Studio's Copy Project; `branch` is honored.
 
   Name collisions return 409, a missing clone source returns 404, and missing permission returns 403.
+- CLI mode — the `openl-mcp-server` binary can run any `openl_*` tool directly from the shell via `npx`, without an MCP client; `--help` lists tools by category and `--list-tools` dumps their JSON schemas. With no arguments it still starts the stdio MCP server (EPBDS-16027).
+- Six tools for tracing OpenL rule and test-table execution: `openl_start_trace`, `openl_get_trace_nodes`, `openl_get_trace_node_details`, `openl_get_trace_parameter`, `openl_cancel_trace`, and `openl_export_trace` (EPBDS-15552).
+- Project status validation — the read-only `openl_project_status` tool and `openl://status/{projectId}` resource report a project's compilation state, diagnostics, and pending changes, with an optional wait-for-compilation mode and live updates; adds resource templates and `projectId`/`branch` autocompletion (EPBDS-15919).
+- Five Project Files tools for working with any file in a project by path: `openl_read_project_file` (read/list/metadata), `openl_write_project_file`, `openl_delete_project_file`, `openl_copy_project_file`, and `openl_move_project_file` (EPBDS-16080).
+- Bundled an `openl-trace-investigation` skill that guides diagnosing unexpected OpenL results (wrong values, nulls, rejected claims), including cases where a clean trace hides an upstream mapping/integration defect (EPBDS-15859).
+
+### Deprecated
+
+- Passing the Personal Access Token via a URL query parameter is deprecated and now logs a warning — query strings can leak into proxy logs, browser history, and `Referer` headers. Use the `Authorization: Token <PAT>` header instead; query-parameter support is kept for backward compatibility (EPBDS-15654).
 
 ### Notes
 
