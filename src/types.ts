@@ -84,13 +84,46 @@ export interface FsNode {
   name: string;
   /** Resource type. */
   type: "file" | "folder";
-  /** Parent directory path (project-relative), when provided. */
+  /**
+   * Parent directory path, when provided. Project-relative for SUBTREE-scope
+   * results; repository-relative for ANCESTORS-scope results (which cross the
+   * project boundary).
+   */
   basePath?: string;
   /** File extension without the dot (files only). */
   extension?: string;
   /** Size in bytes (files only). */
   size?: number;
   /** ISO-8601 last-modified timestamp (files only). */
+  lastModified?: string;
+  /**
+   * Raw file content. The backend populates this for ANCESTORS-scope file-search
+   * (which returns each matched file together with its content); it is absent for
+   * SUBTREE listings/searches, which return metadata only.
+   */
+  content?: string;
+}
+
+/**
+ * One AGENTS.md file in a project's resolved ancestry chain, as returned by
+ * {@link OpenLClient.getProjectAgentsMd} and the `openl://docs/{project}/AGENTS.md`
+ * resource. The chain follows the AGENTS.md spec: starting at the project (or a
+ * sub-folder of it) and walking up to the repository root, the nearest file wins.
+ * Proximity is carried by array order (nearest-first); the presentation layer
+ * renders the files into a single document with that precedence applied.
+ */
+export interface AgentsFile {
+  /**
+   * Path relative to the REPOSITORY root (not the project), e.g.
+   * 'monorepo/Project-1/AGENTS.md'. ANCESTORS search crosses the project boundary,
+   * so paths are repo-relative to disambiguate files at different levels.
+   */
+  path: string;
+  /** Raw markdown content of the file. */
+  content: string;
+  /** Size in bytes, when reported by the backend. */
+  size?: number;
+  /** ISO-8601 last-modified timestamp, when reported by the backend. */
   lastModified?: string;
 }
 

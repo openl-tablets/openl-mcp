@@ -14,6 +14,7 @@ import {
   STATIC_RESOURCES,
   RESOURCE_TEMPLATES,
   handleCompleteRequest,
+  handleResourceRead,
   type CompleteRequestParams,
 } from "../src/resources-catalog.js";
 import type { OpenLClient } from "../src/client.js";
@@ -51,6 +52,10 @@ describe("RESOURCE_TEMPLATES", () => {
     const uris = RESOURCE_TEMPLATES.map((t) => t.uriTemplate);
     expect(uris).toContain("openl://status/{projectId}");
     expect(uris).toContain("openl://status/{projectId}/{branch}");
+  });
+  it("exposes the AGENTS.md docs template", () => {
+    const uris = RESOURCE_TEMPLATES.map((t) => t.uriTemplate);
+    expect(uris).toContain("openl://docs/{project}/AGENTS.md");
   });
 });
 
@@ -271,5 +276,67 @@ describe("handleCompleteRequest — unsupported refs", () => {
     });
     expect(res.completion.values).toEqual([]);
     expect(fakes.listProjects).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleCompleteRequest — docs {project}", () => {
+  it("autocompletes the `project` argument of the AGENTS.md docs template", async () => {
+    const { client, fakes } = makeClient({ projects: [makeProject("alpha"), makeProject("beta")] });
+    const res = await handleCompleteRequest(client, {
+      ref: { type: "ref/resource", uri: "openl://docs/{project}/AGENTS.md" },
+      argument: { name: "project", value: "" },
+    });
+    expect(res.completion.values).toEqual(["alpha", "beta"]);
+    expect(fakes.listProjects).toHaveBeenCalled();
+  });
+});
+
+describe("handleResourceRead — openl://docs/{project}/AGENTS.md", () => {
+  // getProjectAgentsMd returns the chain nearest-first (project first).
+  const chain: Types.AgentsFile[] = [
+    { path: "foo/Project-1/AGENTS.md", content: "project guidance" },
+    { path: "foo/AGENTS.md", content: "root guidance" },
+  ];
+
+  function clientWithAgents(impl?: (project: string) => Promise<Types.AgentsFile[]>) {
+    const getProjectAgentsMd = jest
+      .fn<(project: string, options?: unknown) => Promise<Types.AgentsFile[]>>()
+      .mockImplementation(async (project: string) => (impl ? impl(project) : chain));
+    return { client: { getProjectAgentsMd } as unknown as OpenLClient, getProjectAgentsMd };
+  }
+
+  it("returns the aggregated markdown document, root-first (project last)", async () => {
+    const { client, getProjectAgentsMd } = clientWithAgents();
+    const res = await handleResourceRead("openl://docs/Project-1/AGENTS.md", client);
+
+    expect(getProjectAgentsMd).toHaveBeenCalledWith("Project-1");
+    expect(res.contents[0].uri).toBe("openl://docs/Project-1/AGENTS.md");
+    expect(res.contents[0].mimeType).toBe("text/markdown");
+
+    const text = res.contents[0].text;
+    expect(text).toContain("*Important note about this document*");
+    // Root file appears before (above) the project file.
+    expect(text.indexOf("/foo/AGENTS.md")).toBeLessThan(text.indexOf("/foo/Project-1/AGENTS.md"));
+    expect(text.indexOf("root guidance")).toBeLessThan(text.indexOf("project guidance"));
+    expect(text).toContain("## /foo/Project-1/AGENTS.md");
+  });
+
+  it("captures a project identifier that itself contains slashes", async () => {
+    const { client, getProjectAgentsMd } = clientWithAgents(async () => []);
+    await handleResourceRead("openl://docs/design/My Project/AGENTS.md", client);
+    expect(getProjectAgentsMd).toHaveBeenCalledWith("design/My Project");
+  });
+
+  it("serves a 'no files' note (HTTP-200 semantics) when no AGENTS.md exists", async () => {
+    const { client } = clientWithAgents(async () => []);
+    const res = await handleResourceRead("openl://docs/Empty/AGENTS.md", client);
+    expect(res.contents[0].mimeType).toBe("text/markdown");
+    expect(res.contents[0].text).toBe("No AGENTS.md files apply to this project.");
+  });
+
+  it("rejects a docs URI that does not target AGENTS.md", async () => {
+    const { client, getProjectAgentsMd } = clientWithAgents();
+    await expect(handleResourceRead("openl://docs/Project-1/README.md", client)).rejects.toThrow();
+    expect(getProjectAgentsMd).not.toHaveBeenCalled();
   });
 });

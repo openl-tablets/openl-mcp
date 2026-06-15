@@ -708,3 +708,45 @@ export function paginateResults<T>(
 
   return { data, has_more, next_offset, total_count };
 }
+
+/**
+ * Fixed preamble for the aggregated AGENTS.md document. Explains the ordering and
+ * the nearest-wins precedence so a consuming agent can apply the guidance correctly
+ * from the document alone.
+ */
+const AGENTS_DOCUMENT_NOTE =
+  "*Important note about this document*\n" +
+  "This is the aggregated content of all AGENTS.md files, ordered from the root folder to the project folder.\n" +
+  "In case of conflicting instructions, each later AGENTS.md file takes precedence over the earlier ones. The root file has the lowest priority.";
+
+/**
+ * Render a project's applicable AGENTS.md files as a single markdown document.
+ *
+ * The input is the chain as returned by {@link OpenLClient.getProjectAgentsMd},
+ * which is ordered nearest-first (project folder first). The document is emitted
+ * root-first — repository root at the top (lowest priority), project folder at the
+ * bottom (highest priority) — so a reader applies later sections over earlier ones.
+ *
+ * @param files - The applicable AGENTS.md files, nearest-first.
+ * @returns A markdown document, or a short note when the project has none.
+ */
+export function formatAgentsDocument(files: Types.AgentsFile[]): string {
+  if (files.length === 0) {
+    return "No AGENTS.md files apply to this project.";
+  }
+  const rootFirst = [...files].reverse();
+  const sections = rootFirst.map((file) => {
+    const path = file.path.startsWith("/") ? file.path : `/${file.path}`;
+    // trimEnd so a file ending in newlines doesn't widen the gap before the next section.
+    return `-----\n## ${path}\n\n${file.content.trimEnd()}`;
+  });
+  const document = `${AGENTS_DOCUMENT_NOTE}\n\n${sections.join("\n\n")}\n`;
+
+  // Cap the aggregated document like every other response so a large monorepo
+  // chain can't blow the client's token budget / response limits.
+  const limit = RESPONSE_LIMITS.MAX_CHARACTERS;
+  if (document.length > limit) {
+    return `${document.slice(0, limit)}\n\n${RESPONSE_LIMITS.TRUNCATION_MESSAGE}`;
+  }
+  return document;
+}

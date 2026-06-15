@@ -29,10 +29,15 @@
  */
 
 import type { Resource, ResourceTemplate, CompleteResult } from "@modelcontextprotocol/sdk/types.js";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
+import { writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import type { OpenLClient } from "./client.js";
 import type * as Types from "./types.js";
-import { sanitizeError } from "./utils.js";
+import { formatAgentsDocument } from "./formatters.js";
+import { safeStringify, sanitizeError } from "./utils.js";
 
 /**
  * Resources whose URI is fully concrete — no `{var}` segments. The client
@@ -98,6 +103,13 @@ export const RESOURCE_TEMPLATES: ResourceTemplate[] = [
     mimeType: "application/octet-stream",
   },
   {
+    uriTemplate: "openl://docs/{project}/AGENTS.md",
+    name: "Project AGENTS.md",
+    description:
+      "The AGENTS.md guidance applicable to a project, aggregated into one markdown document ordered from the repository root (lowest priority) down to the project folder (highest priority); on conflict, later sections override earlier ones. {project} is a project ID or name. Mirrors the openl_get_project_agents_md tool.",
+    mimeType: "text/markdown",
+  },
+  {
     uriTemplate: "openl://status/{projectId}",
     name: "OpenL Project Status (default branch)",
     description:
@@ -126,6 +138,7 @@ const PROJECT_ID_TEMPLATES = new Set<string>([
   "openl://projects/{projectId}/tables/{tableId}",
   "openl://projects/{projectId}/history",
   "openl://projects/{projectId}/files/{filePath}",
+  "openl://docs/{project}/AGENTS.md",
   "openl://status/{projectId}",
   "openl://status/{projectId}/{branch}",
 ]);
@@ -211,7 +224,9 @@ export async function handleCompleteRequest(
   const typed = params.argument.value;
 
   try {
-    if (argName === "projectId" && PROJECT_ID_TEMPLATES.has(templateUri)) {
+    // Most templates name the variable `projectId`; the docs template uses
+    // `{project}`. Accept either so both autocomplete from the project list.
+    if ((argName === "projectId" || argName === "project") && PROJECT_ID_TEMPLATES.has(templateUri)) {
       const projects = await client.listProjects();
       const ids = projects.map((p) => projectIdToString(p.id));
       return buildResult(filterByPrefix(ids, typed));
@@ -254,4 +269,180 @@ function buildResult(filtered: {
       hasMore: filtered.truncated,
     },
   };
+}
+
+/**
+ * Read an `openl://` resource and return its MCP `contents`. Single
+ * implementation shared by every transport (stdio in index.ts, HTTP/SSE in
+ * server.ts) so the URI routing lives in exactly one place.
+ *
+ * Dispatches on the URI's resource type and sub-path:
+ *  - `openl://repositories` / `openl://projects` / `openl://deployments`
+ *  - `openl://projects/{projectId}` (+ `/history`, `/tables`, `/tables/{tableId}`,
+ *    `/files/{filePath}`)
+ *  - `openl://docs/{project}/AGENTS.md`
+ *  - `openl://status/{projectId}` (+ `/{branch}`)
+ *
+ * All backend errors are wrapped in `McpError`; an `McpError` thrown by routing
+ * (invalid/unknown URI) is rethrown unchanged.
+ *
+ * @param uri - The concrete resource URI to read.
+ * @param client - OpenL client used to fetch the underlying data.
+ */
+export async function handleResourceRead(
+  uri: string,
+  client: OpenLClient
+): Promise<{ contents: Array<{ uri: string; mimeType: string; text: string }> }> {
+  try {
+    let data: unknown;
+    let mimeType = "application/json";
+
+    // Parse URI and extract parameters
+    const uriMatch = uri.match(/^openl:\/\/([^/]+)(?:\/(.+))?$/);
+    if (!uriMatch) {
+      throw new McpError(ErrorCode.InvalidRequest, `Invalid resource URI: ${uri}`);
+    }
+
+    const [, resourceType, path] = uriMatch;
+
+    switch (resourceType) {
+      case "repositories": {
+        data = await client.listRepositories();
+        break;
+      }
+
+      case "projects": {
+        if (!path) {
+          // openl://projects - List all projects
+          data = await client.listProjects();
+        } else {
+          // Parse projects/{projectId} or projects/{projectId}/...
+          const projectMatch = path.match(/^([^/]+)(?:\/(.+))?$/);
+          if (!projectMatch) {
+            throw new McpError(ErrorCode.InvalidRequest, `Invalid project URI: ${uri}`);
+          }
+
+          const [, projectId, subPath] = projectMatch;
+
+          if (!subPath) {
+            // openl://projects/{projectId} - Get project details
+            data = await client.getProject(projectId);
+          } else if (subPath === "history") {
+            // openl://projects/{projectId}/history - Get project history
+            data = await client.getProjectHistory({ projectId });
+          } else if (subPath.startsWith("tables")) {
+            // Parse tables or tables/{tableId}
+            const tableMatch = subPath.match(/^tables(?:\/(.+))?$/);
+            if (!tableMatch) {
+              throw new McpError(ErrorCode.InvalidRequest, `Invalid tables URI: ${uri}`);
+            }
+
+            const [, tableId] = tableMatch;
+
+            if (!tableId) {
+              // openl://projects/{projectId}/tables - List tables
+              data = await client.listTables(projectId);
+            } else {
+              // openl://projects/{projectId}/tables/{tableId} - Get table
+              data = await client.getTable(projectId, tableId);
+            }
+          } else if (subPath.startsWith("files/")) {
+            // openl://projects/{projectId}/files/{filePath} - Download file
+            const filePath = subPath.substring(6); // Remove "files/" prefix
+            if (!filePath) {
+              throw new McpError(ErrorCode.InvalidRequest, `File path is required: ${uri}`);
+            }
+
+            const fileBuffer = await client.downloadFile(projectId, filePath);
+            mimeType = "application/octet-stream";
+
+            const tempFileName = `openl-resource-${Date.now()}-${Math.random().toString(16).slice(2)}-${filePath.split("/").pop() || "file.bin"}`;
+            const tempFilePath = join(tmpdir(), tempFileName);
+            await writeFile(tempFilePath, fileBuffer);
+
+            return {
+              contents: [
+                {
+                  uri,
+                  mimeType: "application/json",
+                  text: safeStringify({
+                    filePath,
+                    downloadedTo: tempFilePath,
+                    size: fileBuffer.length,
+                    mode: "binary-file-path",
+                  }),
+                },
+              ],
+            };
+          } else {
+            throw new McpError(ErrorCode.InvalidRequest, `Unknown project subresource: ${subPath}`);
+          }
+        }
+        break;
+      }
+
+      case "docs": {
+        // openl://docs/{project}/AGENTS.md - the applicable AGENTS.md files
+        // aggregated into one markdown document (root-first, nearest wins).
+        // {project} may itself contain '/', so capture everything up to the
+        // trailing '/AGENTS.md'.
+        if (!path) {
+          throw new McpError(ErrorCode.InvalidRequest, `Project is required: ${uri}`);
+        }
+        const docsMatch = path.match(/^(.+)\/AGENTS\.md$/);
+        if (!docsMatch) {
+          throw new McpError(
+            ErrorCode.InvalidRequest,
+            `Unsupported docs resource (only 'openl://docs/{project}/AGENTS.md' is served): ${uri}`
+          );
+        }
+        const [, docsProject] = docsMatch;
+        const files = await client.getProjectAgentsMd(docsProject);
+        return {
+          contents: [{ uri, mimeType: "text/markdown", text: formatAgentsDocument(files) }],
+        };
+      }
+
+      case "deployments": {
+        data = await client.listDeployments();
+        break;
+      }
+
+      case "status": {
+        if (!path) {
+          throw new McpError(ErrorCode.InvalidRequest, `Project ID is required: ${uri}`);
+        }
+        const statusMatch = path.match(/^([^/]+)(?:\/(.+))?$/);
+        if (!statusMatch) {
+          throw new McpError(ErrorCode.InvalidRequest, `Invalid status URI: ${uri}`);
+        }
+        const [, statusProjectId, statusBranch] = statusMatch;
+        data = await client.getProjectStatus(statusProjectId, statusBranch);
+        break;
+      }
+
+      default:
+        throw new McpError(ErrorCode.InvalidRequest, `Unknown resource type: ${resourceType}`);
+    }
+
+    return {
+      contents: [
+        {
+          uri,
+          mimeType,
+          text: safeStringify(data, 2),
+        },
+      ],
+    };
+  } catch (error: unknown) {
+    if (error instanceof McpError) {
+      throw error;
+    }
+
+    const sanitizedMessage = sanitizeError(error);
+    throw new McpError(
+      ErrorCode.InternalError,
+      `Error reading resource ${uri}: ${sanitizedMessage}`
+    );
+  }
 }

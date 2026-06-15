@@ -1860,6 +1860,76 @@ describe("OpenLClient", () => {
       });
     });
 
+    describe("getProjectAgentsMd", () => {
+      const ancestorsNodes = [
+        { path: "foo/Project-1/AGENTS.md", name: "AGENTS.md", type: "file", basePath: "foo/Project-1", size: 7, lastModified: "2026-06-12T10:47:05Z", content: "project" },
+        { path: "foo/AGENTS.md", name: "AGENTS.md", type: "file", basePath: "foo", size: 0, lastModified: "2026-06-12T10:47:06Z", content: "" },
+      ];
+
+      it("issues a fixed ANCESTORS search from AGENTS.md and returns path+content nearest-first", async () => {
+        let body: Record<string, unknown> = {};
+        mockAxios.onPost("/projects/p1/file-search").reply((config) => {
+          body = JSON.parse(config.data);
+          return [200, ancestorsNodes];
+        });
+
+        const res = await client.getProjectAgentsMd("p1");
+
+        // Direction + start path are fixed (not caller-controllable).
+        expect(body).toEqual({ scope: "ANCESTORS", from: "AGENTS.md" });
+        // Nearest-first, carrying only path/content (+ size/lastModified passthrough).
+        expect(res).toEqual([
+          { path: "foo/Project-1/AGENTS.md", content: "project", size: 7, lastModified: "2026-06-12T10:47:05Z" },
+          { path: "foo/AGENTS.md", content: "", size: 0, lastModified: "2026-06-12T10:47:06Z" },
+        ]);
+      });
+
+      it("does NOT call getProject (no enrichment round-trip)", async () => {
+        mockAxios.onPost("/projects/p1/file-search").reply(200, ancestorsNodes);
+        // No GET /projects/p1 mock registered: a call would 404 and surface here.
+        await client.getProjectAgentsMd("p1");
+        expect(mockAxios.history.get.find((r) => r.url === "/projects/p1")).toBeUndefined();
+      });
+
+      it("starts the walk from a sub-folder when 'folder' is given", async () => {
+        let body: Record<string, unknown> = {};
+        mockAxios.onPost("/projects/p1/file-search").reply((config) => {
+          body = JSON.parse(config.data);
+          return [200, ancestorsNodes];
+        });
+
+        await client.getProjectAgentsMd("p1", { folder: "/rules/pricing/" });
+
+        // Leading/trailing slashes trimmed; '/AGENTS.md' appended.
+        expect(body).toEqual({ scope: "ANCESTORS", from: "rules/pricing/AGENTS.md" });
+      });
+
+      it("threads the 'branch' option to the file-search query params", async () => {
+        let params: Record<string, unknown> | undefined;
+        mockAxios.onPost("/projects/p1/file-search").reply((config) => {
+          params = config.params;
+          return [200, ancestorsNodes];
+        });
+
+        await client.getProjectAgentsMd("p1", { branch: "release" });
+        expect(params).toMatchObject({ branch: "release" });
+      });
+
+      it("defaults missing content to an empty string", async () => {
+        mockAxios.onPost("/projects/p1/file-search").reply(200, [
+          { path: "foo/AGENTS.md", name: "AGENTS.md", type: "file", basePath: "foo" },
+        ]);
+
+        const res = await client.getProjectAgentsMd("p1");
+        expect(res).toEqual([{ path: "foo/AGENTS.md", content: "", size: undefined, lastModified: undefined }]);
+      });
+
+      it("returns an empty array when no AGENTS.md exists anywhere", async () => {
+        mockAxios.onPost("/projects/p1/file-search").reply(200, []);
+        await expect(client.getProjectAgentsMd("p1")).resolves.toEqual([]);
+      });
+    });
+
     describe("copyProjectFile / moveProjectFile", () => {
       it("copies with a {sourcePath,destinationPath} body and branch param", async () => {
         let body: unknown;

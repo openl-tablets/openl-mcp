@@ -10,9 +10,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { randomUUID } from 'node:crypto';
-import { writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -20,7 +17,7 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { OpenLClient } from './client.js';
 import { ResourceSubscriptionManager } from './resource-subscriptions.js';
 import { getAllTools, executeTool, registerAllTools } from './tool-handlers.js';
-import { sanitizeError, safeStringify } from './utils.js';
+import { sanitizeError } from './utils.js';
 import { logger } from './logger.js';
 import type * as Types from './types.js';
 import { SERVER_INFO } from './constants.js';
@@ -43,6 +40,7 @@ import {
   STATIC_RESOURCES,
   RESOURCE_TEMPLATES,
   handleCompleteRequest,
+  handleResourceRead,
 } from './resources-catalog.js';
 
 const app = express();
@@ -391,145 +389,6 @@ function createSessionServer(client: OpenLClient): {
   setupSessionHandlers(sessionServer, client, subscriptions);
 
   return { server: sessionServer, subscriptions };
-}
-
-/**
- * Handle resource read requests (shared between SSE and REST API)
- */
-async function handleResourceRead(
-  uri: string,
-  client: OpenLClient
-): Promise<{ contents: Array<{ uri: string; mimeType: string; text: string }> }> {
-  try {
-    let data: unknown;
-    let mimeType = "application/json";
-
-    // Parse URI and extract parameters
-    const uriMatch = uri.match(/^openl:\/\/([^\/]+)(?:\/(.+))?$/);
-    if (!uriMatch) {
-      throw new McpError(ErrorCode.InvalidRequest, `Invalid resource URI: ${uri}`);
-    }
-
-    const [, resourceType, path] = uriMatch;
-
-    switch (resourceType) {
-      case "repositories": {
-        data = await client.listRepositories();
-        break;
-      }
-
-      case "projects": {
-        if (!path) {
-          // openl://projects - List all projects
-          data = await client.listProjects();
-        } else {
-          // Parse projects/{projectId} or projects/{projectId}/...
-          const projectMatch = path.match(/^([^\/]+)(?:\/(.+))?$/);
-          if (!projectMatch) {
-            throw new McpError(ErrorCode.InvalidRequest, `Invalid project URI: ${uri}`);
-          }
-
-          const [, projectId, subPath] = projectMatch;
-
-          if (!subPath) {
-            // openl://projects/{projectId} - Get project details
-            data = await client.getProject(projectId);
-          } else if (subPath === "history") {
-            // openl://projects/{projectId}/history - Get project history
-            data = await client.getProjectHistory({ projectId });
-          } else if (subPath.startsWith("tables")) {
-            // Parse tables or tables/{tableId}
-            const tableMatch = subPath.match(/^tables(?:\/(.+))?$/);
-            if (!tableMatch) {
-              throw new McpError(ErrorCode.InvalidRequest, `Invalid tables URI: ${uri}`);
-            }
-
-            const [, tableId] = tableMatch;
-
-            if (!tableId) {
-              // openl://projects/{projectId}/tables - List tables
-              data = await client.listTables(projectId);
-            } else {
-              // openl://projects/{projectId}/tables/{tableId} - Get table
-              data = await client.getTable(projectId, tableId);
-            }
-          } else if (subPath.startsWith("files/")) {
-            // openl://projects/{projectId}/files/{filePath} - Download file
-            const filePath = subPath.substring(6); // Remove "files/" prefix
-            if (!filePath) {
-              throw new McpError(ErrorCode.InvalidRequest, `File path is required: ${uri}`);
-            }
-
-            const fileBuffer = await client.downloadFile(projectId, filePath);
-            mimeType = "application/octet-stream";
-
-            const tempFileName = `openl-resource-${Date.now()}-${Math.random().toString(16).slice(2)}-${filePath.split("/").pop() || "file.bin"}`;
-            const tempFilePath = join(tmpdir(), tempFileName);
-            await writeFile(tempFilePath, fileBuffer);
-
-            return {
-              contents: [
-                {
-                  uri,
-                  mimeType: "application/json",
-                  text: safeStringify({
-                    filePath,
-                    downloadedTo: tempFilePath,
-                    size: fileBuffer.length,
-                    mode: "binary-file-path",
-                  }),
-                },
-              ],
-            };
-          } else {
-            throw new McpError(ErrorCode.InvalidRequest, `Unknown project subresource: ${subPath}`);
-          }
-        }
-        break;
-      }
-
-      case "deployments": {
-        data = await client.listDeployments();
-        break;
-      }
-
-      case "status": {
-        if (!path) {
-          throw new McpError(ErrorCode.InvalidRequest, `Project ID is required: ${uri}`);
-        }
-        const statusMatch = path.match(/^([^/]+)(?:\/(.+))?$/);
-        if (!statusMatch) {
-          throw new McpError(ErrorCode.InvalidRequest, `Invalid status URI: ${uri}`);
-        }
-        const [, statusProjectId, statusBranch] = statusMatch;
-        data = await client.getProjectStatus(statusProjectId, statusBranch);
-        break;
-      }
-
-      default:
-        throw new McpError(ErrorCode.InvalidRequest, `Unknown resource type: ${resourceType}`);
-    }
-
-    return {
-      contents: [
-        {
-          uri,
-          mimeType,
-          text: safeStringify(data, 2),
-        },
-      ],
-    };
-  } catch (error: unknown) {
-    if (error instanceof McpError) {
-      throw error;
-    }
-
-    const sanitizedMessage = sanitizeError(error);
-    throw new McpError(
-      ErrorCode.InternalError,
-      `Error reading resource ${uri}: ${sanitizedMessage}`
-    );
-  }
 }
 
 /**

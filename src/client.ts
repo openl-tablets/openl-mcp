@@ -1450,6 +1450,52 @@ export class OpenLClient {
   }
 
   /**
+   * Resolve the chain of AGENTS.md files that apply to a project, per the
+   * AGENTS.md specification: start at the project directory (or a sub-folder of
+   * it when `folder` is given), walk UP through every parent directory to the
+   * repository root, and collect the AGENTS.md found at each level. Levels with
+   * no AGENTS.md are skipped (not an error); a project with none anywhere yields
+   * an empty array.
+   *
+   * Implemented as a fixed ANCESTORS-scope `file-search` (`from = <folder>/AGENTS.md`),
+   * which returns every same-named ancestor nearest-first WITH its content.
+   * Proximity is carried by the array order alone (nearest-first); callers that
+   * present these (the tool + the `openl://docs/...` resource) render them as one
+   * document via `formatAgentsDocument`.
+   *
+   * @param projectId - Project ID or name (same resolution as other project calls).
+   * @param options - `folder`: project-relative sub-folder to start the walk from
+   *                   (for "the AGENTS.md nearest the edited file"); `branch`: pin
+   *                   the project's branch.
+   * @returns AGENTS.md files ordered nearest-first; empty array when none exist.
+   */
+  async getProjectAgentsMd(
+    projectId: string,
+    options?: { folder?: string; branch?: string }
+  ): Promise<Types.AgentsFile[]> {
+    const folder = this.trimSlashes(options?.folder ?? "");
+    const from = folder ? `${folder}/AGENTS.md` : "AGENTS.md";
+
+    const nodes = await this.searchProjectFiles(
+      projectId,
+      { scope: "ANCESTORS", from },
+      options?.branch ? { branch: options.branch } : undefined
+    );
+
+    return nodes.map((node) => ({
+      path: node.path,
+      content: node.content ?? "",
+      size: node.size,
+      lastModified: node.lastModified,
+    }));
+  }
+
+  /** Strip leading and trailing '/' from a path (used to normalize the AGENTS.md `folder`). */
+  private trimSlashes(path: string): string {
+    return (path ?? "").replace(/^\/+|\/+$/g, "");
+  }
+
+  /**
    * Copy a file within a project to a new location.
    *
    * Maps to `POST /projects/{projectId}/file-copy` (body = {sourcePath,
