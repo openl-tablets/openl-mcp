@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from "@jest/globals";
-import { z, createProjectTableSchema, appendTableSchema } from "../src/schemas.js";
+import { z, createProjectTableSchema, appendTableSchema, APPEND_TABLE_TYPES, EDITABLE_TABLE_TYPES } from "../src/schemas.js";
 
 type JsonSchemaObject = {
   properties: Record<string, { oneOf?: BranchSchema[] }>;
@@ -116,15 +116,15 @@ describe("appendTableSchema.appendData union", () => {
     return json.properties.appendData.oneOf ?? [];
   }
 
-  it("covers all 10 appendable table types (incl. Data/Test/SimpleLookup/SmartLookup)", () => {
+  it("covers all 11 appendable table types (incl. full Spreadsheet/Data/Test/SimpleLookup/SmartLookup)", () => {
     const types = appendBranches().map((b) => b.properties.tableType.const ?? b.properties.tableType.enum?.[0]);
     expect(types).toEqual(
       expect.arrayContaining([
-        "Datatype", "SimpleRules", "SmartRules", "SimpleSpreadsheet", "Vocabulary",
+        "Datatype", "SimpleRules", "SmartRules", "SimpleSpreadsheet", "Spreadsheet", "Vocabulary",
         "SimpleLookup", "SmartLookup", "Data", "Test", "RawSource",
       ])
     );
-    expect(appendBranches().length).toBe(10);
+    expect(appendBranches().length).toBe(11);
   });
 
   it("Test/Data append branches use rows:[{values}]", () => {
@@ -134,5 +134,36 @@ describe("appendTableSchema.appendData union", () => {
       const rowsItem = (b!.properties as Record<string, { items?: BranchSchema }>).rows.items!;
       expect(rowsItem.properties).toHaveProperty("values");
     }
+  });
+
+  it("Spreadsheet append branch requires cells (rows stays optional)", () => {
+    const b = appendBranches().find((x) => x.properties.tableType.const === "Spreadsheet");
+    expect(b).toBeDefined();
+    expect(b!.required).toEqual(expect.arrayContaining(["tableType", "cells"]));
+    expect(b!.required).not.toContain("rows");
+  });
+});
+
+// Pins the lists derived from the unions by discriminatorValues() (schemas.ts):
+// if a future Zod-internal change makes the derivation degrade to [] / [undefined],
+// the load-time guard throws and these tests fail loudly instead of the lists
+// silently going stale (which would break tableType case-normalization + hints).
+describe("derived tableType constants", () => {
+  it("APPEND_TABLE_TYPES matches the appendData union discriminators (incl. full Spreadsheet)", () => {
+    expect([...APPEND_TABLE_TYPES].sort()).toEqual(
+      [
+        "Data", "Datatype", "RawSource", "SimpleLookup", "SimpleRules",
+        "SimpleSpreadsheet", "SmartLookup", "SmartRules", "Spreadsheet", "Test", "Vocabulary",
+      ].sort()
+    );
+  });
+
+  it("EDITABLE_TABLE_TYPES matches the editable-view union discriminators (incl. Spreadsheet)", () => {
+    expect([...EDITABLE_TABLE_TYPES].sort()).toEqual(
+      [
+        "Data", "Datatype", "RawSource", "SimpleLookup", "SimpleRules",
+        "SimpleSpreadsheet", "SmartLookup", "SmartRules", "Spreadsheet", "Test", "Vocabulary",
+      ].sort()
+    );
   });
 });

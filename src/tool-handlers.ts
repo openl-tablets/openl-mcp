@@ -18,6 +18,7 @@ import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sd
 
 import { OpenLClient } from "./client.js";
 import * as schemas from "./schemas.js";
+import type { ZodError, ZodType } from "zod";
 import { formatResponse, paginateResults, formatAgentsDocument } from "./formatters.js";
 import { validateResponseFormat, validatePagination } from "./validators.js";
 import { logger } from "./logger.js";
@@ -128,7 +129,8 @@ export async function executeTool(
   }
 
   try {
-    return await tool.handler(args, client, extra);
+    const callArgs = validateToolArgs(name, args);
+    return await tool.handler(callArgs, client, extra);
   } catch (error: unknown) {
     throw handleToolError(error, name, args);
   }
@@ -1665,7 +1667,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
     title: "Append Rows/Fields to Table",
     version: "1.0.0",
     description:
-      "Add new rows/fields to an existing table (additions only). Payload by type: Datatype→fields, SimpleRules/SmartRules→rules, SimpleSpreadsheet→steps, Vocabulary→values, RawSource→rows. For RawSource, each row must cover ALL columns of the table (one cell object per column; rows with a wrong cell count are rejected before anything is written). For modifying, deleting, or reordering use update_table instead. IMPORTANT: an edit that relocates the table (it had no room to grow in place) CHANGES its location-derived id; the response always returns the table's CURRENT id as 'tableId' (plus previousTableId when it changed) — use it for all subsequent calls. Note: the studio does not auto-compile after an edit (it only resets the previous compile status); this tool reads the table back after appending to trigger the recompile, so a subsequent openl_project_status reflects the change.",
+      "Add new rows/fields to an existing table (additions only). Payload by type: Datatype→fields, SimpleRules/SmartRules→rules, SimpleSpreadsheet→steps, Spreadsheet→rows+cells, Vocabulary→values, RawSource→rows. For RawSource, each row must cover ALL columns of the table (one cell object per column; rows with a wrong cell count are rejected before anything is written). For modifying, deleting, or reordering use update_table instead. IMPORTANT: an edit that relocates the table (it had no room to grow in place) CHANGES its location-derived id; the response always returns the table's CURRENT id as 'tableId' (plus previousTableId when it changed) — use it for all subsequent calls. Note: the studio does not auto-compile after an edit (it only resets the previous compile status); this tool reads the table back after appending to trigger the recompile, so a subsequent openl_project_status reflects the change.",
     inputSchema: schemas.z.toJSONSchema(schemas.appendTableSchema) as Record<string, unknown>,
     annotations: {
       idempotentHint: true,
@@ -1682,6 +1684,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
           steps?: Array<any>;
           values?: Array<any>;
           rows?: Array<Array<Record<string, unknown>>>;
+          cells?: Array<Array<{ value?: any }>>;
         };
         response_format?: "json" | "markdown";
       };
@@ -1698,6 +1701,21 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
       const projectId = typedArgs.projectId;
       const requestedId = typedArgs.tableId;
       const notes: string[] = [];
+
+      // Spreadsheet append: when row headers are given they must align 1:1 with
+      // the cell rows (one 'cells' entry per 'rows' entry); a mismatch otherwise
+      // reaches the backend as an opaque 400. (cells presence is enforced by the schema.)
+      if (typedArgs.appendData.tableType === "Spreadsheet") {
+        const sheetRows = (typedArgs.appendData as { rows?: unknown }).rows;
+        const sheetCells = (typedArgs.appendData as { cells?: unknown }).cells;
+        if (Array.isArray(sheetRows) && Array.isArray(sheetCells) && sheetRows.length !== sheetCells.length) {
+          throw new McpError(
+            ErrorCode.InvalidParams,
+            `Cannot append to Spreadsheet table '${requestedId}': 'rows' has ${sheetRows.length} row header(s) but 'cells' has ${sheetCells.length} cell row(s). ` +
+              `Provide one 'cells' entry (an array of { value } across the columns) per 'rows' entry, or omit 'rows' to append cell rows only.`,
+          );
+        }
+      }
 
       // Probe the table before editing. This (a) fails fast on a stale id —
       // resolving it transparently when the rename is known (EPBDS-16084),
@@ -1802,6 +1820,10 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
         itemType = "value(s)";
       } else if ("rows" in typedArgs.appendData && Array.isArray(typedArgs.appendData.rows)) {
         itemCount = typedArgs.appendData.rows.length;
+        itemType = "row(s)";
+      } else if ("cells" in typedArgs.appendData && Array.isArray(typedArgs.appendData.cells)) {
+        // Spreadsheet append with only cells (one inner array per appended row).
+        itemCount = typedArgs.appendData.cells.length;
         itemType = "row(s)";
       }
 
@@ -3704,17 +3726,6 @@ function isValidBase64(value: string): boolean {
 }
 
 /**
- * Canonical, CASE-SENSITIVE EditableTableView `tableType` discriminator values —
- * the keys of the backend's Jackson polymorphic mapping. A wrong-cased value
- * (e.g. "datatype" instead of "Datatype") fails deserialization with an opaque
- * 400 "Failed to read request" with no hint about the real cause.
- */
-const EDITABLE_TABLE_TYPES = [
-  "Datatype", "Vocabulary", "Spreadsheet", "SimpleSpreadsheet", "SimpleRules",
-  "SmartRules", "SmartLookup", "SimpleLookup", "Data", "Test", "RawSource",
-] as const;
-
-/**
  * Validate and case-normalize the `tableType` discriminator of an EditableTableView
  * payload before it reaches the backend. Returns the view with the canonical token
  * (e.g. "datatype" -> "Datatype"); throws a clear, actionable McpError — instead of
@@ -3740,17 +3751,144 @@ function normalizeEditableTableType(view: Types.EditableTableView, argName: stri
   if (typeof raw !== "string" || raw.trim() === "") {
     throw new McpError(
       ErrorCode.InvalidParams,
-      `${argName}.tableType is required and is a CASE-SENSITIVE discriminator. Use exactly one of: ${EDITABLE_TABLE_TYPES.join(", ")}.`
+      `${argName}.tableType is required and is a CASE-SENSITIVE discriminator. Use exactly one of: ${schemas.EDITABLE_TABLE_TYPES.join(", ")}.`
     );
   }
-  const canonical = EDITABLE_TABLE_TYPES.find((t) => t.toLowerCase() === raw.trim().toLowerCase());
+  const canonical = schemas.EDITABLE_TABLE_TYPES.find((t) => t.toLowerCase() === raw.trim().toLowerCase());
   if (!canonical) {
     throw new McpError(
       ErrorCode.InvalidParams,
-      `${argName}.tableType "${raw}" is not a valid table type. Use exactly one of (CASE-SENSITIVE): ${EDITABLE_TABLE_TYPES.join(", ")}.`
+      `${argName}.tableType "${raw}" is not a valid table type. Use exactly one of (CASE-SENSITIVE): ${schemas.EDITABLE_TABLE_TYPES.join(", ")}.`
     );
   }
-  return canonical === raw ? view : { ...view, tableType: canonical };
+  return canonical === raw ? view : { ...view, tableType: canonical as Types.EditableTableView["tableType"] };
+}
+
+// =============================================================================
+// Request validation for structured-payload tools (EPBDS-16110 / EPBDS-16112)
+//
+// The Zod schemas in schemas.ts were only ever used to GENERATE each tool's
+// advertised JSON Schema (z.toJSONSchema) — they were never enforced on the way
+// IN. So the three tools that forward a nested object straight to the backend
+// (append/update/create table) let malformed payloads reach OpenL Studio, which
+// answers with an opaque 400 "Failed to read request": a missing/miscased
+// `tableType` discriminator, the wrong per-type shape, or the whole payload sent
+// as a JSON *string* instead of an object. We now JSON-parse a stringified
+// payload, case-normalize its `tableType`, and run the tool's schema first.
+//
+// Validation depth differs by tool: append (appendData) and create (table) parse
+// against a discriminated union, so both a wrong/miscased tableType AND a wrong
+// per-type shape are caught here. update's `view` is deliberately a permissive
+// z.record (it must accept a full structure round-tripped from get_table), so for
+// update only the JSON-string coercion and top-level shape are enforced here — its
+// tableType is validated by the handler's normalizeEditableTableType, and a wrong
+// per-type shape is still left to the backend. Other tools extract scalar args and
+// build the request themselves, so they keep their existing lightweight checks.
+// =============================================================================
+
+interface ToolValidationSpec {
+  /** Schema the whole arguments object is validated against. */
+  schema: ZodType;
+  /** Top-level argument holding the nested object payload (e.g. "appendData"). */
+  payloadArg: string;
+  /** Valid tableType discriminators for this tool — used to enrich errors. */
+  tableTypes: readonly string[];
+}
+
+/**
+ * Tools whose arguments are validated (and lightly coerced) before the handler
+ * runs. Keyed by tool name; only the structured-payload table tools are listed.
+ */
+const TOOL_VALIDATION: Record<string, ToolValidationSpec> = {
+  openl_append_table: { schema: schemas.appendTableSchema, payloadArg: "appendData", tableTypes: schemas.APPEND_TABLE_TYPES },
+  openl_update_table: { schema: schemas.updateTableSchema, payloadArg: "view", tableTypes: schemas.EDITABLE_TABLE_TYPES },
+  openl_create_project_table: { schema: schemas.createProjectTableSchema, payloadArg: "table", tableTypes: schemas.EDITABLE_TABLE_TYPES },
+};
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Case-normalize a payload's `tableType` to its canonical token (e.g.
+ * "datatype" -> "Datatype") so the CASE-SENSITIVE discriminated union accepts
+ * it — preserving the forgiveness of normalizeEditableTableType. An unknown
+ * value is left untouched for the schema to reject (with a listed-options hint).
+ */
+function normalizeTableTypeCase(payload: unknown, validTypes: readonly string[]): unknown {
+  if (!isPlainObject(payload)) return payload;
+  const tableType = payload.tableType;
+  if (typeof tableType !== "string") return payload;
+  const key = tableType.trim().toLowerCase();
+  const canonical = validTypes.find((t) => t.toLowerCase() === key);
+  return canonical && canonical !== tableType ? { ...payload, tableType: canonical } : payload;
+}
+
+/**
+ * LLM clients frequently send the nested payload (appendData/view/table) as a
+ * JSON *string* instead of an object; axios would then POST a bare JSON string
+ * and the backend rejects it with an opaque 400. Parse such a string back into a
+ * value so validation (and the handler) see the real object. A string that LOOKS
+ * like JSON but fails to parse is reported precisely; any other string is left
+ * for the schema to reject ("expected object, received string").
+ */
+function coercePayloadJson(value: unknown, payloadArg: string, toolName: string): unknown {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (!/^[[{]/.test(trimmed)) return value;
+  try {
+    return JSON.parse(trimmed);
+  } catch (err) {
+    throw new McpError(
+      ErrorCode.InvalidParams,
+      `${toolName}: '${payloadArg}' was provided as a string that is not valid JSON ` +
+        `(${err instanceof Error ? err.message : String(err)}). Pass '${payloadArg}' as a JSON object, not a string.`,
+    );
+  }
+}
+
+/** Build an actionable message from a Zod validation failure. */
+function formatValidationError(spec: ToolValidationSpec, toolName: string, error: ZodError): string {
+  let message = `Invalid arguments for ${toolName}:\n${schemas.z.prettifyError(error)}`;
+  // A discriminated-union failure on `<payloadArg>.tableType` surfaces as Zod's
+  // terse "Invalid input"; spell out the valid (case-sensitive) discriminators.
+  const tableTypeIssue = error.issues.some(
+    (issue) => issue.path[0] === spec.payloadArg && issue.path[1] === "tableType",
+  );
+  if (tableTypeIssue) {
+    message +=
+      `\n\n${spec.payloadArg}.tableType is required and is a CASE-SENSITIVE discriminator. ` +
+      `Use exactly one of: ${spec.tableTypes.join(", ")}. Each table type has its own shape — ` +
+      `tip: call openl_get_table() on an existing table of the same type and copy its structure.`;
+  }
+  return message;
+}
+
+/**
+ * Validate and lightly coerce a tool's arguments before its handler runs.
+ * Returns the (possibly coerced) arguments to forward to the handler; throws a
+ * descriptive McpError(InvalidParams) on a schema violation. Tools without a
+ * validation spec are returned unchanged.
+ */
+function validateToolArgs(name: string, args: unknown): unknown {
+  const spec = TOOL_VALIDATION[name];
+  if (!spec) return args;
+
+  let callArgs: unknown = args;
+  if (isPlainObject(args)) {
+    const original = args[spec.payloadArg];
+    let payload = coercePayloadJson(original, spec.payloadArg, name);
+    payload = normalizeTableTypeCase(payload, spec.tableTypes);
+    if (payload !== original) {
+      callArgs = { ...args, [spec.payloadArg]: payload };
+    }
+  }
+
+  const result = spec.schema.safeParse(callArgs);
+  if (!result.success) {
+    throw new McpError(ErrorCode.InvalidParams, formatValidationError(spec, name, result.error));
+  }
+  return callArgs;
 }
 
 function handleToolError(error: unknown, toolName: string, toolArgs?: unknown): McpError {

@@ -289,6 +289,202 @@ describe("Tool Handler Integration Tests", () => {
         }, client)
       ).rejects.toThrow(/tableType is required/);
     });
+
+    // --- Request validation for the structured-payload table tools (EPBDS-16110/16112) ---
+
+    it("openl_append_table rejects appendData with no tableType discriminator (no request sent)", async () => {
+      let called = false;
+      mockAxios.onPost(/\/lines/).reply(() => {
+        called = true;
+        return [200];
+      });
+
+      // Agent bug #1: a payload that omits the required tableType discriminator.
+      await expect(
+        executeTool("openl_append_table", {
+          projectId: "p1",
+          tableId: "t1",
+          appendData: { rules: [{ "Commission Type": "UDI", "Partner Code": "CIDP_CL_FB" }] },
+        }, client)
+      ).rejects.toThrow(/tableType is required.*CASE-SENSITIVE/s);
+      expect(called).toBe(false);
+    });
+
+    it("openl_append_table accepts appendData sent as a JSON string and forwards a real object", async () => {
+      mockAxios.onGet(/\/tables\/t1$/).reply(200, {
+        id: "t1", name: "MyData", tableType: "Data", kind: "Data", file: "Rules.xlsx", pos: "A1",
+      });
+      let postBody: Record<string, any> = {};
+      mockAxios.onPost(/\/tables\/t1\/lines/).reply((config) => {
+        postBody = JSON.parse(config.data);
+        return [200];
+      });
+
+      // Agent bug #2: the whole payload arrives as a JSON *string*, not an object.
+      const result = await executeTool("openl_append_table", {
+        projectId: "p1",
+        tableId: "t1",
+        appendData: '{"tableType":"Data","rows":[{"values":[2035,"01/01/2035",1000]}]}',
+      }, client);
+
+      expect(result.content[0].text).toContain("Successfully appended");
+      // The stringified payload reached the backend as a parsed object, not a string literal.
+      expect(postBody.tableType).toBe("Data");
+      expect(Array.isArray(postBody.rows)).toBe(true);
+    });
+
+    it("openl_append_table reports a precise error when appendData is a malformed JSON string (no request sent)", async () => {
+      let called = false;
+      mockAxios.onPost(/\/lines/).reply(() => {
+        called = true;
+        return [200];
+      });
+
+      await expect(
+        executeTool("openl_append_table", {
+          projectId: "p1",
+          tableId: "t1",
+          appendData: '{"tableType":"Data","rows":[',
+        }, client)
+      ).rejects.toThrow(/not valid JSON/);
+      expect(called).toBe(false);
+    });
+
+    it("openl_append_table rejects a payload whose shape does not match its tableType (no request sent)", async () => {
+      let called = false;
+      mockAxios.onPost(/\/lines/).reply(() => {
+        called = true;
+        return [200];
+      });
+
+      // Data appends use rows:[{values}], not rules — the union must catch this.
+      await expect(
+        executeTool("openl_append_table", {
+          projectId: "p1",
+          tableId: "t1",
+          appendData: { tableType: "Data", rules: [{ a: 1 }] },
+        }, client)
+      ).rejects.toThrow(/rows/);
+      expect(called).toBe(false);
+    });
+
+    it("openl_append_table normalizes a miscased tableType before sending", async () => {
+      mockAxios.onGet(/\/tables\/t1$/).reply(200, {
+        id: "t1", name: "MyData", tableType: "Data", kind: "Data", file: "Rules.xlsx", pos: "A1",
+      });
+      let postBody: Record<string, any> = {};
+      mockAxios.onPost(/\/tables\/t1\/lines/).reply((config) => {
+        postBody = JSON.parse(config.data);
+        return [200];
+      });
+
+      await executeTool("openl_append_table", {
+        projectId: "p1",
+        tableId: "t1",
+        appendData: { tableType: "data", rows: [{ values: [1, 2, 3] }] },
+      }, client);
+
+      expect(postBody.tableType).toBe("Data");
+    });
+
+    it("openl_update_table accepts view sent as a JSON string and forwards a real object", async () => {
+      let putBody: Record<string, any> = {};
+      mockAxios.onPut(/\/tables\/t1$/).reply((config) => {
+        putBody = JSON.parse(config.data);
+        return [204];
+      });
+      mockAxios.onGet(/\/tables\/t1$/).reply(200, {
+        id: "t1", name: "calc", tableType: "SimpleRules", kind: "Rules",
+      });
+
+      const view = { id: "t1", name: "calc", tableType: "SimpleRules", kind: "Rules", rules: [{ x: 1 }] };
+      const result = await executeTool("openl_update_table", {
+        projectId: "p1",
+        tableId: "t1",
+        view: JSON.stringify(view),
+      }, client);
+
+      expect(result.content[0].text).toContain("Successfully updated table");
+      expect(putBody.tableType).toBe("SimpleRules");
+    });
+
+    it("openl_update_table rejects a view that is a plain (non-JSON) string (no request sent)", async () => {
+      let called = false;
+      mockAxios.onPut(/\/tables\//).reply(() => {
+        called = true;
+        return [204];
+      });
+
+      await expect(
+        executeTool("openl_update_table", {
+          projectId: "p1",
+          tableId: "t1",
+          view: "SimpleRules",
+        }, client)
+      ).rejects.toThrow(/Invalid arguments for openl_update_table/);
+      expect(called).toBe(false);
+    });
+
+    it("openl_append_table rejects a Spreadsheet append without cells (no request sent)", async () => {
+      let called = false;
+      mockAxios.onPost(/\/lines/).reply(() => {
+        called = true;
+        return [200];
+      });
+
+      await expect(
+        executeTool("openl_append_table", {
+          projectId: "p1",
+          tableId: "t1",
+          appendData: { tableType: "Spreadsheet", rows: [{ name: "Step1", type: "Double" }] },
+        }, client)
+      ).rejects.toThrow(/cells/);
+      expect(called).toBe(false);
+    });
+
+    it("openl_append_table rejects a Spreadsheet append whose rows and cells lengths differ (no request sent)", async () => {
+      let called = false;
+      mockAxios.onPost(/\/lines/).reply(() => {
+        called = true;
+        return [200];
+      });
+
+      // 2 row headers but only 1 cell row — caught before any backend probe/POST.
+      await expect(
+        executeTool("openl_append_table", {
+          projectId: "p1",
+          tableId: "t1",
+          appendData: {
+            tableType: "Spreadsheet",
+            rows: [{ name: "Step1" }, { name: "Step2" }],
+            cells: [[{ value: "=1+1" }]],
+          },
+        }, client)
+      ).rejects.toThrow(/Cannot append to Spreadsheet table/);
+      expect(called).toBe(false);
+    });
+
+    it("openl_append_table appends to a Spreadsheet via cells and reports the row count", async () => {
+      mockAxios.onGet(/\/tables\/sheet1$/).reply(200, {
+        id: "sheet1", name: "Calc", tableType: "Spreadsheet", kind: "Spreadsheet", file: "Main.xlsx", pos: "A1",
+      });
+      let postBody: Record<string, any> = {};
+      mockAxios.onPost(/\/tables\/sheet1\/lines/).reply((config) => {
+        postBody = JSON.parse(config.data);
+        return [200];
+      });
+
+      const result = await executeTool("openl_append_table", {
+        projectId: "p1",
+        tableId: "sheet1",
+        appendData: { tableType: "Spreadsheet", cells: [[{ value: "=1+1" }], [{ value: "=2+2" }]] },
+      }, client);
+
+      // cells-only append (no rows): item count comes from cells.length.
+      expect(result.content[0].text).toContain("Successfully appended 2 row(s)");
+      expect(postBody.tableType).toBe("Spreadsheet");
+      expect(Array.isArray(postBody.cells)).toBe(true);
+    });
   });
 
   describe("File Tools", () => {

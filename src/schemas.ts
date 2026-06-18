@@ -158,6 +158,19 @@ export const appendTableSchema = z.object({
         value: z.any().describe("The step's formula or value, e.g. '= app.annualIncome / 12'. NOT 'formula'."),
       })).describe("Array of spreadsheet steps to append: [{ name, type?, value }]."),
     }),
+    // SpreadsheetAppend — append rows to a FULL (multi-column) Spreadsheet: row
+    // headers in `rows` plus the matching grid of cell values in `cells` (one inner
+    // array per appended row). Use SimpleSpreadsheet for the single-column form.
+    z.object({
+      tableType: z.literal("Spreadsheet"),
+      rows: z.array(z.object({
+        name: z.string().optional().describe("Row name (referenced elsewhere as $RowName)."),
+        type: z.string().optional().describe("Row result type, e.g. 'Double', 'String'."),
+      })).optional().describe("Optional spreadsheet row headers to append: [{ name, type? }] — when provided, one per appended row (must align 1:1 with 'cells')."),
+      cells: z.array(z.array(z.object({ value: z.any() }))).min(1).describe(
+        "Required. Cells to append as a non-empty 2D array — one inner array (the row's cells across the columns) per appended row: [[{ value }]]. The formula/value goes in each cell's 'value'."
+      ),
+    }),
     // SmartRulesAppend
     z.object({
       tableType: z.literal("SmartRules"),
@@ -193,7 +206,7 @@ export const appendTableSchema = z.object({
       tableType: z.literal("RawSource"),
       rows: z.array(z.array(z.record(z.string(), z.unknown()))).describe("Array of rows to append; each row is an array of cell objects (e.g. { value: string, colspan?: number } or { covered?: boolean }). Each row must cover ALL columns of the table (read it back with openl_get_table(raw=true) to see the width) — use { value: \"\" } for intentionally blank cells; a row narrower than the table is rejected before anything is written."),
     }),
-  ]).describe("Data structure to append to the table. Structure depends on tableType: Datatype uses 'fields'; SimpleRules/SmartRules use 'rules'; SimpleLookup/SmartLookup use 'rows' (array of maps); Data/Test use 'rows' (array of { values }); SimpleSpreadsheet uses 'steps'; Vocabulary uses 'values'; RawSource uses 'rows' (array of cell-arrays)."),
+  ]).describe("Data structure to append to the table. Structure depends on tableType: Datatype uses 'fields'; SimpleRules/SmartRules use 'rules'; SimpleLookup/SmartLookup use 'rows' (array of maps); Data/Test use 'rows' (array of { values }); SimpleSpreadsheet uses 'steps'; Spreadsheet uses 'rows' (row headers) + 'cells' (2D cell array); Vocabulary uses 'values'; RawSource uses 'rows' (array of cell-arrays)."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
@@ -485,6 +498,41 @@ export const createProjectTableSchema = z.object({
   table: editableTableViewSchema,
   response_format: ResponseFormat.optional(),
 }).strict();
+
+// -----------------------------------------------------------------------------
+// Canonical, CASE-SENSITIVE tableType discriminators, derived from the
+// discriminated unions above so the lists cannot drift from the schemas they
+// describe. Both unions now cover the same 11 tableType values (append gained the
+// full multi-column Spreadsheet alongside SimpleSpreadsheet). The `options[].shape.tableType`
+// access mirrors what z.discriminatedUnion exposes; discriminatorValues asserts
+// it extracted non-empty strings, so a future Zod-internal change throws here at
+// load time rather than silently degrading to `[]`/`[undefined, …]`. The
+// "derived tableType constants" test in schemas.test.ts pins the expected values.
+// -----------------------------------------------------------------------------
+interface DiscriminatedUnionLike {
+  options: ReadonlyArray<{ shape: { tableType: { value: string } } }>;
+}
+
+function discriminatorValues(union: DiscriminatedUnionLike): readonly string[] {
+  const values = union.options.map((option) => option.shape.tableType.value);
+  if (values.length === 0 || values.some((v) => typeof v !== "string" || v.length === 0)) {
+    throw new Error(
+      `discriminatorValues: failed to extract tableType discriminators (got ${JSON.stringify(values)}). ` +
+        `The Zod discriminated-union internal shape may have changed.`
+    );
+  }
+  return values;
+}
+
+/** Append-able tableType discriminators (from appendTableSchema.appendData). */
+export const APPEND_TABLE_TYPES: readonly string[] = discriminatorValues(
+  appendTableSchema.shape.appendData as unknown as DiscriminatedUnionLike,
+);
+
+/** EditableTableView tableType discriminators (from createProjectTableSchema.table). */
+export const EDITABLE_TABLE_TYPES: readonly string[] = discriminatorValues(
+  editableTableViewSchema as unknown as DiscriminatedUnionLike,
+);
 
 // =============================================================================
 // Phase 2: Testing & Validation Schemas
