@@ -17,6 +17,12 @@ The AGENTS.md file contains:
 - **[Setup Guide](docs/setup/mcp-connection-guide.md)** - Connect Claude Desktop to MCP server
 - **[Quick Start](docs/getting-started/quick-start.md)** - Get started quickly
 
+## Code Quality
+
+- Keep the code clean at all times: no dead code (unused files, exports, functions, variables, or unreachable branches) and no unused dependencies. Remove them as soon as they become orphaned.
+- Add a third-party library only when it brings significant benefit — that is, it substantially reduces the code we would otherwise write and maintain. Prefer reimplementing small or simple functionality over taking on a dependency.
+- When a library is used, keep it on the latest version that is practical for the project.
+
 ## Git Commits
 
 - Commit every completed piece of work.

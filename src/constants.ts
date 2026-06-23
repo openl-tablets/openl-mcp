@@ -45,19 +45,6 @@ export const HEADERS = {
 } as const;
 
 /**
- * Tool categories for metadata organization
- */
-export const TOOL_CATEGORIES = {
-  SYSTEM: "system",
-  REPOSITORY: "repository",
-  PROJECT: "project",
-  RULES: "rules",
-  TRACE: "trace",
-  VERSION_CONTROL: "version-control",
-  DEPLOYMENT: "deployment",
-} as const;
-
-/**
  * Server information
  */
 export const SERVER_INFO = {
