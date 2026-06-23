@@ -19,6 +19,10 @@ The AGENTS.md file contains:
 
 ## Git Commits
 
+- Commit every completed piece of work.
+- Write a short, meaningful subject that answers *why* the change was made, not *what* changed — the "what" is already visible in the diff and history.
+- The subject should explain the benefit to a user or a developer.
+- Add an extended body only when the subject alone cannot convey the meaning gracefully.
 - Do NOT add a `Co-Authored-By: Claude` trailer (or any co-author trailer) to commit messages.
 
 ## Pull Requests
