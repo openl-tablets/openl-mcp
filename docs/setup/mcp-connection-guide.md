@@ -69,8 +69,8 @@ Cursor supports direct HTTP connection to MCP servers (no proxy needed).
 {
   "mcpServers": {
     "openl-mcp-server": {
-      "url": "https://<your-openl-server>/mcp/sse",
-      "transport": "sse",
+      "url": "https://<your-openl-server>/mcp",
+      "transport": "streamablehttp",
       "headers": {
         "Authorization": "Token <your-pat-token>"
       }
@@ -95,8 +95,8 @@ Add the `mcpServers` section to the file.
 {
   "mcpServers": {
     "openl-mcp-server": {
-      "url": "http://localhost:3000/mcp/sse",
-      "transport": "sse",
+      "url": "http://localhost:3000/mcp",
+      "transport": "streamablehttp",
       "headers": {
         "Authorization": "Token <your-pat-token>"
       }
@@ -107,13 +107,13 @@ Add the `mcpServers` section to the file.
 
 For `compose.studio.yaml` (single-user mode), omit the `headers` section.
 
-For remote Docker, use HTTPS to protect your token in transit (e.g., `https://<docker-host>/mcp/sse` with TLS termination via a reverse proxy). Only use plain `http://localhost` for true localhost connections on the same machine.
+For remote Docker, use HTTPS to protect your token in transit (e.g., `https://<docker-host>/mcp` with TLS termination via a reverse proxy). Only use plain `http://localhost` for true localhost connections on the same machine.
 
-### Transport Options
+### Transport
 
-Cursor supports two transports:
-- `"transport": "sse"` — Server-Sent Events (GET requests), standard for most cases
-- `"transport": "streamablehttp"` — Streamable HTTP (POST requests), useful for certain proxy/firewall configurations
+The server speaks the MCP **Streamable HTTP** transport (MCP spec 2025-11-25)
+at a single `/mcp` endpoint, so use `"transport": "streamablehttp"`. The legacy
+HTTP+SSE transport is no longer supported.
 
 After configuration, **restart Cursor** completely.
 
@@ -144,7 +144,7 @@ Create the file if it doesn't exist.
       "command": "<path-to-node>",
       "args": [
         "<path-to-mcp-remote>",
-        "https://<your-openl-server>/mcp/sse",
+        "https://<your-openl-server>/mcp",
         "--header",
         "Authorization: Token <your-pat-token>"
       ]
@@ -162,7 +162,7 @@ Create the file if it doesn't exist.
       "command": "<path-to-node>",
       "args": [
         "<path-to-mcp-remote>",
-        "http://localhost:3000/mcp/sse",
+        "http://localhost:3000/mcp",
         "--header",
         "Authorization: Token <your-pat-token>"
       ]
@@ -173,7 +173,7 @@ Create the file if it doesn't exist.
 
 For `compose.studio.yaml` (single-user mode), omit `"--header"` and `"Authorization: Token ..."` from args.
 
-For remote Docker, use HTTPS to protect your token in transit (e.g., `https://<docker-host>/mcp/sse` with TLS termination via a reverse proxy). Only use plain `http://localhost` for true localhost connections on the same machine.
+For remote Docker, use HTTPS to protect your token in transit (e.g., `https://<docker-host>/mcp` with TLS termination via a reverse proxy). Only use plain `http://localhost` for true localhost connections on the same machine.
 
 **Replace paths:**
 - `<path-to-node>` → output of `which node`
@@ -201,7 +201,7 @@ Open `settings.json` (`Cmd/Ctrl + Shift + P` → `Preferences: Open User Setting
   "github.copilot.chat.mcp.servers": {
     "openl-mcp-server": {
       "type": "http",
-      "url": "https://<your-openl-server>/mcp/sse",
+      "url": "https://<your-openl-server>/mcp",
       "headers": {
         "Authorization": "Token <your-pat-token>"
       }
@@ -216,7 +216,7 @@ Open `settings.json` (`Cmd/Ctrl + Shift + P` → `Preferences: Open User Setting
   "github.copilot.chat.mcp.servers": {
     "openl-mcp-server": {
       "type": "http",
-      "url": "http://localhost:3000/mcp/sse",
+      "url": "http://localhost:3000/mcp",
       "headers": {
         "Authorization": "Token <your-pat-token>"
       }
@@ -228,7 +228,7 @@ Open `settings.json` (`Cmd/Ctrl + Shift + P` → `Preferences: Open User Setting
 **Last resort:** if your client does not support custom headers, you can pass the token via query parameter. **This is less secure** — query parameters may be logged, cached, or exposed in server logs. Always prefer the `Authorization` header above.
 
 ```json
-"url": "http://localhost:3000/mcp/sse?OPENL_PERSONAL_ACCESS_TOKEN=<your-pat-token>"
+"url": "http://localhost:3000/mcp?OPENL_PERSONAL_ACCESS_TOKEN=<your-pat-token>"
 ```
 
 After configuration, reload VS Code (`Cmd/Ctrl + Shift + P` → `Developer: Reload Window`).
@@ -335,7 +335,7 @@ In `mcp.json`, replace the image name with `openl-mcp:local` and remove `--pull=
 1. **Check paths** (Claude Desktop): run `which node` and `which mcp-remote`, ensure paths in config match exactly
 2. **Check JSON syntax**: no trailing commas, valid JSON
 3. **Check token**: copied completely, not expired, not revoked
-4. **Network**: `curl https://<your-openl-server>/mcp/sse` should respond (not "connection refused")
+4. **Network**: `curl https://<your-openl-server>/mcp` should respond (not "connection refused")
 5. **Restart**: completely close and reopen the AI client
 
 ### 401 Unauthorized

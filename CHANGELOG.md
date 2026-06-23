@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The HTTP server now serves MCP over the Streamable HTTP transport (MCP spec 2025-11-25) at a single `/mcp` endpoint (`POST` to send messages, `GET` for the server stream, `DELETE` to end a session), replacing the previous `/mcp/sse` + `/mcp/messages` endpoints. Update client configs to `"url": ".../mcp"` with `"transport": "streamablehttp"`.
+
+### Removed
+
+- Removed the legacy HTTP+SSE transport (`GET /mcp/sse`, `POST /mcp/messages`) and the nginx-proxy path aliases (`/sse`, `/messages`). Only Streamable HTTP at `/mcp` is supported.
+- Removed the standalone REST tool endpoints (`GET /tools`, `GET /tools/:name`, `POST /tools/:name/execute`, `POST /execute`); use the MCP protocol over `/mcp` instead. The unauthenticated `GET /health` liveness probe is retained.
+
 ### Fixed
 
 - A global install (`npm i -g openl-mcp-server`) now actually runs. The binary is exposed as a `bin` symlink, and the entry-point check only ran `main()` when `process.argv[1]` ended in `index.js` — which a symlink launch (global install, npm `.bin` shim) does not — so `openl-mcp …` silently did nothing. The check now compares resolved realpaths, so symlinked launches start correctly while importing the module (tests) still doesn't.
@@ -21,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- CLI tool names drop the `openl_` prefix: run `openl-mcp <url> list_repositories` (not `openl_list_repositories`, which the CLI no longer accepts). The prefix is now a protocol-boundary concern only — the internal tool registry, the CLI, and the REST API all use bare names, and the `openl_` prefix is added/stripped solely on the MCP `tools/list` / `tools/call` wire, where it namespaces this server's tools against others'.
+- CLI tool names drop the `openl_` prefix: run `openl-mcp <url> list_repositories` (not `openl_list_repositories`, which the CLI no longer accepts). The prefix is now a protocol-boundary concern only — the internal tool registry and the CLI both use bare names, and the `openl_` prefix is added/stripped solely on the MCP `tools/list` / `tools/call` wire, where it namespaces this server's tools against others'.
 - The `openl-mcp` binary now accepts the OpenL Studio base URL as a positional argument: `openl-mcp <url>` starts the MCP server against that URL, and `openl-mcp <url> <tool>` runs a CLI tool against it. `OPENL_BASE_URL` still works as a fallback; the positional argument takes precedence. Auth and timeout can also be supplied as flags on the server launch. The package now additionally exposes an `openl-mcp-server` bin alias so `npx -y openl-mcp-server …` resolves directly.
 - `openl_append_table` now supports appending to a full multi-column `Spreadsheet` table (`rows` row headers + `cells` 2D value grid), matching OpenL Studio's new append capability; previously only the single-column `SimpleSpreadsheet` form could be appended.
 - `openl_search_project_files` - search a project's files and folders through the studio's `POST /projects/{projectId}/file-search` endpoint (EPBDS-16012). Filter by ant-glob path `pattern`, file `extensions`, resource `type` (FILE/FOLDER/ANY), and/or a case-insensitive full-text `content` substring; `recursive` toggles nested-folder search (default false = top level only). Scope `SUBTREE` (default) searches within the project and can target a historical `version`; scope `ANCESTORS` walks up to the repository root.

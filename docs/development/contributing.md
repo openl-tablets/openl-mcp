@@ -33,7 +33,7 @@ npm run lint:fix       # Fix linting issues
 ```
 src/
 ├── index.ts             # MCP server entry point
-├── server.ts            # HTTP server (SSE/StreamableHTTP)
+├── server.ts            # HTTP server (Streamable HTTP transport at /mcp)
 ├── client.ts            # OpenL Studio API client
 ├── auth.ts              # Authentication (Basic Auth, PAT)
 ├── tool-handlers.ts     # Tool registration and handlers

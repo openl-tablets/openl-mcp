@@ -241,7 +241,7 @@ class OpenLMCPServer {
 }
 
 /**
- * Load configuration from query parameters (for HTTP SSE transport)
+ * Load configuration from query parameters (for the Streamable HTTP transport)
  *
  * @param query - Query parameters from HTTP request
  * @returns OpenL Studio configuration or null if not enough parameters

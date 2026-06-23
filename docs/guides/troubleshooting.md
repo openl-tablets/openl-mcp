@@ -7,7 +7,7 @@ This guide covers common issues and their solutions when working with the OpenL 
 - [Viewing Debug Logs](#viewing-debug-logs)
 - [Common Issues](#common-issues)
 - [Connection Issues](#connection-issues)
-- [Remote SSE Connection Issues](#remote-sse-connection-issues)
+- [Remote Connection Issues](#remote-connection-issues)
 - [Configuration Issues](#configuration-issues)
 - [WebSocket Wait Issues (compile / trace status)](#websocket-wait-issues-compile--trace-status)
 
@@ -270,13 +270,13 @@ environment:
 
 ---
 
-## Remote SSE Connection Issues
+## Remote Connection Issues
 
-### Problem: Connection Issues with Remote SSE
+### Problem: Connection Issues with the Remote MCP Server
 
 If you're experiencing:
 - `Request timed out` errors
-- Connection issues with remote SSE transport
+- Connection issues with the remote Streamable HTTP transport
 - Authentication failures
 
 ### Root Cause
@@ -285,11 +285,11 @@ Possible causes:
 1. Incorrect Node.js or `mcp-remote` paths
 2. Network connectivity issues
 3. Invalid or expired PAT token
-4. Remote SSE endpoint may not be responding correctly
+4. Remote MCP endpoint may not be responding correctly
 
 ### Solution: Use Local MCP Server with Remote OpenL Backend
 
-Instead of connecting to remote MCP server via SSE, run the MCP server locally and connect it to the remote OpenL backend via API.
+Instead of connecting to a remote MCP server over HTTP, run the MCP server locally and connect it to the remote OpenL backend via API.
 
 **Configuration:**
 
@@ -330,10 +330,10 @@ Instead of connecting to remote MCP server via SSE, run the MCP server locally a
 - ✅ Reliable stdio transport (no network issues)
 - ✅ Full control over authentication
 - ✅ Better error messages and debugging
-- ✅ Works even if remote SSE endpoint has issues
+- ✅ Works even if the remote HTTP endpoint has issues
 - ✅ No dependency on `mcp-remote` package
 
-### Alternative: Verify Remote SSE Configuration
+### Alternative: Verify Remote HTTP Configuration
 
 Make sure you're using the correct format with `--header` flag:
 
@@ -344,7 +344,7 @@ Make sure you're using the correct format with `--header` flag:
       "command": "/path/to/node",
       "args": [
         "/path/to/mcp-remote",
-        "https://<your-openl-server>/mcp/sse",
+        "https://<your-openl-server>/mcp",
         "--header",
         "Authorization: Token <your-pat-token>"
       ]
@@ -357,7 +357,7 @@ Make sure you're using the correct format with `--header` flag:
 
 ### Why This Works Better
 
-1. **stdio transport** is more reliable than SSE for MCP
+1. **stdio transport** avoids network issues entirely
 2. **Local process** gives better error visibility
 3. **API** connection to OpenL is well-tested and stable
 4. **No npm package dependencies** - just Node.js and your built MCP server

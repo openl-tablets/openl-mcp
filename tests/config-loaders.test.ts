@@ -1,7 +1,7 @@
 /**
  * Unit tests for the config loaders exported from src/index.ts.
  *
- * `loadConfigFromQuery` (HTTP SSE transport) and `loadConfigFromEnv` (stdio
+ * `loadConfigFromQuery` (Streamable HTTP transport) and `loadConfigFromEnv` (stdio
  * MCP transport) are pure-ish validators with several branches (missing base
  * URL, invalid URL, invalid timeout, missing auth). They were previously
  * untested (index.ts at 0%); these cover the validation logic directly,
@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { loadConfigFromQuery, loadConfigFromEnv } from "../src/index.js";
 
-describe("loadConfigFromQuery (HTTP SSE transport)", () => {
+describe("loadConfigFromQuery (Streamable HTTP transport)", () => {
   it("returns null when OPENL_BASE_URL is absent (not enough params)", () => {
     expect(loadConfigFromQuery({})).toBeNull();
   });

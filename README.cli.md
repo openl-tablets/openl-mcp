@@ -87,7 +87,7 @@ openl-mcp-server                          # no args → MCP stdio server (uses O
 
 The OpenL Studio base URL can be given as a **positional argument** (in any position relative to the tool name), via `--base-url`, or via `OPENL_BASE_URL` — see [Configuration](#configuration) for precedence.
 
-**Tool names drop the `openl_` prefix on the CLI.** The namespace prefix that keeps tools distinct across servers is just noise in a shell, so the CLI uses bare names — `list_repositories`, not `openl_list_repositories` (the prefixed form is not accepted). The prefix is a protocol-boundary concern: the tool registry, the CLI (`--help`, `--list-tools`, and what you type), and the REST API all use bare names; only the MCP `tools/list` / `tools/call` wire adds and strips the `openl_` prefix.
+**Tool names drop the `openl_` prefix on the CLI.** The namespace prefix that keeps tools distinct across servers is just noise in a shell, so the CLI uses bare names — `list_repositories`, not `openl_list_repositories` (the prefixed form is not accepted). The prefix is a protocol-boundary concern: the tool registry and the CLI (`--help`, `--list-tools`, and what you type) use bare names; only the MCP `tools/list` / `tools/call` wire adds and strips the `openl_` prefix.
 
 You can invoke the binary three ways:
 

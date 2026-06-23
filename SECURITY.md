@@ -79,10 +79,10 @@ After you submit a vulnerability report:
 
 ### MCP Transport Security
 
-This server implements multiple MCP transport modes. Each has specific security requirements:
+This server implements two MCP transport modes. Each has specific security requirements:
 
 - **stdio transport**: Runs as a subprocess; inherits security context of parent process. Safe for local Claude Desktop use.
-- **Streamable HTTP / SSE transport**: 
+- **Streamable HTTP transport** (`/mcp`): 
   - **Origin Validation**: The server validates `Origin` headers to prevent DNS rebinding attacks
   - **Localhost Binding**: When running locally, bind to `localhost` (not `0.0.0.0`) to prevent external access
   - **Authentication Required**: Always require authentication for HTTP transports; never expose unauthenticated endpoints

@@ -2,7 +2,7 @@
 
 ## Overview
 
-MCP Server runs as a standalone HTTP application (Express) that provides MCP protocol access (SSE and Streamable HTTP transports) to OpenL Studio. It can be deployed as a Docker container that connects to any OpenL Studio instance.
+MCP Server runs as a standalone HTTP application (Express) that provides MCP protocol access over the Streamable HTTP transport (MCP spec 2025-11-25) to OpenL Studio. It can be deployed as a Docker container that connects to any OpenL Studio instance.
 
 ## Architecture
 
@@ -11,7 +11,7 @@ MCP Server runs as a standalone HTTP application (Express) that provides MCP pro
 │  AI Client          │  Claude Desktop / Cursor / VS Code
 │  (MCP Client)       │
 └────────┬────────────┘
-         │ SSE / Streamable HTTP
+         │ Streamable HTTP (POST/GET/DELETE /mcp)
          │ (port 3000)
          ▼
 ┌─────────────────────┐
@@ -89,8 +89,8 @@ After starting the Docker container, configure your AI client to connect.
 {
   "mcpServers": {
     "openl-mcp-server": {
-      "url": "http://localhost:3000/mcp/sse",
-      "transport": "sse",
+      "url": "http://localhost:3000/mcp",
+      "transport": "streamablehttp",
       "headers": {
         "Authorization": "Token <your-pat-token>"
       }
@@ -115,7 +115,7 @@ npm install -g mcp-remote
       "command": "<path-to-node>",
       "args": [
         "<path-to-mcp-remote>",
-        "http://localhost:3000/mcp/sse",
+        "http://localhost:3000/mcp",
         "--header",
         "Authorization: Token <your-pat-token>"
       ]
@@ -221,34 +221,38 @@ npm run start:http
 
 ## HTTP API Endpoints
 
+The server speaks the MCP protocol over the **Streamable HTTP** transport
+(MCP spec 2025-11-25) at a single endpoint:
+
+```text
+POST   /mcp   — send a JSON-RPC message (an `initialize` request opens a session)
+GET    /mcp   — open the server→client SSE stream for an established session
+DELETE /mcp   — terminate a session
+```
+
+All requests except `initialize` must carry the `mcp-session-id` header returned
+by the `initialize` response. Authentication is supplied per session via the
+`Authorization` header (`Token`/`Bearer <PAT>` or `Basic <base64 user:pass>`);
+the base URL always comes from the server's `OPENL_BASE_URL`.
+
+A minimal handshake with `curl`:
+```bash
+curl -X POST http://localhost:3000/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Authorization: Token <your-pat-token>" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"curl","version":"1.0.0"}}}'
+```
+
+> The legacy HTTP+SSE transport (separate `/mcp/sse` and `/mcp/messages`
+> endpoints) and the standalone REST tool endpoints have been removed.
+
 ### Health Check
+
+An unauthenticated liveness probe used by the Docker `HEALTHCHECK`:
 ```bash
 curl http://localhost:3000/health
-```
-
-### MCP Protocol (SSE)
-```text
-GET  /mcp/sse              — Establish SSE connection
-POST /mcp/messages          — Send messages to MCP server
-POST /mcp/sse              — Streamable HTTP transport
-```
-
-### REST API (for debugging)
-```bash
-# List all tools
-curl http://localhost:3000/tools | jq
-
-# Get tool info
-curl http://localhost:3000/tools/openl_list_repositories | jq
-
-# Execute tool — credentials are required (these endpoints have no MCP session
-# to carry auth). Pass an Authorization header (Token/Bearer <PAT> or
-# Basic <base64 user:pass>) or OPENL_USERNAME/OPENL_PASSWORD query params.
-curl -X POST http://localhost:3000/execute \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Basic $(printf '%s' 'admin:admin' | base64)" \
-  -d '{"tool": "openl_list_repositories", "arguments": {}}'
-# Without credentials these endpoints return HTTP 401.
+# {"status":"ok","timestamp":"...","service":"openl-mcp-server","version":"1.0.0"}
 ```
 
 ---

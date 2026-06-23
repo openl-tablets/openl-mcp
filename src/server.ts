@@ -2,16 +2,17 @@
 
 /**
  * Express HTTP Server for OpenL MCP Server
- * 
- * Provides HTTP REST API for accessing MCP tools as a standalone service.
- * This allows the MCP server to be used as a microservice in Docker Compose.
+ *
+ * Exposes the MCP protocol over the Streamable HTTP transport (MCP spec
+ * 2025-11-25) at a single endpoint, `/mcp`, so the server can run as a
+ * standalone microservice in Docker Compose. The legacy HTTP+SSE transport
+ * and the REST helper endpoints are intentionally not provided.
  */
 
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { randomUUID } from 'node:crypto';
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { OpenLClient } from './client.js';
@@ -51,11 +52,6 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Request logging middleware (disabled to reduce noise)
-app.use((req: Request, res: Response, next: NextFunction) => {
-  next();
-});
-
 // Initialize OpenL client (default from environment)
 let defaultClient: OpenLClient | null = null;
 
@@ -73,7 +69,7 @@ function getDefaultClientOrThrow(): OpenLClient {
 
 // Initialize default OpenL client (async - will be awaited before server starts)
 // NOTE: Authentication credentials should NOT be set in Docker/environment variables.
-// They must be provided via MCP client configuration (query params or headers for HTTP transport).
+// They must be provided via MCP client configuration (Authorization header or query params).
 async function initializeDefaultClient(): Promise<void> {
   try {
     // Try to get base URL from env, but don't require authentication
@@ -124,7 +120,7 @@ function getClientForSession(sessionId: string, query?: Record<string, string | 
     try {
       // Get base URL from default client (server configuration)
       const baseUrl = baseClient.getBaseUrl();
-      
+
       // Build config with server's base URL and client's authentication
       const config: Types.OpenLConfig = {
         baseUrl,
@@ -136,7 +132,6 @@ function getClientForSession(sessionId: string, query?: Record<string, string | 
 
       const client = new OpenLClient(config);
       clientsBySession[sessionId] = client;
-      // Only log on first client creation for this session (not on every request)
       return client;
     } catch (error) {
       // Auth was explicitly supplied for this session; do NOT silently fall back
@@ -151,119 +146,12 @@ function getClientForSession(sessionId: string, query?: Record<string, string | 
   return baseClient;
 }
 
-// Startup-only MCP server. Its one load-bearing effect is the registerAllTools()
-// call inside initializeMCPServer(), which populates the shared (module-level)
-// tool registry so the REST helper endpoints (GET /tools, POST /execute, …) work
-// before any MCP session exists.
-//
-// WARNING: this instance must NEVER be .connect()-ed to a transport — its request
-// handlers are bound to the credential-less default client, so connecting it would
-// serve tools/resources unauthenticated. Every live MCP transport instead uses
-// createSessionServer(client), which binds an auth-scoped per-session client.
-let mcpServer: Server;
-
-async function initializeMCPServer(): Promise<void> {
-  try {
-    mcpServer = new Server(
-      {
-        name: SERVER_INFO.NAME,
-        version: SERVER_INFO.VERSION,
-      },
-      {
-        capabilities: {
-          tools: {},
-          // `subscribe: true` advertises support for resources/subscribe +
-          // notifications/resources/updated (wired for the `openl://status/...`
-          // resource via STOMP — see resource-subscriptions.ts).
-          resources: { subscribe: true },
-          prompts: {},
-          // Advertise `completion/complete` so clients offer inline
-          // suggestions for {projectId}/{branch} in resource templates.
-          completions: {},
-        },
-      }
-    );
-
-    // Register all tools with a function that gets the client dynamically
-    // We'll use a wrapper that gets the client from the session
-    registerAllTools(mcpServer, getDefaultClientOrThrow());
-
-  // Setup MCP handlers (similar to index.ts)
-  mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: getAllTools().map(({ name, title, description, inputSchema, annotations }) => ({
-      name: mcpToolName(name),
-      title,
-      description,
-      inputSchema,
-      ...(annotations && { annotations }),
-    })),
-  }));
-
-  mcpServer.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
-    // Get client from request context (session ID stored in transport)
-    // For now, use default client - we'll update this to use session-specific clients
-    const client = getDefaultClientOrThrow();
-    const result = await executeTool(stripToolPrefix(request.params.name), request.params.arguments, client, extra);
-    return result as any;
-  });
-
-  mcpServer.setRequestHandler(ListResourcesRequestSchema, async () => ({
-    resources: STATIC_RESOURCES,
-  }));
-
-  mcpServer.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
-    resourceTemplates: RESOURCE_TEMPLATES,
-  }));
-
-  mcpServer.setRequestHandler(CompleteRequestSchema, async (request) =>
-    handleCompleteRequest(getDefaultClientOrThrow(), request.params)
-  );
-
-  // Handle resource reads
-  mcpServer.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-    const client = getDefaultClientOrThrow();
-    return handleResourceRead(request.params.uri, client);
-  });
-
-  mcpServer.setRequestHandler(ListPromptsRequestSchema, async () => ({
-    prompts: PROMPTS,
-  }));
-
-  mcpServer.setRequestHandler(GetPromptRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
-    const prompt = getPromptDefinition(name);
-    if (!prompt) {
-      throw new Error(`Prompt not found: ${name}`);
-    }
-    const content = loadPromptContent(name, args);
-    return {
-      description: prompt.description,
-      messages: [
-        {
-          role: "user" as const,
-          content: {
-            type: "text" as const,
-            text: content,
-          },
-        },
-      ],
-    };
-  });
-
-  } catch (error) {
-    console.error('❌ Failed to initialize MCP Server:', sanitizeError(error));
-    process.exit(1);
-  }
-}
-
-// Store SSE transports by session ID
-const sseTransports: Record<string, SSEServerTransport> = {};
 // Store streamableHttp transports by session ID
 const streamableHttpTransports: Record<string, StreamableHTTPServerTransport> = {};
 
 /**
  * Setup MCP server handlers for a session
- * 
+ *
  * @param server - MCP server instance
  * @param client - OpenL client for this session
  */
@@ -352,7 +240,7 @@ function setupSessionHandlers(
 
 /**
  * Create a new MCP server instance for a session
- * 
+ *
  * @param client - OpenL client for this session
  * @returns Configured MCP server instance
  */
@@ -456,100 +344,56 @@ function warnIfSecretsInQuery(query: Record<string, unknown>): void {
 }
 
 /**
- * SSE endpoint handler (shared for /mcp/sse and /sse)
+ * JSON-RPC error payload for malformed Streamable HTTP requests (no valid
+ * session). Mirrors the shape the MCP SDK uses for transport-level errors.
  */
-const handleSSE = async (req: Request, res: Response): Promise<Response | void> => {
-  try {
-    // Extract authentication from the Authorization header (Token/Bearer/Basic),
-    // then merge query params (base URL always comes from server config).
-    warnIfSecretsInQuery(req.query as Record<string, unknown>);
-    const configFromHeaders = authConfigFromHeader(req.headers.authorization);
-    const configParams = { ...req.query, ...configFromHeaders } as Record<string, string | undefined>;
-
-    // Try to create client from configuration (base URL from server, auth from client)
-    const sessionId = randomUUID();
-    const client = getClientForSession(sessionId, configParams);
-    
-    // Create a new MCP server instance for this session with the specific client
-    const { server: sessionServer, subscriptions } = createSessionServer(client);
-
-    // Determine messages endpoint path based on request path
-    // If request came via /sse (nginx proxy), use /messages, otherwise use /mcp/messages
-    const messagesPath = req.path === '/sse' ? '/messages' : '/mcp/messages';
-    const transport = new SSEServerTransport(messagesPath, res);
-    const transportSessionId = transport.sessionId;
-    sseTransports[transportSessionId] = transport;
-
-    res.on('close', () => {
-      delete sseTransports[transportSessionId];
-      delete clientsBySession[sessionId];
-      // Tear down any STOMP subscriptions this session opened — otherwise
-      // the studio would be left with dangling WS sessions.
-      void subscriptions.closeAll();
-    });
-
-    await sessionServer.connect(transport);
-  } catch (error) {
-    console.error('❌ Failed to establish SSE connection:', sanitizeError(error));
-    res.status(500).json({ error: 'Failed to establish SSE connection', message: sanitizeError(error) });
-  }
-};
+function jsonRpcError(code: number, message: string): Record<string, unknown> {
+  return { jsonrpc: '2.0', error: { code, message }, id: null };
+}
 
 /**
- * SSE endpoint for MCP protocol (for Cursor direct connection)
- * GET /mcp/sse - Establishes SSE connection
- * GET /sse - Alias for nginx proxy compatibility (when /mcp prefix is stripped)
- * 
- * Base URL is configured on the server side (environment variable OPENL_BASE_URL or Docker config).
- * Only authentication token can be passed via Authorization header or query parameter.
- * 
- * Supports configuration via:
- *   1. HTTP Authorization header (recommended): "Authorization: Token <PAT>" or
- *      "Authorization: Bearer <PAT>" (Bearer is converted to Token for the OpenL API)
- *   2. Query parameter: ?OPENL_PERSONAL_ACCESS_TOKEN=<PAT> — DEPRECATED and insecure
- *      (query strings leak into proxy/access logs, browser history, and Referer
- *      headers). Honored for backward compatibility / local development only;
- *      emits a warning. Prefer the Authorization header.
+ * POST /mcp — Streamable HTTP transport (MCP spec 2025-11-25).
+ *
+ * An `initialize` request (no session id) creates a session-scoped MCP server
+ * bound to an auth-scoped OpenL client; subsequent requests carry the
+ * `mcp-session-id` header and are routed to that session's transport.
+ *
+ * Base URL is always configured on the server (OPENL_BASE_URL). Only the
+ * authentication token is supplied per request, via:
+ *   1. HTTP Authorization header (recommended): "Authorization: Token <PAT>",
+ *      "Authorization: Bearer <PAT>", or "Authorization: Basic <base64 user:pass>".
+ *   2. Query parameter: ?OPENL_PERSONAL_ACCESS_TOKEN=<PAT> — DEPRECATED and
+ *      insecure (query strings leak into proxy/access logs, browser history,
+ *      and Referer headers). Honored for backward compatibility / local
+ *      development only; emits a warning.
  */
-app.get('/mcp/sse', handleSSE);
-app.get('/sse', handleSSE); // Alias for nginx proxy compatibility
-
-/**
- * StreamableHttp endpoint handler (shared for /mcp/sse and /sse)
- */
-const handleStreamableHttp = async (req: Request, res: Response): Promise<Response | void> => {
+const handleMcpPost = async (req: Request, res: Response): Promise<Response | void> => {
   try {
-    // Extract authentication from the Authorization header (Token/Bearer/Basic),
-    // then merge query params (base URL always comes from server config).
-    const configFromHeaders = authConfigFromHeader(req.headers.authorization);
-    const configParams = { ...req.query, ...configFromHeaders } as Record<string, string | undefined>;
-
-    // Check for existing session ID in headers
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
     let transport: StreamableHTTPServerTransport;
-    
-    // Get or create client for this session
-    const sessionClientId = sessionId || randomUUID();
-    const client = getClientForSession(sessionClientId, configParams);
 
     if (sessionId && streamableHttpTransports[sessionId]) {
-      // Reuse existing transport
+      // Existing session — route to its transport.
       transport = streamableHttpTransports[sessionId];
     } else if (!sessionId && isInitializeRequest(req.body)) {
-      // New initialization request - create session-specific MCP server with the client.
-      // Warn here (once per session) rather than per request to avoid log spam.
+      // New session. Extract auth from the Authorization header (Token/Bearer/Basic),
+      // then merge query params (base URL always comes from server config).
       warnIfSecretsInQuery(req.query as Record<string, unknown>);
+      const configFromHeaders = authConfigFromHeader(req.headers.authorization);
+      const configParams = { ...req.query, ...configFromHeaders } as Record<string, string | undefined>;
+
+      const newSessionId = randomUUID();
+      const client = getClientForSession(newSessionId, configParams);
       const { server: sessionServer, subscriptions } = createSessionServer(client);
 
       transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => sessionClientId,
+        sessionIdGenerator: () => newSessionId,
         onsessioninitialized: (id) => {
           streamableHttpTransports[id] = transport;
           clientsBySession[id] = client;
-        }
+        },
       });
 
-      // Clean up transport when closed
       transport.onclose = () => {
         if (transport.sessionId) {
           delete streamableHttpTransports[transport.sessionId];
@@ -559,234 +403,62 @@ const handleStreamableHttp = async (req: Request, res: Response): Promise<Respon
         void subscriptions.closeAll();
       };
 
-      // Connect session server to transport
       await sessionServer.connect(transport);
     } else {
-      // Invalid request
-      return res.status(400).json({ error: 'Invalid request' });
+      return res
+        .status(400)
+        .json(jsonRpcError(-32000, 'Bad Request: no valid session ID provided'));
     }
 
-    // Handle the request - StreamableHTTPServerTransport handles req/res internally
-    // The transport will process the request and send the response
     await transport.handleRequest(req, res, req.body);
   } catch (error) {
-    console.error('❌ Failed to handle StreamableHttp request:', sanitizeError(error));
-    res.status(500).json({ error: 'Failed to handle StreamableHttp request' });
-  }
-};
-
-/**
- * StreamableHttp endpoint for MCP protocol (for Cursor direct connection)
- * POST /mcp/sse - Establishes streamableHttp connection
- * POST /sse - Alias for nginx proxy compatibility (when /mcp prefix is stripped)
- * This allows Cursor to connect immediately without fallback to SSE
- * 
- * Base URL is configured on the server side (environment variable OPENL_BASE_URL or Docker config).
- * Only authentication token can be passed via Authorization header.
- * 
- * Supports configuration via:
- *   1. HTTP Authorization header (recommended): "Authorization: Token <PAT>" or
- *      "Authorization: Bearer <PAT>" (Bearer is converted to Token for the OpenL API)
- *   2. Query parameter: ?OPENL_PERSONAL_ACCESS_TOKEN=<PAT> — DEPRECATED and insecure;
- *      honored for backward compatibility / local development only, emits a warning.
- */
-app.post('/mcp/sse', handleStreamableHttp);
-app.post('/sse', handleStreamableHttp); // Alias for nginx proxy compatibility
-
-/**
- * Message endpoint handler for SSE transport (shared for /mcp/messages and /messages)
- */
-const handleSSEMessages = async (req: Request, res: Response): Promise<Response | void> => {
-  try {
-    const sessionId = req.query.sessionId as string;
-    const transport = sseTransports[sessionId];
-    
-    if (!transport) {
-      return res.status(404).json({ error: 'Session not found' });
+    console.error('❌ Failed to handle MCP request:', sanitizeError(error));
+    if (!res.headersSent) {
+      res.status(500).json(jsonRpcError(-32603, 'Internal server error'));
     }
-
-    await transport.handlePostMessage(req, res, req.body);
-  } catch (error) {
-    console.error('❌ Failed to handle message:', sanitizeError(error));
-    res.status(500).json({ error: 'Failed to handle message' });
   }
 };
 
 /**
- * Message endpoint for SSE transport
- * POST /mcp/messages?sessionId=xxx - Sends messages to MCP server
- * POST /messages?sessionId=xxx - Alias for nginx proxy compatibility
+ * GET /mcp — opens the server→client SSE stream for an established session.
+ * DELETE /mcp — terminates an established session.
+ *
+ * Both require an existing `mcp-session-id` header; the StreamableHTTP
+ * transport handles the method semantics internally.
  */
-app.post('/mcp/messages', handleSSEMessages);
-app.post('/messages', handleSSEMessages); // Alias for nginx proxy compatibility
+const handleMcpSessionRequest = async (req: Request, res: Response): Promise<Response | void> => {
+  try {
+    const sessionId = req.headers['mcp-session-id'] as string | undefined;
+    if (!sessionId || !streamableHttpTransports[sessionId]) {
+      return res
+        .status(400)
+        .json(jsonRpcError(-32000, 'Bad Request: invalid or missing session ID'));
+    }
+    await streamableHttpTransports[sessionId].handleRequest(req, res);
+  } catch (error) {
+    console.error('❌ Failed to handle MCP session request:', sanitizeError(error));
+    if (!res.headersSent) {
+      res.status(500).json(jsonRpcError(-32603, 'Internal server error'));
+    }
+  }
+};
+
+app.post('/mcp', handleMcpPost);
+app.get('/mcp', handleMcpSessionRequest);
+app.delete('/mcp', handleMcpSessionRequest);
 
 /**
- * Health check endpoint
+ * Health check endpoint — liveness probe for Docker and load balancers.
+ * Unauthenticated and dependency-free: it reports only that the HTTP process
+ * is up, not that OpenL Studio is reachable.
  */
 app.get('/health', (req: Request, res: Response) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    service: 'openl-mcp-server',
-    version: '1.0.0'
+    service: SERVER_INFO.NAME,
+    version: SERVER_INFO.VERSION,
   });
-});
-
-/**
- * List all available tools
- */
-app.get('/tools', (req: Request, res: Response) => {
-  try {
-    const tools = getAllTools();
-    res.json({
-      tools,
-      count: tools.length
-    });
-  } catch (error) {
-    res.status(500).json({
-      error: 'Failed to list tools',
-      message: sanitizeError(error)
-    });
-  }
-});
-
-/**
- * Get tool information by name
- */
-app.get('/tools/:toolName', (req: Request, res: Response) => {
-  try {
-    const toolName = Array.isArray(req.params.toolName) ? req.params.toolName[0] : req.params.toolName;
-    const tools = getAllTools();
-    const tool = tools.find(t => t.name === toolName);
-    
-    if (!tool) {
-      return res.status(404).json({
-        error: 'Tool not found',
-        toolName
-      });
-    }
-    
-    res.json(tool);
-  } catch (error) {
-    res.status(500).json({
-      error: 'Failed to get tool information',
-      message: sanitizeError(error)
-    });
-  }
-});
-
-/**
- * Build a one-shot, request-scoped OpenL client for the REST helper endpoints
- * from the request's Authorization header / query credentials (the base URL
- * always comes from server config). Returns null when NO credentials are
- * supplied — unlike the MCP transports, these endpoints have no session to
- * carry per-connection auth, so the caller must respond 401 rather than fall
- * through to the credential-less default client (which surfaces as a confusing
- * upstream 401 laundered into a 500, leaking the internal request path).
- */
-function authedClientFromRequest(req: Request): OpenLClient | null {
-  const cfg = {
-    ...req.query,
-    ...authConfigFromHeader(req.headers.authorization),
-  } as Record<string, string | undefined>;
-  if (!cfg.OPENL_PERSONAL_ACCESS_TOKEN && !cfg.OPENL_USERNAME) {
-    return null;
-  }
-  return new OpenLClient({
-    baseUrl: getDefaultClientOrThrow().getBaseUrl(),
-    username: cfg.OPENL_USERNAME,
-    password: cfg.OPENL_PASSWORD,
-    personalAccessToken: cfg.OPENL_PERSONAL_ACCESS_TOKEN,
-    timeout: cfg.OPENL_TIMEOUT ? parseInt(cfg.OPENL_TIMEOUT, 10) : undefined,
-  });
-}
-
-const AUTH_REQUIRED_MESSAGE =
-  'Authentication required. Provide credentials via the Authorization header ' +
-  '(Token/Bearer <PAT> or Basic <base64 user:pass>) or the OPENL_USERNAME/OPENL_PASSWORD query params.';
-
-/**
- * Execute a tool
- */
-app.post('/tools/:toolName/execute', async (req: Request, res: Response) => {
-  try {
-    const toolName = Array.isArray(req.params.toolName) ? req.params.toolName[0] : req.params.toolName;
-    const args = req.body;
-
-    // Never log actual arguments - they may contain sensitive data
-
-    if (!defaultClient) {
-      return res.status(500).json({
-        error: 'OpenL client not initialized',
-        tool: toolName
-      });
-    }
-
-    const client = authedClientFromRequest(req);
-    if (!client) {
-      return res.status(401).json({ error: 'Authentication required', tool: toolName, message: AUTH_REQUIRED_MESSAGE });
-    }
-
-    const result = await executeTool(toolName, args, client);
-    
-    res.json({
-      tool: toolName,
-      result
-    });
-  } catch (error: unknown) {
-    const errorMessage = sanitizeError(error);
-    console.error(`Error executing tool ${req.params.toolName}:`, errorMessage);
-    
-    res.status(500).json({
-      error: 'Tool execution failed',
-      tool: req.params.toolName,
-      message: errorMessage
-    });
-  }
-});
-
-/**
- * Convenience endpoint: execute tool via POST body
- */
-app.post('/execute', async (req: Request, res: Response) => {
-  try {
-    const { tool, arguments: args } = req.body;
-    
-    if (!tool) {
-      return res.status(400).json({
-        error: 'Missing required field: tool'
-      });
-    }
-    
-    // Never log actual arguments - they may contain sensitive data
-    
-    if (!defaultClient) {
-      return res.status(500).json({
-        error: 'OpenL client not initialized',
-        tool
-      });
-    }
-
-    const client = authedClientFromRequest(req);
-    if (!client) {
-      return res.status(401).json({ error: 'Authentication required', tool, message: AUTH_REQUIRED_MESSAGE });
-    }
-
-    const result = await executeTool(tool, args || {}, client);
-    
-    res.json({
-      tool,
-      result
-    });
-  } catch (error: unknown) {
-    const errorMessage = sanitizeError(error);
-    console.error(`Error executing tool:`, errorMessage);
-    
-    res.status(500).json({
-      error: 'Tool execution failed',
-      message: errorMessage
-    });
-  }
 });
 
 /**
@@ -819,12 +491,9 @@ app.use((req: Request, res: Response) => {
 async function startServer(): Promise<void> {
   // Initialize default client before starting server (optional - can use query params)
   await initializeDefaultClient();
-  
-  // Initialize MCP server (uses default client as fallback)
-  await initializeMCPServer();
-  
+
   app.listen(PORT, () => {
-  console.log(`OpenL MCP Server listening on port ${PORT}`);
+    console.log(`OpenL MCP Server listening on port ${PORT}`);
   });
 }
 
@@ -833,4 +502,3 @@ startServer().catch((error) => {
   console.error('❌ Failed to start server:', sanitizeError(error));
   process.exit(1);
 });
-

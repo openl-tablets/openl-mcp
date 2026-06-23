@@ -20,7 +20,7 @@ This document outlines all the best practices implemented in the OpenL MCP Serve
 
 **Core Modules**:
 - `index.ts` - Server orchestration (stdio transport)
-- `server.ts` - HTTP server (SSE/StreamableHTTP transport)
+- `server.ts` - HTTP server (Streamable HTTP transport at `/mcp`)
 - `client.ts` - OpenL Studio API client
 - `auth.ts` - Authentication (Basic Auth, PAT)
 - `tool-handlers.ts` - Tool definitions, schemas, and execution handlers

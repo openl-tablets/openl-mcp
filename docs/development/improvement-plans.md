@@ -6,7 +6,7 @@ Deep codebase analysis results. Plans are grouped by priority.
 
 ## Plan 1. TTL-based Cleanup for Sessions and Transport Maps [CRITICAL]
 
-**Problem:** In `server.ts`, `clientsBySession` and `sseTransports` for SSE connections are cleaned up via a `res.on('close')` handler, while `streamableHttpTransports` (and the associated `clientsBySession` entries for StreamableHTTP) are cleaned up via `transport.onclose`. If these close callbacks don't fire (e.g., network drop, client process kill, or abrupt server termination), entries can remain indefinitely. During long-running Docker deployments, this leads to memory leaks.
+**Problem:** In `server.ts`, `streamableHttpTransports` (and the associated `clientsBySession` entries) are cleaned up via `transport.onclose`. If that close callback doesn't fire (e.g., network drop, client process kill, or abrupt server termination), entries can remain indefinitely. During long-running Docker deployments, this leads to memory leaks.
 
 **Affected files:**
 - `src/server.ts` — primary changes
@@ -27,15 +27,10 @@ Deep codebase analysis results. Plans are grouped by priority.
    ```typescript
    // Before:
    const clientsBySession: Record<string, OpenLClient> = {};
-   const sseTransports: Record<string, SSEServerTransport> = {};
    const streamableHttpTransports: Record<string, StreamableHTTPServerTransport> = {};
 
    // After:
    const clientsBySession = new SessionStore<OpenLClient>({ ttlMs: 30 * 60 * 1000 });
-   const sseTransports = new SessionStore<SSEServerTransport>({
-     ttlMs: 30 * 60 * 1000,
-     onExpire: (id, transport) => transport.close?.()
-   });
    const streamableHttpTransports = new SessionStore<StreamableHTTPServerTransport>({
      ttlMs: 30 * 60 * 1000,
      onExpire: (id, transport) => transport.close?.()

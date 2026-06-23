@@ -89,7 +89,7 @@ for the OpenL API. For basic auth, use `Authorization: Basic <base64(username:pa
 > never in production — always prefer the `Authorization` header above.
 >
 > ```text
-> http://localhost:3000/mcp/sse?OPENL_PERSONAL_ACCESS_TOKEN=<your-token>
+> http://localhost:3000/mcp?OPENL_PERSONAL_ACCESS_TOKEN=<your-token>
 > ```
 
 ### Docker Configuration

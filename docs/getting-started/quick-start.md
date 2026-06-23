@@ -53,8 +53,8 @@ OpenL Studio runs in single-user mode with `compose.studio.yaml`, so no authenti
 {
   "mcpServers": {
     "openl-mcp-server": {
-      "url": "http://localhost:3000/mcp/sse",
-      "transport": "sse"
+      "url": "http://localhost:3000/mcp",
+      "transport": "streamablehttp"
     }
   }
 }
@@ -67,7 +67,7 @@ OpenL Studio runs in single-user mode with `compose.studio.yaml`, so no authenti
   "github.copilot.chat.mcp.servers": {
     "openl-mcp-server": {
       "type": "http",
-      "url": "http://localhost:3000/mcp/sse"
+      "url": "http://localhost:3000/mcp"
     }
   }
 }
@@ -87,7 +87,7 @@ npm install -g mcp-remote
       "command": "<path-to-node>",
       "args": [
         "<path-to-mcp-remote>",
-        "http://localhost:3000/mcp/sse"
+        "http://localhost:3000/mcp"
       ]
     }
   }
@@ -154,8 +154,8 @@ Since OpenL Studio uses authentication, you need to pass your PAT token.
 {
   "mcpServers": {
     "openl-mcp-server": {
-      "url": "http://localhost:3000/mcp/sse",
-      "transport": "sse",
+      "url": "http://localhost:3000/mcp",
+      "transport": "streamablehttp",
       "headers": {
         "Authorization": "Token <your-pat-token>"
       }
@@ -173,7 +173,7 @@ Since OpenL Studio uses authentication, you need to pass your PAT token.
       "command": "<path-to-node>",
       "args": [
         "<path-to-mcp-remote>",
-        "http://localhost:3000/mcp/sse",
+        "http://localhost:3000/mcp",
         "--header",
         "Authorization: Token <your-pat-token>"
       ]
