@@ -127,20 +127,21 @@ If OpenL is running, you'll get JSON with repositories.
 ```bash
 cd <path-to-project>
 
-# Set environment variables from your configuration
-export OPENL_BASE_URL="http://localhost:8080"
+# Auth is optional; set it from your configuration if your server requires it
 export OPENL_USERNAME="admin"
 export OPENL_PASSWORD="admin"
-# Run the server
-node dist/index.js
+# Run the server — base URL as a positional argument
+node dist/index.js http://localhost:8080
+# (or set OPENL_BASE_URL instead of passing it positionally)
 ```
 
 You should see initialization logs:
 ```
-[Config] Loading configuration from environment variables...
+[Config] Resolving configuration (positional <url> / flags / environment)...
+[Config] NOTE: This is for stdio transport. Auth credentials may come from MCP client config or CLI flags.
 [Config] Authentication methods:
-[Config]   - API Key: not configured
-[Config]   - Basic Auth: configured (username: admin)
+[Config]   - Personal Access Token: not configured
+[Config]   - Basic Auth: configured (username: admin, password: hidden)
 ```
 
 If the server starts without errors, everything is working correctly.

@@ -133,8 +133,16 @@ export interface RunCliOptions {
 }
 
 /** Parsed shape of CLI arguments. */
-interface ParsedArgs {
+export interface ParsedArgs {
   toolName?: string;
+  /**
+   * A bareword positional that parses as an `http(s)://` URL. Tool names are
+   * never URLs, so a leading URL is unambiguously the OpenL base URL — used to
+   * launch the MCP server (`openl-mcp <url>`) or as a positional override for a
+   * tool call (`openl-mcp <url> <tool>`). Resolution precedence for the base
+   * URL is: this positional → `--base-url` flag → `OPENL_BASE_URL` env.
+   */
+  baseUrlPositional?: string;
   inlineJson?: string;
   fileArg?: string;
   useStdin: boolean;
@@ -155,10 +163,25 @@ interface ParsedArgs {
 }
 
 /**
+ * True when `value` parses as an absolute `http`/`https` URL. Used to tell a
+ * positional base URL apart from a tool name during argument parsing — tool
+ * names (e.g. `openl_list_repositories`) never parse as URLs.
+ */
+function looksLikeHttpUrl(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  return url.protocol === "http:" || url.protocol === "https:";
+}
+
+/**
  * Parse argv into a `ParsedArgs` record. No I/O. No throwing — errors are
  * collected and returned for the caller to render.
  */
-function parseArgs(argv: string[]): ParsedArgs {
+export function parseArgs(argv: string[]): ParsedArgs {
   const result: ParsedArgs = {
     useStdin: false,
     showHelp: false,
@@ -252,6 +275,18 @@ function parseArgs(argv: string[]): ParsedArgs {
           }
         } else if (arg.startsWith("--")) {
           result.errors.push(`Unknown flag: ${arg}`);
+        } else if (looksLikeHttpUrl(arg)) {
+          // A bareword http(s) URL is the OpenL base URL, not a tool name
+          // (tool names never parse as URLs). Accepted in any position so
+          // both `openl-mcp <url> <tool>` and `openl-mcp <tool> <url>` work.
+          // A second URL is a user error — report it directly (mirroring the
+          // @file / inline-JSON duplicate checks) rather than letting it slip
+          // into the tool-name slot and mis-blame the real tool name.
+          if (result.baseUrlPositional === undefined) {
+            result.baseUrlPositional = arg;
+          } else {
+            result.errors.push(`Multiple base URLs are not allowed: ${arg}`);
+          }
         } else if (!result.toolName) {
           result.toolName = arg;
         } else {
@@ -268,6 +303,32 @@ function parseArgs(argv: string[]): ParsedArgs {
   }
 
   return result;
+}
+
+/**
+ * Decide whether a parsed argv represents a CLI/tool invocation (run one tool,
+ * print help/version, list tools, or report a usage error) as opposed to an
+ * MCP server launch.
+ *
+ * Used by the binary's entry point (`src/index.ts`) to route: anything with a
+ * tool name, a discovery flag, a tool-argument source, or a parse error goes
+ * to `runCli`; everything else (no args, or just a positional `<url>` and/or
+ * server flags) starts the stdio MCP server.
+ *
+ * A bare positional `<url>` is deliberately NOT a CLI signal — that is the new
+ * `openl-mcp <url>` server-launch form.
+ */
+export function isCliInvocation(parsed: ParsedArgs): boolean {
+  return (
+    parsed.toolName !== undefined ||
+    parsed.showHelp ||
+    parsed.showVersion ||
+    parsed.listTools ||
+    parsed.inlineJson !== undefined ||
+    parsed.fileArg !== undefined ||
+    parsed.useStdin ||
+    parsed.errors.length > 0
+  );
 }
 
 /**
@@ -671,14 +732,20 @@ function renderHelp(): string {
     `${SERVER_INFO.NAME} v${SERVER_INFO.VERSION} — CLI mode`,
     ``,
     `Usage:`,
-    `  openl-mcp <tool-name> [<json-args> | @file.json | --stdin] [flags]`,
-    `  openl-mcp <tool-name> --help            # detailed help for a tool`,
-    `  openl-mcp --list-tools                  # JSON schemas of all tools`,
-    `  openl-mcp --help                        # this message`,
-    `  openl-mcp --version                     # print version (-V)`,
+    `  openl-mcp <url>                                  start the MCP server (stdio) for <url>`,
+    `  openl-mcp <url> <tool-name> [args] [flags]       run one tool against <url>`,
+    `  openl-mcp <tool-name> [args] [flags]             run one tool (url via --base-url / OPENL_BASE_URL)`,
+    `  openl-mcp <tool-name> --help                     detailed help for a tool`,
+    `  openl-mcp --list-tools                           JSON schemas of all tools`,
+    `  openl-mcp --help                                 this message`,
+    `  openl-mcp --version                              print version (-V)`,
     ``,
-    `When no arguments are passed, the binary starts the MCP server on stdio`,
-    `(legacy behavior for Claude Desktop / Cursor / other MCP clients).`,
+    `Server URL (required — unless OPENL_BASE_URL is set):`,
+    `  <url>    OpenL Studio base URL, e.g. http://localhost:8080. Pass it as the`,
+    `           positional argument, or set the OPENL_BASE_URL environment variable`,
+    `           (the positional takes precedence). With no arguments at all, the`,
+    `           binary starts the MCP server on stdio using OPENL_BASE_URL — the`,
+    `           default for Claude Desktop / Cursor / other MCP clients.`,
     ``,
     `Argument sources (mutually exclusive):`,
     `  '{"foo":"bar"}'    inline JSON literal`,
@@ -829,7 +896,13 @@ export async function runCli(options: RunCliOptions): Promise<number> {
   try {
     let config: Types.OpenLConfig;
     try {
-      config = buildConfig(env, parsed.overrides, parsed.anonymous);
+      // Base URL precedence: positional <url> → --base-url flag → OPENL_BASE_URL.
+      // buildConfig handles the flag-vs-env step; fold the positional in first.
+      const effectiveOverrides = {
+        ...parsed.overrides,
+        baseUrl: parsed.baseUrlPositional ?? parsed.overrides.baseUrl,
+      };
+      config = buildConfig(env, effectiveOverrides, parsed.anonymous);
     } catch (error) {
       // Config errors (missing OPENL_BASE_URL, no auth, bad URL) → EX_CONFIG
       throw new CliError(

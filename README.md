@@ -94,17 +94,33 @@ See [Usage Examples](docs/guides/examples.md) for detailed tool usage and [Enabl
 
 ## Configuration
 
+### Base URL
+
+Pass the OpenL Studio base URL as a **positional argument** (preferred), or set `OPENL_BASE_URL`:
+
+```bash
+# Positional argument (preferred) — starts the stdio MCP server
+openl-mcp http://localhost:8080
+npx -y openl-mcp-server http://localhost:8080
+
+# …or via the environment variable
+OPENL_BASE_URL=http://localhost:8080 openl-mcp
+```
+
+The positional URL takes precedence over `OPENL_BASE_URL` if both are set.
+
 ### Environment Variables
 
 ```bash
-# Required
+# Base URL (or pass it as the positional argument above)
 OPENL_BASE_URL=<your-base-url>
 
-# Auth Method 1: Basic Auth
+# Auth is optional (single-user mode accepts unauthenticated requests).
+# Method 1: Basic Auth
 OPENL_USERNAME=<your-username>
 OPENL_PASSWORD=<your-password>
 
-# Auth Method 2: Personal Access Token
+# Method 2: Personal Access Token
 OPENL_PERSONAL_ACCESS_TOKEN=<your-token>
 
 # Optional

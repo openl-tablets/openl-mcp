@@ -109,13 +109,43 @@ describe("loadConfigFromEnv (stdio MCP transport)", () => {
     errSpy.mockRestore();
   });
 
-  it("throws when OPENL_BASE_URL is missing", async () => {
+  it("throws when no base URL is provided, naming both the positional and the env var", async () => {
+    // The message must mention both ways to supply the URL so the binary's
+    // usage hint (printed by main()) and `--help` stay consistent.
     await expect(loadConfigFromEnv()).rejects.toThrow(/OPENL_BASE_URL/);
+    await expect(loadConfigFromEnv()).rejects.toThrow(/positional argument/i);
   });
 
   it("throws on an invalid base URL", async () => {
     process.env.OPENL_BASE_URL = "bad";
-    await expect(loadConfigFromEnv()).rejects.toThrow(/Invalid OPENL_BASE_URL/);
+    await expect(loadConfigFromEnv()).rejects.toThrow(/Invalid OpenL base URL/);
+  });
+
+  it("prefers an explicit base URL override (positional <url>) over OPENL_BASE_URL", async () => {
+    process.env.OPENL_BASE_URL = "http://env-host:9999";
+    const cfg = await loadConfigFromEnv({ baseUrl: "http://positional:8080" });
+    expect(cfg.baseUrl).toBe("http://positional:8080");
+  });
+
+  it("validates an invalid base URL override the same way", async () => {
+    await expect(loadConfigFromEnv({ baseUrl: "not-a-url" })).rejects.toThrow(/Invalid OpenL base URL/);
+  });
+
+  it("applies cred/timeout overrides (server-launch flags) over the environment", async () => {
+    process.env.OPENL_BASE_URL = "http://env-host:9999";
+    process.env.OPENL_USERNAME = "envuser";
+    const cfg = await loadConfigFromEnv({
+      baseUrl: "http://localhost:8080",
+      username: "flaguser",
+      password: "flagpass",
+      timeout: 12345,
+    });
+    expect(cfg).toMatchObject({
+      baseUrl: "http://localhost:8080",
+      username: "flaguser",
+      password: "flagpass",
+      timeout: 12345,
+    });
   });
 
   it("throws on an invalid timeout", async () => {

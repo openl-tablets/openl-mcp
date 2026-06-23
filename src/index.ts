@@ -16,6 +16,9 @@
  * @see https://modelcontextprotocol.io/
  */
 
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -305,33 +308,56 @@ export function loadConfigFromQuery(query: Record<string, string | undefined>): 
 }
 
 /**
- * Load configuration from environment variables
- *
- * NOTE: This function is used for stdio transport (when MCP client launches the server directly).
- * Authentication credentials should be provided via environment variables set in the MCP client
- * configuration file (Cursor/Claude Desktop settings), NOT in Docker/environment variables.
- *
- * @returns OpenL Studio configuration
- * @throws Error if required configuration is missing or invalid
+ * Explicit configuration overrides for the stdio server launch. Each field,
+ * when defined, takes precedence over the matching `OPENL_*` environment
+ * variable. Populated from the binary's command-line arguments (a positional
+ * `<url>` and optional auth/timeout flags) in `main()`.
  */
-export async function loadConfigFromEnv(): Promise<Types.OpenLConfig> {
-  console.error(`[Config] Loading configuration from environment variables...`);
-  console.error(`[Config] NOTE: This is for stdio transport. Auth credentials should come from MCP client config.`);
-  const baseUrl = process.env.OPENL_BASE_URL;
+export interface ServerConfigOverrides {
+  baseUrl?: string;
+  username?: string;
+  password?: string;
+  personalAccessToken?: string;
+  timeout?: number;
+}
+
+/**
+ * Load configuration for the stdio transport (when an MCP client — or a direct
+ * `openl-mcp <url>` invocation — launches the server).
+ *
+ * The base URL resolves from `overrides.baseUrl` (the positional `<url>` /
+ * `--base-url`) first, then the `OPENL_BASE_URL` environment variable.
+ * Authentication is OPTIONAL (OpenL Studio single-user mode accepts
+ * unauthenticated requests); credentials, when present, come from overrides or
+ * the environment.
+ *
+ * @param overrides - Command-line overrides; each falls back to its env var.
+ * @returns OpenL Studio configuration
+ * @throws Error if the base URL is missing or malformed, or timeout is invalid
+ */
+export async function loadConfigFromEnv(
+  overrides: ServerConfigOverrides = {},
+): Promise<Types.OpenLConfig> {
+  console.error(`[Config] Resolving configuration (positional <url> / flags / environment)...`);
+  console.error(`[Config] NOTE: This is for stdio transport. Auth credentials may come from MCP client config or CLI flags.`);
+  const baseUrl = overrides.baseUrl ?? process.env.OPENL_BASE_URL;
   if (!baseUrl) {
-    throw new Error("OPENL_BASE_URL environment variable is required");
+    throw new Error(
+      "OpenL base URL is required: pass it as a positional argument " +
+        "(openl-mcp <url>) or set the OPENL_BASE_URL environment variable",
+    );
   }
 
   // Validate base URL format
   try {
     new URL(baseUrl);
   } catch {
-    throw new Error(`Invalid OPENL_BASE_URL format: ${baseUrl}`);
+    throw new Error(`Invalid OpenL base URL: ${baseUrl}`);
   }
 
-  // Parse and validate timeout
-  let timeout: number | undefined;
-  if (process.env.OPENL_TIMEOUT) {
+  // Parse and validate timeout — flag override first, then env.
+  let timeout: number | undefined = overrides.timeout;
+  if (timeout === undefined && process.env.OPENL_TIMEOUT) {
     const parsedTimeout = parseInt(process.env.OPENL_TIMEOUT, 10);
     if (isNaN(parsedTimeout) || parsedTimeout <= 0) {
       throw new Error(`Invalid OPENL_TIMEOUT value: ${process.env.OPENL_TIMEOUT}`);
@@ -341,9 +367,9 @@ export async function loadConfigFromEnv(): Promise<Types.OpenLConfig> {
 
   const config: Types.OpenLConfig = {
     baseUrl,
-    username: process.env.OPENL_USERNAME,
-    password: process.env.OPENL_PASSWORD,
-    personalAccessToken: process.env.OPENL_PERSONAL_ACCESS_TOKEN,
+    username: overrides.username ?? process.env.OPENL_USERNAME,
+    password: overrides.password ?? process.env.OPENL_PASSWORD,
+    personalAccessToken: overrides.personalAccessToken ?? process.env.OPENL_PERSONAL_ACCESS_TOKEN,
     timeout,
   };
 
@@ -378,7 +404,13 @@ export async function loadConfigFromEnv(): Promise<Types.OpenLConfig> {
 async function main(): Promise<void> {
   try {
     const cliArgs = process.argv.slice(2);
-    if (cliArgs.length > 0) {
+    const { parseArgs, isCliInvocation, runCli } = await import("./cli.js");
+    const parsed = parseArgs(cliArgs);
+
+    if (isCliInvocation(parsed)) {
+      // CLI/tool mode: a tool name, a discovery flag (--help/--list-tools/
+      // --version), a tool-argument source, or a parse error.
+      //
       // EPIPE handling: when our stdout is piped into something that exits
       // early (`npx … | head -1`), the next write would throw EPIPE and crash
       // the process. Treat it as a successful early termination — exit 0.
@@ -388,12 +420,54 @@ async function main(): Promise<void> {
         throw err;
       });
 
-      const { runCli } = await import("./cli.js");
       const code = await runCli({ argv: cliArgs });
       process.exit(code);
     }
 
-    const config = await loadConfigFromEnv();
+    // Otherwise: launch the MCP server on stdio. The base URL comes from the
+    // positional `<url>` argument first, then `--base-url`, then OPENL_BASE_URL
+    // (Claude Desktop / Cursor / other MCP clients). Auth/timeout may also be
+    // supplied as flags, each falling back to its env var.
+
+    // Honor --client-document-id here too: the client reads it from
+    // OPENL_CLIENT_DOCUMENT_ID per request, so set it for the process lifetime.
+    if (parsed.overrides.clientDocumentId !== undefined) {
+      process.env.OPENL_CLIENT_DOCUMENT_ID = parsed.overrides.clientDocumentId;
+    }
+    // --cookie-jar and --anonymous only apply to single CLI tool invocations;
+    // they have no effect on the long-lived server. Warn rather than ignore
+    // silently, so a misplaced flag doesn't look like it took effect.
+    if (parsed.cookieJarPath !== undefined) {
+      console.error("Warning: --cookie-jar is ignored when launching the MCP server (it applies only to single tool invocations).");
+    }
+    if (parsed.anonymous) {
+      console.error("Warning: --anonymous is ignored when launching the MCP server (authentication is already optional).");
+    }
+
+    let config: Types.OpenLConfig;
+    try {
+      config = await loadConfigFromEnv({
+        baseUrl: parsed.baseUrlPositional ?? parsed.overrides.baseUrl,
+        username: parsed.overrides.username,
+        password: parsed.overrides.password,
+        personalAccessToken: parsed.overrides.token,
+        timeout: parsed.overrides.timeout,
+      });
+    } catch (error: unknown) {
+      // Missing/invalid base URL is a usage problem, not a crash — print a
+      // clear, stack-trace-free message naming both ways to supply the URL,
+      // then exit 1.
+      console.error(`Error: ${sanitizeError(error)}`);
+      console.error("");
+      console.error("Usage:");
+      console.error("  openl-mcp <url>                 start the MCP server for <url>");
+      console.error("  OPENL_BASE_URL=<url> openl-mcp  start the MCP server using the env var");
+      console.error("");
+      console.error("Provide the OpenL Studio base URL as a positional argument, or via the");
+      console.error("OPENL_BASE_URL environment variable. Run `openl-mcp --help` for full usage.");
+      process.exit(1);
+    }
+
     const server = new OpenLMCPServer(config);
     await server.start();
   } catch (error: unknown) {
@@ -403,8 +477,28 @@ async function main(): Promise<void> {
   }
 }
 
-// Start the server only if this file is run directly (not imported)
-// Check if this is the main module using import.meta.url
-if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('index.js')) {
+/**
+ * True when this module is the process entry point (run directly), false when
+ * it's merely imported (e.g. by the test suite, which must not start a server).
+ *
+ * Compares the realpath of `process.argv[1]` to this module's own path. Using
+ * realpaths is essential: when the binary is launched through a `bin` symlink
+ * — which is how a global install (`npm i -g`) and npm's `.bin/` shims invoke
+ * it — `process.argv[1]` is the UNRESOLVED symlink path (e.g. `.../bin/openl-
+ * mcp-server`), so the previous `=== file://argv[1]` / `endsWith('index.js')`
+ * check missed it and `main()` never ran. realpath resolves the symlink to the
+ * real `dist/index.js`, and also smooths over platform path quirks (e.g. macOS
+ * `/tmp` → `/private/tmp`). Falls back to `false` if the path can't be resolved.
+ */
+function isMainEntryPoint(): boolean {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+}
+
+if (isMainEntryPoint()) {
   main();
 }

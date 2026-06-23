@@ -5,7 +5,8 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "openl-mcp": "dist/index.js"
+    "openl-mcp": "dist/index.js",
+    "openl-mcp-server": "dist/index.js"
   },
   "files": [
     "dist/",

@@ -13,7 +13,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { CliError, EXIT_CODES, classifyError, runCli } from "../src/cli.js";
+import { CliError, EXIT_CODES, classifyError, isCliInvocation, parseArgs, runCli } from "../src/cli.js";
 import { OpenLClient } from "../src/client.js";
 import { hashFingerprint } from "../src/utils.js";
 import type { OpenLConfig } from "../src/types.js";
@@ -89,9 +89,15 @@ describe("CLI", () => {
         stderr: h.stderr,
       });
       expect(code).toBe(0);
-      expect(h.getStdout()).toContain("Usage:");
-      expect(h.getStdout()).toContain("openl_list_repositories");
-      expect(h.getStdout()).toContain("--base-url");
+      const out = h.getStdout();
+      expect(out).toContain("Usage:");
+      expect(out).toContain("openl_list_repositories");
+      expect(out).toContain("--base-url");
+      // Requirement: --help shows the positional <url> as required and
+      // documents the OPENL_BASE_URL fallback + precedence.
+      expect(out).toContain("openl-mcp <url>");
+      expect(out).toMatch(/Server URL \(required.*OPENL_BASE_URL/s);
+      expect(out).toContain("positional takes precedence");
     });
   });
 
@@ -879,6 +885,114 @@ describe("CLI", () => {
       expect(out).toContain("Rules & Tables:");
       expect(out).toContain("Trace:");
       expect(out).toContain("Deployment:");
+    });
+  });
+
+  describe("positional <url> argument", () => {
+    it("parseArgs captures a leading http(s) URL as baseUrlPositional, not toolName", () => {
+      const p = parseArgs(["https://studio.example.com"]);
+      expect(p.baseUrlPositional).toBe("https://studio.example.com");
+      expect(p.toolName).toBeUndefined();
+      expect(p.errors).toEqual([]);
+    });
+
+    it("parseArgs accepts <url> and <tool> in either order", () => {
+      const a = parseArgs(["http://localhost:8080", "openl_list_repositories"]);
+      expect(a.baseUrlPositional).toBe("http://localhost:8080");
+      expect(a.toolName).toBe("openl_list_repositories");
+
+      const b = parseArgs(["openl_list_repositories", "http://localhost:8080"]);
+      expect(b.baseUrlPositional).toBe("http://localhost:8080");
+      expect(b.toolName).toBe("openl_list_repositories");
+    });
+
+    it("parseArgs treats a non-http(s) URL-ish token as a tool name", () => {
+      const p = parseArgs(["mailto:x@y.z"]);
+      expect(p.baseUrlPositional).toBeUndefined();
+      expect(p.toolName).toBe("mailto:x@y.z");
+    });
+
+    it("parseArgs reports a second URL as an error, not as the tool name", () => {
+      const p = parseArgs(["http://a:1", "http://b:2", "openl_list_repositories"]);
+      expect(p.baseUrlPositional).toBe("http://a:1");
+      // The genuine tool name is kept; the duplicate URL is the error, so the
+      // diagnostic points at the right token.
+      expect(p.toolName).toBe("openl_list_repositories");
+      expect(p.errors).toContain("Multiple base URLs are not allowed: http://b:2");
+    });
+
+    it("parseArgs reports a third positional (after <url> <tool>) as unexpected", () => {
+      const p = parseArgs(["http://localhost:8080", "openl_list_repositories", "extra"]);
+      expect(p.baseUrlPositional).toBe("http://localhost:8080");
+      expect(p.toolName).toBe("openl_list_repositories");
+      expect(p.errors).toContain("Unexpected positional argument: extra");
+    });
+
+    it("isCliInvocation: false for a bare URL or no args (server launch), true otherwise", () => {
+      expect(isCliInvocation(parseArgs([]))).toBe(false);
+      expect(isCliInvocation(parseArgs(["http://localhost:8080"]))).toBe(false);
+      // URL + server flags, still no tool → server launch
+      expect(isCliInvocation(parseArgs(["http://localhost:8080", "--user", "u", "--password", "p"]))).toBe(false);
+      // anything tool-ish → CLI
+      expect(isCliInvocation(parseArgs(["openl_list_repositories"]))).toBe(true);
+      expect(isCliInvocation(parseArgs(["http://localhost:8080", "openl_list_repositories"]))).toBe(true);
+      expect(isCliInvocation(parseArgs(["--help"]))).toBe(true);
+      expect(isCliInvocation(parseArgs(["--list-tools"]))).toBe(true);
+      expect(isCliInvocation(parseArgs(["{}"]))).toBe(true); // json arg but no tool → CLI renders the usage error
+      expect(isCliInvocation(parseArgs(["--bogus"]))).toBe(true); // parse error → CLI renders it
+    });
+
+    it("uses the positional URL as the base URL for the tool call, over OPENL_BASE_URL", async () => {
+      const { client, mock: m } = createMockClient();
+      mock = m;
+      m.onGet("/repos").reply(200, mockRepositories);
+
+      let seenBaseUrl: string | undefined;
+      const h = createHarness();
+      const code = await runCli({
+        argv: ["http://localhost:8080", "openl_list_repositories", "--anonymous"],
+        env: { OPENL_BASE_URL: "http://env-host:1234" }, // positional must win
+        stdin: h.stdin,
+        stdout: h.stdout,
+        stderr: h.stderr,
+        clientFactory: (cfg) => {
+          seenBaseUrl = cfg.baseUrl;
+          return client;
+        },
+      });
+
+      expect(code).toBe(EXIT_CODES.OK);
+      expect(seenBaseUrl).toBe("http://localhost:8080");
+      expect(h.getStdout()).toContain("Design Repository");
+    });
+
+    it("positional URL beats --base-url when both are given", async () => {
+      const { client, mock: m } = createMockClient();
+      mock = m;
+      m.onGet("/repos").reply(200, mockRepositories);
+
+      let seenBaseUrl: string | undefined;
+      const h = createHarness();
+      const code = await runCli({
+        argv: [
+          "http://positional:8080",
+          "openl_list_repositories",
+          "--base-url",
+          "http://flag-host:5555",
+          "--anonymous",
+        ],
+        env: {},
+        stdin: h.stdin,
+        stdout: h.stdout,
+        stderr: h.stderr,
+        clientFactory: (cfg) => {
+          seenBaseUrl = cfg.baseUrl;
+          return client;
+        },
+      });
+
+      expect(code).toBe(EXIT_CODES.OK);
+      expect(seenBaseUrl).toBe("http://positional:8080");
     });
   });
 
