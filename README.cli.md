@@ -45,7 +45,7 @@ Use MCP mode (the default — pass no arguments) when:
 - You need **multi-turn** conversations where Claude chooses tools dynamically.
 - You're walking through a stateful flow that benefits from session continuity (although `--cookie-jar` covers most of this in CLI mode too — see below).
 
-The two modes are **mutually exclusive per process**: invoking the binary with arguments routes to CLI; with no arguments, it starts the MCP stdio server.
+The two modes are **mutually exclusive per process**: invoking the binary with a tool name (or a discovery flag like `--help`) routes to CLI; with no arguments — or with just a base `<url>` and no tool name — it starts the MCP stdio server.
 
 ---
 
@@ -56,15 +56,18 @@ The two modes are **mutually exclusive per process**: invoking the binary with a
 npx -y openl-mcp-server --help                          # human catalog (titles)
 npx -y openl-mcp-server --list-tools | jq '.[].name'    # machine-readable
 
-# 2. Single call with env-based config (markdown by default)
+# 2. Single call — base URL as a positional argument (markdown by default)
+npx -y openl-mcp-server https://studio.example.com \
+  openl_list_repositories --token openl_pat_…
+
+#    …or with env-based config
 export OPENL_BASE_URL=https://studio.example.com
 export OPENL_PERSONAL_ACCESS_TOKEN=openl_pat_…
 npx -y openl-mcp-server openl_list_repositories
 
 # 3. Add response_format=json when you want to pipe into jq
-npx -y openl-mcp-server openl_list_projects \
-  '{"response_format":"json"}' \
-  --base-url https://studio.example.com \
+npx -y openl-mcp-server https://studio.example.com \
+  openl_list_projects '{"response_format":"json"}' \
   --token openl_pat_… \
   | jq '.data[] | {name, status}'
 ```
@@ -74,19 +77,23 @@ npx -y openl-mcp-server openl_list_projects \
 ## Invocation
 
 ```text
-openl-mcp-server <tool-name> [args] [flags]
+openl-mcp-server <url> <tool-name> [args] [flags]   # base URL as a positional argument
+openl-mcp-server <tool-name> [args] [flags]         # base URL via --base-url / OPENL_BASE_URL
 openl-mcp-server --help
 openl-mcp-server --list-tools
-openl-mcp-server                          # no args → MCP stdio server
+openl-mcp-server <url>                    # just a URL, no tool → MCP stdio server
+openl-mcp-server                          # no args → MCP stdio server (uses OPENL_BASE_URL)
 ```
+
+The OpenL Studio base URL can be given as a **positional argument** (in any position relative to the tool name), via `--base-url`, or via `OPENL_BASE_URL` — see [Configuration](#configuration) for precedence.
 
 You can invoke the binary three ways:
 
 | Method | Example |
 |---|---|
-| One-shot via `npx` (no install) | `npx -y openl-mcp-server <tool-name> …` |
-| Globally installed | `npm i -g openl-mcp-server && openl-mcp <tool-name> …` |
-| From a clone | `node /path/to/dist/index.js <tool-name> …` |
+| One-shot via `npx` (no install) | `npx -y openl-mcp-server <url> <tool-name> …` |
+| Globally installed | `npm i -g openl-mcp-server && openl-mcp <url> <tool-name> …` |
+| From a clone | `node /path/to/dist/index.js <url> <tool-name> …` |
 
 > **Tip.** `npx -y` skips the prompt to install missing packages; safe to use in scripts.
 
@@ -141,7 +148,7 @@ The CLI reads configuration from environment variables. Every variable has a mat
 
 | Env var | Flag | Required | Default | Notes |
 |---|---|---|---|---|
-| `OPENL_BASE_URL` | `--base-url <url>` | yes | — | OpenL Studio root URL, e.g. `http://localhost:8080` |
+| `OPENL_BASE_URL` | positional `<url>` or `--base-url <url>` | yes | — | OpenL Studio root URL, e.g. `http://localhost:8080` |
 | `OPENL_PERSONAL_ACCESS_TOKEN` | `--token <pat>` | one of two auth modes | — | PAT starting with `openl_pat_` |
 | `OPENL_USERNAME` | `--user <name>` | with `--password` | — | Basic auth username |
 | `OPENL_PASSWORD` | `--password <pwd>` | with `--user` | — | Basic auth password |
@@ -150,7 +157,7 @@ The CLI reads configuration from environment variables. Every variable has a mat
 | — | `--cookie-jar <path>` | no | — | Persist JSESSIONID between calls (trace) |
 | — | `--anonymous` | no | off | Skip the auth requirement for servers that permit unauthenticated access |
 
-Precedence: **CLI flag > environment variable > default**.
+Precedence: **CLI flag > environment variable > default**. The base URL is special — it also accepts a **positional `<url>`** that takes precedence over `--base-url`, so the full order is **positional `<url>` > `--base-url` > `OPENL_BASE_URL`**. The positional may appear before or after the tool name (`openl-mcp <url> <tool>` or `openl-mcp <tool> <url>`); a bareword that parses as an `http(s)` URL is always treated as the base URL, never as a tool name.
 
 ---
 

@@ -40,9 +40,8 @@ Configure authentication in the MCP client configuration file:
   "mcpServers": {
     "openl-mcp-server": {
       "command": "node",
-      "args": ["<path-to-project>/dist/index.js"],
+      "args": ["<path-to-project>/dist/index.js", "http://localhost:8080"],
       "env": {
-        "OPENL_BASE_URL": "http://localhost:8080",
         "OPENL_PERSONAL_ACCESS_TOKEN": "<your-pat-token>"
       }
     }
@@ -56,15 +55,16 @@ Configure authentication in the MCP client configuration file:
   "mcpServers": {
     "openl-mcp-server": {
       "command": "node",
-      "args": ["<path-to-project>/dist/index.js"],
+      "args": ["<path-to-project>/dist/index.js", "http://localhost:8080"],
       "env": {
-        "OPENL_BASE_URL": "http://localhost:8080",
         "OPENL_PERSONAL_ACCESS_TOKEN": "<your-pat-token>"
       }
     }
   }
 }
 ```
+
+> The base URL is passed as the positional argument (`args: [..., "http://localhost:8080"]`). You can instead keep it in `env` as `OPENL_BASE_URL`; the positional takes precedence if both are set. The `env` block here carries only the (optional) auth credentials.
 
 ### For HTTP Transport (Docker)
 
@@ -136,9 +136,8 @@ OPENL_PASSWORD=admin
   "mcpServers": {
     "openl-studio": {
       "command": "node",
-      "args": ["/path/to/dist/index.js"],
+      "args": ["/path/to/dist/index.js", "http://localhost:8080"],
       "env": {
-        "OPENL_BASE_URL": "http://localhost:8080",
         "OPENL_USERNAME": "admin",
         "OPENL_PASSWORD": "admin"
       }
@@ -203,9 +202,8 @@ OPENL_PERSONAL_ACCESS_TOKEN=<your-pat-token>
   "mcpServers": {
     "openl-studio": {
       "command": "node",
-      "args": ["<path-to-project>/dist/index.js"],
+      "args": ["<path-to-project>/dist/index.js", "https://openl.example.com"],
       "env": {
-        "OPENL_BASE_URL": "https://openl.example.com",
         "OPENL_PERSONAL_ACCESS_TOKEN": "<your-pat-token>"
       }
     }
