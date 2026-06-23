@@ -10,7 +10,6 @@ export default {
       'ts-jest',
       {
         useESM: true,
-        isolatedModules: true,
         tsconfig: {
           module: 'Node16',
           moduleResolution: 'Node16',

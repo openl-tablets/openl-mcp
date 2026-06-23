@@ -399,7 +399,7 @@ Always use placeholders:
 
 - **Language**: TypeScript (ES2020+)
 - **Runtime**: Node.js 24+
-- **MCP SDK**: @modelcontextprotocol/sdk v1.26.0
+- **MCP SDK**: @modelcontextprotocol/sdk v1.29.0
 - **HTTP Client**: axios
 - **Validation**: Zod
 - **Testing**: Jest

@@ -283,7 +283,7 @@ constants.ts        Low
 ### Dependencies ✓
 
 **Production dependencies**:
-- `@modelcontextprotocol/sdk`: Latest stable (v1.26.0)
+- `@modelcontextprotocol/sdk`: Latest stable (v1.29.0)
 - `axios`: HTTP client
 - `cors`: CORS middleware
 - `express`: HTTP server framework

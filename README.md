@@ -2,7 +2,7 @@
 
 Model Context Protocol server for [OpenL Studio](https://github.com/openl-tablets/openl-tablets) Business Rules Management System.
 
-Built with MCP SDK v1.26+ featuring type-safe validation (Zod) and comprehensive OpenL Studio integration.
+Built with MCP SDK v1.29+ featuring type-safe validation (Zod) and comprehensive OpenL Studio integration.
 
 ## Quick Links
 

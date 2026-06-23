@@ -50,30 +50,35 @@
   "author": "",
   "license": "LGPL-3.0",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@stomp/stompjs": "^7.3.0",
-    "axios": "^1.17.0",
+    "axios": "^1.18.1",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "form-data": "^4.0.6",
     "ws": "^8.21.0",
-    "yaml": "^2.8.1",
-    "zod": "^4.3.6"
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@jest/globals": "^30.4.1",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
-    "@types/node": "^25.9.1",
+    "@types/node": "^26.0.0",
     "@types/ws": "^8.18.1",
-    "@typescript-eslint/eslint-plugin": "^8.60.1",
-    "@typescript-eslint/parser": "^8.18.2",
+    "@typescript-eslint/eslint-plugin": "^8.62.0",
+    "@typescript-eslint/parser": "^8.62.0",
     "axios-mock-adapter": "^2.1.0",
-    "eslint": "^10.4.1",
-    "jest": "^30.3.0",
-    "nock": "^14.0.11",
-    "ts-jest": "^29.4.6",
+    "eslint": "^10.5.0",
+    "jest": "^30.4.2",
+    "nock": "^14.0.15",
+    "ts-jest": "^29.4.11",
     "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "@istanbuljs/load-nyc-config": {
+      "js-yaml": "^4.2.0"
+    }
   },
   "engines": {
     "node": ">=24.0.0"
