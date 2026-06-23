@@ -52,9 +52,8 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - List all tables in a project (with filters)
 - Get detailed table data and structure
 - Update table content
-- Create new rules (via Excel upload)
-- Copy tables within projects
-- Execute rules with test data
+- Create new tables/rules in a project
+- Append data to existing tables
 
 **Supported Table Types**:
 - **Decision Tables**: Rules, SimpleRules, SmartRules, SimpleLookup, SmartLookup
@@ -65,53 +64,47 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - Discover existing business rules
 - Analyze rule logic and structure
 - Modify rule behavior
-- Test rule execution
-- Duplicate rules for variations
+- Append data to existing rules
 
-### 4. File Management
+### 4. Project File Management
 
-**Excel file operations**:
-- Upload Excel files with rules (.xlsx, .xls)
-- Download Excel files from projects
-- Access specific file versions (Git commit hash)
-- View file modification history
+**Workspace file operations**:
+- Read project files
+- Write and create project files
+- Copy, move, and delete project files
+- Search across project files
 
 **Use Cases**:
-- Deploy rules from local Excel files
-- Retrieve rules for offline editing
-- Access historical file versions
-- Track file change history
+- Inspect rule and configuration files
+- Edit project content directly
+- Reorganize project file structure
+- Locate files and content within a project
 
 ### 5. Testing and Validation
 
 **Comprehensive testing support**:
-- Run all tests in a project
-- Run specific tests by ID or table
-- Validate project for errors
-- Get detailed error analysis with categorization
-- Identify auto-fixable errors
+- Start test execution for a project
+- Retrieve test results (full, summary, or filtered by table)
+- Check project status for compilation errors and diagnostics
 
-**Error Categories**:
-- Type errors (type mismatches, conversions)
-- Syntax errors (parsing issues)
-- Reference errors (undefined references)
-- Validation errors (business logic issues)
+**Diagnostic Categories**:
+- Errors (block compilation)
+- Warnings (non-blocking issues)
 
 **Use Cases**:
 - Verify rule correctness before deployment
 - Debug rule errors efficiently
-- Identify fixable issues quickly
+- Review compile state and diagnostics with location
 - Ensure project quality
 
 ### 6. Version Control and History
 
 **Git-based versioning**:
-- View project commit history
-- View file commit history
-- Compare two versions of a project
-- Revert project to previous version
+- View committed project revisions (`openl_repository_project_revisions`)
+- View uncommitted workspace changes (`openl_list_project_local_changes`)
+- Restore a previous local change (`openl_restore_project_local_change`)
 
-**Commit Metadata**:
+**Revision Metadata**:
 - Commit hash (SHA)
 - Author (name, email)
 - Timestamp
@@ -121,8 +114,8 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 
 **Use Cases**:
 - Track project evolution
-- Compare versions to understand changes
-- Rollback problematic changes
+- Review committed revisions and uncommitted changes
+- Restore a previous local change
 - Audit rule modifications
 
 ### 7. Deployment Management
@@ -160,7 +153,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 ### 9. Prompt Library
 
 **Expert guidance templates**:
-- 15 comprehensive prompts for common workflows
+- 14 comprehensive prompts for common workflows
 - Dynamic argument substitution
 - Conditional content blocks
 - Best practices and examples embedded
@@ -176,11 +169,10 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - `update_test` - Modifying existing tests
 - `run_test` - Test selection and execution
 - `dimension_properties` - Business versioning vs Git versioning
-- `execute_rule` - Rule execution with test data
 - `deploy_project` - Deployment workflow
-- `get_project_errors` - Error analysis and fixes
-- `file_history` - File version history navigation
-- `project_history` - Project-wide commit history
+- `validate_after_edit` - Validation workflow after editing tables
+- `project_history` - Project-wide revision history
+- `project_agents_md` - Project AGENTS.md guidance
 
 **Use Cases**:
 - Guide AI agents through complex workflows
@@ -216,52 +208,63 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 
 ### FR-1: Tool Execution
 
-**Requirement**: MCP server provides 28 tools, of which 22 are currently active and 6 are temporarily disabled.
+**Requirement**: MCP server provides 40 tools.
 
-**Active Tools (25)**:
-
-**Repository Tools (4)**:
+**Repository Tools**:
 - `openl_list_repositories` - List all design repositories
 - `openl_list_branches` - List branches in a repository
 - `openl_list_repository_features` - Get repository features
 - `openl_repository_project_revisions` - Get project revision history
 
-**Project Tools (12)**:
+**Project Tools**:
 - `openl_list_projects` - List projects with optional filters (supports pagination)
 - `openl_get_project` - Get comprehensive project details
+- `openl_create_project` - Create a new project
 - `openl_open_project` - Open project for editing
-- `openl_save_project` - Save project changes to Git
+- `openl_save_project` - Save project changes to Git (validates on save)
 - `openl_close_project` - Close project with save/discard options
+- `openl_project_status` - Get compile state and diagnostics (errors/warnings with location)
 - `openl_create_project_branch` - Create new branch
 - `openl_list_project_local_changes` - List local change history
 - `openl_restore_project_local_change` - Restore previous local version
-- `openl_start_project_tests` - Start project test execution
-- `openl_get_test_results_summary` - Get brief test execution summary
-- `openl_get_test_results` - Get full test execution results with pagination
-- `openl_get_test_results_by_table` - Get test results filtered by table ID
+- `openl_get_project_agents_md` - Get project AGENTS.md guidance
 
-**Rules Tools (5)**:
+**Project File Tools**:
+- `openl_read_project_file` - Read a project file
+- `openl_write_project_file` - Write a project file
+- `openl_copy_project_file` - Copy a project file
+- `openl_move_project_file` - Move a project file
+- `openl_delete_project_file` - Delete a project file
+- `openl_search_project_files` - Search across project files
+
+**Rules / Table Tools**:
 - `openl_list_tables` - List tables/rules with filters (supports pagination)
 - `openl_get_table` - Get table details and data
 - `openl_update_table` - Update table content
 - `openl_append_table` - Append data to existing table
 - `openl_create_project_table` - Create new table/rule
 
-**Deployment Tools (4)**:
+**Testing Tools**:
+- `openl_start_project_tests` - Start project test execution
+- `openl_get_test_results_summary` - Get brief test execution summary
+- `openl_get_test_results` - Get full test execution results with pagination
+- `openl_get_test_results_by_table` - Get test results filtered by table ID
+
+**Trace Tools**:
+- `openl_start_trace` - Start a trace session
+- `openl_cancel_trace` - Cancel a trace session
+- `openl_export_trace` - Export trace data
+- `openl_get_trace_nodes` - Get trace nodes
+- `openl_get_trace_node_details` - Get details for a trace node
+- `openl_get_trace_parameter` - Get a trace parameter
+
+**Deployment Tools**:
 - `openl_list_deploy_repositories` - List deployment repositories
 - `openl_list_deployments` - List all deployments (supports pagination)
 - `openl_deploy_project` - Deploy project to production
 - `openl_redeploy_project` - Redeploy with new version
 
-**Disabled Tools (6)** - Temporarily disabled pending implementation fixes:
-- `openl_upload_file` - Upload Excel file to project
-- `openl_download_file` - Download Excel file from project
-- `openl_execute_rule` - Execute rule with test data
-- `openl_revert_version` - Revert to previous version
-- `openl_get_file_history` - Get file commit history
-- `openl_get_project_history` - Get project commit history
-
-**Note**: All active tools support the `response_format` parameter (json/markdown). All list operations support pagination via `limit` and `offset` parameters.
+**Note**: All tools support the `response_format` parameter (json/markdown). All list operations support pagination via `limit` and `offset` parameters.
 
 ### FR-2: Input Validation
 
@@ -334,7 +337,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 
 ### FR-5: Prompt System
 
-**Requirement**: Provide 15 prompts with argument substitution.
+**Requirement**: Provide 14 prompts with argument substitution.
 
 **Prompt Features**:
 - YAML frontmatter metadata
@@ -406,10 +409,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - Backward compatibility note: clients must pass the exact `projectId` returned by `openl_list_projects`
 
 **Known Limitations** (Documented):
-- `/tables` POST endpoint returns 405 (use upload_file instead)
-- `/tests/run` endpoint returns 404 (not available in REST API)
-- `/validation` endpoint returns 404 (not available in REST API)
-- `/history` endpoints return 404 (not available in REST API)
+- Some endpoints vary by OpenL Studio version; the server degrades gracefully when an endpoint is unavailable
 
 ### FR-9: Performance Requirements
 
@@ -506,8 +506,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - `openl_list_projects`
 - `openl_list_tables`
 - `openl_list_deployments`
-- `openl_get_project_history`
-- `openl_get_file_history`
+- `openl_get_test_results`
 
 **Implementation**:
 - Server-side pagination via OpenL API
@@ -586,11 +585,11 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 
 The MCP server is considered successful when:
 
-1. ✅ All 25 active tools execute successfully (6 tools temporarily disabled)
-2. ✅ All active tools support response_format parameter
+1. ✅ All 40 tools execute successfully
+2. ✅ All tools support response_format parameter
 3. ✅ All list operations support pagination
 4. ✅ Character limits enforced on all responses
-5. ✅ All 15 prompts render correctly
+5. ✅ All 14 prompts render correctly
 6. ✅ Both authentication methods work (Basic Auth, PAT)
 7. ⏳ Test coverage >38% (target: 80%)
 8. ✅ ESLint enforced (no errors on commit)
@@ -630,4 +629,4 @@ Potential enhancements for future versions:
 
 *Last Updated: 2026-01-28*
 *Version: 1.0.0*
-*Status: Production-ready (22/28 tools active, 6 temporarily disabled pending fixes)*
+*Status: Production-ready (40 tools, 14 prompts)*

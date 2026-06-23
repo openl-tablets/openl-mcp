@@ -23,6 +23,12 @@ The AGENTS.md file contains:
 - Add a third-party library only when it brings significant benefit — that is, it substantially reduces the code we would otherwise write and maintain. Prefer reimplementing small or simple functionality over taking on a dependency.
 - When a library is used, keep it on the latest version that is practical for the project.
 
+## Documentation
+
+- Keep all documentation up to date with every code change. When a change adds, removes, or alters tools, prompts, dependencies, configuration, or behavior, update the affected docs in the same change — never leave them for later.
+- This covers every document, not just the README: `AGENTS.md`, the `README*.md` files, everything under `docs/`, the prompt files in `prompts/`, and the spec docs under `.specify/`.
+- Remove obsolete information rather than letting it accumulate: no references to removed tools, prompts, or APIs, and no stale counts, examples, or links.
+
 ## Git Commits
 
 - Commit every completed piece of work.

@@ -61,9 +61,6 @@ For a fast setup, use [Method 1 (Docker Compose, recommended) in the Quick Start
 - [Code Standards](docs/development/code-standards.md) - Best practices and coding standards
 - [Tool Review](docs/development/tool-review.md) - Technical review of MCP tools vs OpenL API
 
-### Reference
-- [Enable Disabled Tools](docs/reference/enable-disabled-tools.md) - How to enable temporarily disabled tools
-
 ## OpenL Studio Concepts
 
 OpenL Studio uses **dual versioning**: Git-based commits (temporal) and dimension properties (business context). Supports multiple table types: Decision Tables (Rules, SimpleRules, SmartRules, Lookups), Spreadsheet Tables, and others (Method, Datatype, Test, etc.).
@@ -72,23 +69,24 @@ See [prompts/create_rule.md](./prompts/create_rule.md) for detailed table type g
 
 ## Tools
 
-The MCP server provides 25 active tools for managing OpenL Studio repositories, projects, rules, and deployments. All tools are prefixed with `openl_` and versioned (v1.0.0+).
+The MCP server provides 40 tools for managing OpenL Studio repositories, projects, rules, tables, tests, traces, and deployments. All tools are prefixed with `openl_` and versioned (v1.0.0+).
 
 **Categories:**
-- **Repository Management** (4 tools) - List repositories, branches, features
-- **Project Management** (12 active + 2 disabled = 14 total) - List, open, save, branch projects, test execution
-- **Rules & Tables** (5 active + 1 disabled = 6 total) - List, get, update, append, create tables
-- **Deployment** (4 tools) - List, deploy, redeploy projects
+- **Repository Management** - List repositories, branches, features, and revisions
+- **Project Management** - List, open, save, close, create, and branch projects; track local changes
+- **Files** - Read, write, search, copy, move, and delete project files
+- **Rules & Tables** - List, get, update, append, and create tables
+- **Tests** - Start tests and retrieve results (full, summary, or by table)
+- **Tracing** - Start, cancel, and export traces; inspect trace nodes and parameters
+- **Deployment** - List deploy repositories and deployments; deploy and redeploy projects
 
-**Note:** 6 additional tools are temporarily disabled pending implementation fixes.
-
-See [Usage Examples](docs/guides/examples.md) for detailed tool usage and [Enable Disabled Tools](docs/reference/enable-disabled-tools.md) for tool reference.
+See [Usage Examples](docs/guides/examples.md) for detailed tool usage.
 
 ## Prompts
 
-15 expert guidance templates for complex OpenL Studio workflows. Prompts provide contextual assistance, best practices, and step-by-step instructions directly in Claude Desktop or MCP Inspector.
+14 expert guidance templates for complex OpenL Studio workflows. Prompts provide contextual assistance, best practices, and step-by-step instructions directly in Claude Desktop or MCP Inspector.
 
-**Available prompts:** local_projects, create_rule, create_rule_decision_tables, create_rule_spreadsheet, create_test, update_test, run_test, execute_rule, append_table, datatype_vocabulary, dimension_properties, deploy_project, get_project_errors, file_history, project_history.
+**Available prompts:** local_projects, create_rule, create_rule_decision_tables, create_rule_spreadsheet, create_test, update_test, run_test, append_table, datatype_vocabulary, dimension_properties, deploy_project, validate_after_edit, project_agents_md, project_history.
 
 **Usage:** Request prompts in Claude Desktop (e.g., "Use the create_rule prompt") or access via MCP Inspector. See [prompts/create_rule.md](./prompts/create_rule.md) for detailed content.
 
@@ -139,7 +137,7 @@ See [MCP Connection Guide](docs/setup/mcp-connection-guide.md) for client-specif
 - **Multiple Auth Methods**: Basic Auth and Personal Access Token (PAT)
 - **4 Response Formats**: json, markdown, markdown_concise, markdown_detailed
 - **Pagination Support**: Metadata for all list operations
-- **AI Prompts**: 15 expert guidance templates
+- **AI Prompts**: 14 expert guidance templates
 - **Comprehensive Tests**: Full test suite covering core functionality
 
 ## Development

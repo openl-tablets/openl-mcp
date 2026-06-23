@@ -2,7 +2,7 @@
 
 ## [Version 1.0.0](https://github.com/openl-tablets/openl-mcp/releases/tag/v1.0.0) - February 23, 2026
 
-The OpenL MCP Server enables **natural language interaction with OpenL Studio** through AI assistants like Claude Desktop, Cursor IDE, and VS Code Copilot. This initial release brings 25 production-ready tools, 15 expert guidance prompts, and comprehensive MCP protocol support to business rules management.
+The OpenL MCP Server enables **natural language interaction with OpenL Studio** through AI assistants like Claude Desktop, Cursor IDE, and VS Code Copilot. This initial release brings 40 production-ready tools, 14 expert guidance prompts, and comprehensive MCP protocol support to business rules management.
 
 Built on the Model Context Protocol (MCP) v1.26.0, the server acts as a bridge between AI assistants and OpenL Studio's REST API, transforming complex business rules operations into simple conversational commands. Business analysts, QA teams, and operations staff can now create rules, run tests, and deploy to production using plain English - no programming required.
 
@@ -10,29 +10,36 @@ Built on the Model Context Protocol (MCP) v1.26.0, the server acts as a bridge b
 
 ## New Features
 
-### 25 Production-Ready MCP Tools
+### 40 Production-Ready MCP Tools
 
-The server provides comprehensive OpenL Studio access through 25 tools organized into four functional categories:
+The server provides comprehensive OpenL Studio access through 40 tools organized into functional categories:
 
 **Repository Management (4 tools)**
 - `openl_list_repositories` - List all design repositories with metadata
 - `openl_list_branches` - List Git branches with current branch indicator
 - `openl_list_repository_features` - Get repository capabilities
-- `openl_repository_project_revisions` - Get project revision history
+- `openl_repository_project_revisions` - Get committed project revision history
 
-**Project Management (12 tools)**
+**Project Management (11 tools)**
 - `openl_list_projects` - List and filter projects with pagination
 - `openl_get_project` - Get comprehensive project details
+- `openl_create_project` - Create a new project
 - `openl_open_project` - Open project for editing with branch/revision support
 - `openl_save_project` - Save changes to Git with validation
 - `openl_close_project` - Close project with save/discard safety checks
+- `openl_project_status` - Get compile state and diagnostics (errors/warnings with location)
 - `openl_create_project_branch` - Create new Git branches
-- `openl_list_project_local_changes` - View workspace history
-- `openl_restore_project_local_change` - Restore previous versions
-- `openl_start_project_tests` - Execute project tests
-- `openl_get_test_results_summary` - Get brief test summary
-- `openl_get_test_results` - Get detailed test results with pagination
-- `openl_get_test_results_by_table` - Filter test results by table
+- `openl_list_project_local_changes` - View uncommitted workspace history
+- `openl_restore_project_local_change` - Restore previous workspace versions
+- `openl_get_project_agents_md` - Get AGENTS.md guidance for the project
+
+**Project Files (6 tools)**
+- `openl_read_project_file` - Read a file from the project
+- `openl_write_project_file` - Write or update a project file
+- `openl_copy_project_file` - Copy a file within the project
+- `openl_move_project_file` - Move or rename a project file
+- `openl_delete_project_file` - Delete a project file
+- `openl_search_project_files` - Search across project files
 
 **Rules & Tables Management (5 tools)**
 - `openl_list_tables` - List all tables with filtering
@@ -41,18 +48,33 @@ The server provides comprehensive OpenL Studio access through 25 tools organized
 - `openl_append_table` - Add fields/rows incrementally
 - `openl_create_project_table` - Create new tables programmatically
 
+**Testing (4 tools)**
+- `openl_start_project_tests` - Execute project tests
+- `openl_get_test_results_summary` - Get brief test summary
+- `openl_get_test_results` - Get detailed test results with pagination
+- `openl_get_test_results_by_table` - Filter test results by table
+
+**Tracing (6 tools)**
+- `openl_start_trace` - Start a rule execution trace
+- `openl_cancel_trace` - Cancel a running trace
+- `openl_get_trace_nodes` - List nodes in a trace
+- `openl_get_trace_node_details` - Inspect a single trace node
+- `openl_get_trace_parameter` - Read a trace node parameter value
+- `openl_export_trace` - Export trace data
+
 **Deployment (4 tools)**
 - `openl_list_deploy_repositories` - List deployment repositories
 - `openl_list_deployments` - List active deployments
 - `openl_deploy_project` - Deploy to production
 - `openl_redeploy_project` - Redeploy with new version
 
-### 15 Expert Guidance Prompts
+### 14 Expert Guidance Prompts
 
 Built-in templates provide contextual assistance for complex OpenL workflows:
 
 **Local Projects**
 - `local_projects` - Working with repository 'local' (no open/save/close; table/rule/test tools only)
+- `project_agents_md` - Surface AGENTS.md guidance for the active project
 
 **Table Creation & Management**
 - `create_rule` - Comprehensive guide for all table types
@@ -65,16 +87,14 @@ Built-in templates provide contextual assistance for complex OpenL workflows:
 - `create_test` - Test table creation guide
 - `update_test` - Test modification guide
 - `run_test` - Test execution workflow
-- `execute_rule` - Rule execution guide
+- `validate_after_edit` - Validate a project after editing tables
 
 **Advanced Features**
 - `dimension_properties` - Context-based versioning
-- `file_history` - File version history
 - `project_history` - Project audit trail
 
-**Deployment & Quality**
+**Deployment**
 - `deploy_project` - Deployment workflow
-- `get_project_errors` - Error analysis
 
 ### MCP Resources
 
@@ -173,18 +193,6 @@ Four output formats for different use cases:
 - **Large Responses** - Automatic truncation at 25,000 characters with pagination guidance
 - **Session Management** - Some endpoints require project to be opened first
 
-### Temporarily Disabled Tools (6)
-
-The following tools are defined but not yet enabled pending full implementation:
-- `openl_upload_file` - Upload Excel files to projects
-- `openl_download_file` - Download Excel files from projects
-- `openl_execute_rule` - Execute rules with test data
-- `openl_get_file_history` - View Git history for specific files
-- `openl_get_project_history` - View Git history for entire project
-- `openl_revert_version` - Revert to previous Git commit
-
-**Status**: Planned for v1.1.0 release in Q2 2026
-
 ---
 
 ## Migration Notes
@@ -265,21 +273,12 @@ For complete setup instructions, see the [MCP Connection Guide](docs/setup/mcp-c
 
 ### Planned for v1.1.0 (Q2 2026)
 
-**New Capabilities (5)**
-1. **Rule Execution Testing** (`openl_execute_rule`) - Test any rule instantly with custom data
-2. **Rule Tracing** (`openl_trace_rule_execution`) - Step-by-step decision path debugging
-3. **Dependency Analysis** (`openl_get_table_dependencies`) - Visualize table relationships
-4. **Branch Management** (`openl_delete_project_branch`) - Delete obsolete branches safely
-5. **Enhanced Project Listing** - Project dependencies in `openl_list_projects`
+**New Capabilities**
+1. **Dependency Analysis** (`openl_get_table_dependencies`) - Visualize table relationships
+2. **Branch Management** (`openl_delete_project_branch`) - Delete obsolete branches safely
+3. **Enhanced Project Listing** - Project dependencies in `openl_list_projects`
 
-**Re-enabled Tools (5)**
-- `openl_upload_file` - Upload Excel files
-- `openl_download_file` - Download Excel files
-- `openl_get_file_history` - File-level Git history
-- `openl_get_project_history` - Project-level Git history
-- `openl_revert_version` - Revert to previous commits
-
-**Total Tool Count**: 25 active tools
+**Total Tool Count**: 40 active tools
 
 ---
 

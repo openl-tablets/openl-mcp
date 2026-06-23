@@ -2,10 +2,6 @@
 
 Technical reference materials for the OpenL MCP Server.
 
-## Available References
-
-- **[Enable Disabled Tools](enable-disabled-tools.md)** - How to enable temporarily disabled tools
-
 ## Quick Links
 
 - [Main Documentation Index](../README.md)

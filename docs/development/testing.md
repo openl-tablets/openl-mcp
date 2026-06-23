@@ -98,7 +98,7 @@ Tests MCP server tools end-to-end:
   - Deployments resource
 
 - **MCP Tools**
-  - All 25 tools (list_repositories, list_projects, etc.)
+  - All 40 tools (list_repositories, list_projects, etc.)
   - Tool input validation
   - Tool output formatting
   - Error handling and edge cases

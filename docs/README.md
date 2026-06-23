@@ -27,10 +27,6 @@ Contributing to the project:
 - **[Testing Guide](development/testing.md)** - Testing strategy
 - **[Code Standards](development/code-standards.md)** - Coding standards
 
-### 📚 Reference
-Technical reference materials:
-- **[Enable Disabled Tools](reference/enable-disabled-tools.md)** - Temporarily disabled tools
-
 ## Documentation Structure
 
 ```

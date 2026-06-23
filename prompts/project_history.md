@@ -9,33 +9,52 @@ arguments:
 
 ## Summary
 
-**Project-wide audit trail**: **openl_get_project_history**, **openl_get_file_history**, and **openl_revert_version** are temporarily unavailable (disabled on the server). Do not invoke them. Use the OpenL Studio design UI—or manual inspection/rollback in the repository—to view project-wide commits, file-level history, and restore previous versions. Git history applies only to projects in a design repository; for `repository: 'local'` it is not available.
+OpenL tracks two kinds of history:
 
-# OpenL Project History vs File History
+- **Committed history** — the Git commit log of a project in a design repository. Read it with **openl_repository_project_revisions**.
+- **Local workspace history** — uncommitted changes saved while the project is open. List it with **openl_list_project_local_changes** and roll back with **openl_restore_project_local_change**.
+
+History applies only to projects in a design repository. For `repository: 'local'`, neither committed revisions nor local change history is available (local projects cannot be opened).
+
+# Project History: **{projectId}**
 
 {if projectId}
-## Project History: **{projectId}**
+Use the tools below to inspect history for **{projectId}**.
 {end if}
 
-## Handler availability
+## Committed history — openl_repository_project_revisions
 
-**openl_get_project_history**, **openl_get_file_history**, and **openl_revert_version** are temporarily disabled. Use the OpenL Studio design UI or manual repository steps (e.g. Git log, checkout, or file inspection) for project audit, file history, and rollback. For `repository: 'local'`, project history is not available—use the UI if needed.
+Use this for the project's Git commit log. It is read-only and does not require the project to be opened.
 
-## When to use (via UI or manual fallback)
+- Audit the change trail across the entire OpenL project
+- See who committed what and when, across multiple Excel files
+- Track team activity and review past saves/merges
 
-**Project-wide audit (normally openl_get_project_history):**
-- Audit trail across entire OpenL project
-- Find when change affected multiple Excel files
-- Track team activity; compare project states at different commits; revert to stable commit  
-→ Use OpenL Studio design UI or repository Git history.
+Key arguments:
+- `repository` — repository id or name (call **openl_list_repositories** first; both id and name are accepted)
+- `projectName` — the project to inspect
+- `branch` — optional, only for repositories that support branches
+- `search` — optional filter on commit message or author
+- `techRevs` — optional, include technical revisions (default: false)
+- `page` / `size` — optional pagination (size default 50, max 200)
 
-**File-level history (normally openl_get_file_history):**
-- Track single file changes; find who modified a file; compare versions; recover deleted file  
-→ Use OpenL Studio design UI or manual file inspection/rollback in the repository.
+## Local workspace history — openl_list_project_local_changes
 
-## OpenL Commit Info
+Use this for the uncommitted change history of a project you have open. It is session-based: call **openl_open_project** first, and it takes no `projectId` argument.
 
-Each commit (when viewed via UI or repository) shows:
+- Review versions saved locally before they are committed
+- Find an earlier local version to recover from
+
+To roll back, pass the `historyId` from the list response to **openl_restore_project_local_change** (this overwrites the current local state, so confirm before restoring).
+
+## Choosing between them
+
+- Need the committed Git log, authors, and commit hashes → **openl_repository_project_revisions**
+- Need to inspect or undo uncommitted local edits in an open project → **openl_list_project_local_changes** / **openl_restore_project_local_change**
+
+## OpenL Revision Info
+
+Each revision from **openl_repository_project_revisions** includes:
 - commitHash (Git SHA)
 - Author, timestamp
 - Branch, commit type (SAVE, MERGE, etc.)

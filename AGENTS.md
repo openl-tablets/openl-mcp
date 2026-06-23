@@ -10,7 +10,7 @@ This MCP server enables AI agents to:
 - **Discover** repositories, projects, and rules in OpenL Studio
 - **Read** project structures, table definitions, and rule logic
 - **Modify** rules, tables, and project configurations
-- **Execute** rules with test data for validation
+- **Test** rules by running project tests and inspecting results
 - **Deploy** projects to production environments
 - **Manage** version control and Git-based history
 
@@ -66,8 +66,6 @@ Most traffic is plain REST. The WebSocket (STOMP) channel is used only to wait, 
 - Update entire tables (modify, delete, reorder rows)
 - Append rows/fields to tables (additive changes)
 - Create new tables programmatically
-- Upload Excel files containing rules
-- Download Excel files (current or historical versions)
 
 ### 4. Project Files (BETA)
 - Read any project file by path (text returned verbatim, binary as base64) with optional byte range
@@ -78,15 +76,13 @@ Most traffic is plain REST. The WebSocket (STOMP) channel is used only to wait, 
 - Copy and move/rename files within a project
 
 ### 5. Version Control
-- View Git commit history for projects
-- View Git commit history for specific files
-- Revert to previous Git commits
-- Compare versions (planned)
+- View committed project revision history
+- View uncommitted workspace change history
+- Restore previous workspace versions
 
 ### 6. Testing & Validation
-- Run project tests (all or specific tables)
-- Execute individual rules with test data
-- Get project errors and validation results (planned)
+- Run project tests (all or specific tables) and inspect results
+- Check project status for compile state and diagnostics (errors/warnings with location)
 
 ### 7. Trace (BETA)
 - Start trace execution for rules/test tables
@@ -100,11 +96,9 @@ Most traffic is plain REST. The WebSocket (STOMP) channel is used only to wait, 
 - Deploy projects to production
 - Redeploy with new versions
 
-## Tools (40 Active, 6 Disabled, 46 Total Defined)
+## Tools (40 Total)
 
 All tools are prefixed with `openl_` and versioned (v1.0.0+).
-
-**Disabled tools:** `validate_project`, `get_project_errors`, `test_project`, `compare_versions` (pending client.ts support).
 
 ### Repository Tools (4)
 - `openl_list_repositories` - List all design repositories
@@ -112,9 +106,10 @@ All tools are prefixed with `openl_` and versioned (v1.0.0+).
 - `openl_list_repository_features` - Get repository capabilities
 - `openl_repository_project_revisions` - Get project revision history
 
-### Project Tools (15)
+### Project Tools (14)
 - `openl_list_projects` - List projects with filters
 - `openl_get_project` - Get project details
+- `openl_project_status` - Get project compile state and diagnostics (errors/warnings with location)
 - `openl_create_project` - Create a new project: omit `template` for a BLANK project (atomic commit on the default branch; returns commit revision), or pass `template` = an existing project name to CLONE it (full copy + rename in rules.xml). A default (branch-less) clone is committed atomically and indexed, so it appears in `openl_list_projects` immediately. Cloning onto a specific `branch` writes directly to repository Git via the files API, so a branch clone may not appear in `openl_list_projects` (and its revision may be unavailable) until OpenL re-indexes the repository
 - `openl_open_project` - Open project for editing (supports branch/revision switching)
 - `openl_save_project` - Save project changes to Git with validation
@@ -122,20 +117,17 @@ All tools are prefixed with `openl_` and versioned (v1.0.0+).
 - `openl_create_project_branch` - Create new branch
 - `openl_list_project_local_changes` - View workspace history
 - `openl_restore_project_local_change` - Restore previous version
-- `openl_upload_file` - Upload Excel files
-- `openl_download_file` - Download Excel files
 - `openl_start_project_tests` - Start project test execution
 - `openl_get_test_results_summary` - Get brief test execution summary
 - `openl_get_test_results` - Get full test execution results with pagination
 - `openl_get_test_results_by_table` - Get test results filtered by table ID
 
-### Rules/Tables Tools (6)
+### Rules/Tables Tools (5)
 - `openl_list_tables` - List all tables in project
 - `openl_get_table` - Get table structure and data (use `raw=true` for raw 2D cell matrix view)
 - `openl_update_table` - Replace entire table
 - `openl_append_table` - Add rows/fields to table
 - `openl_create_project_table` - Create new table
-- `openl_execute_rule` - Execute rule with test data
 
 ### Project Files Tools (7, BETA)
 Operate on ANY file in a project by exact project-relative path (not just Excel rule files). Writes/deletes/copies/moves land in the project **working copy** — commit them with `openl_save_project`. Use the optional `branch` to pin the project's branch (omit for `local`/non-branch repositories).
@@ -155,11 +147,6 @@ Operate on ANY file in a project by exact project-relative path (not just Excel 
 - `openl_cancel_trace` - Cancel ongoing trace
 - `openl_export_trace` - Export trace as text
 
-### Version Control (3)
-- `openl_get_project_history` - Git commit history for project
-- `openl_get_file_history` - Git commit history for file
-- `openl_revert_version` - Revert to previous commit
-
 ### Deployment (4)
 - `openl_list_deploy_repositories` - List deployment repositories
 - `openl_list_deployments` - List active deployments
@@ -177,12 +164,12 @@ Projects with `repository: 'local'` are stored on disk without Git; **OPENED/EDI
 
 **For local, do not use:**
 - `openl_open_project`, `openl_save_project`, `openl_close_project` (no commits or status changes);
-- Git tools: `openl_list_branches`, `openl_create_project_branch`, `openl_repository_project_revisions`, `openl_get_project_history`, `openl_get_file_history`, `openl_revert_version`;
+- Git tools: `openl_list_branches`, `openl_create_project_branch`, `openl_repository_project_revisions`;
 - `openl_list_project_local_changes`, `openl_restore_project_local_change` (require an opened project; local projects cannot be opened).
 
 Deployment (`openl_deploy_project`, `openl_redeploy_project`) for projects with `repository: 'local'` is typically not used via the studio.
 
-## Prompts (17 Total)
+## Prompts (14 Total)
 
 Expert guidance templates for complex OpenL workflows:
 
@@ -193,16 +180,13 @@ Expert guidance templates for complex OpenL workflows:
 5. **create_test** - Guide for creating test tables
 6. **update_test** - Guide for modifying tests
 7. **run_test** - Test execution workflow
-8. **execute_rule** - Rule execution guide
-9. **append_table** - Incremental table updates
-10. **datatype_vocabulary** - Data structure definitions
-11. **dimension_properties** - Context-based rule selection
-12. **deploy_project** - Deployment workflow
-13. **get_project_errors** - Error analysis workflow
-14. **file_history** - File version history
-15. **project_history** - Project audit trail
-16. **validate_after_edit** - Post-edit validation workflow (compile state, error surfacing, re-validation)
-17. **project_agents_md** - Load and apply a project's AGENTS.md guidance (walk up to repo root; nearest-file-wins)
+8. **append_table** - Incremental table updates
+9. **datatype_vocabulary** - Data structure definitions
+10. **dimension_properties** - Context-based rule selection
+11. **deploy_project** - Deployment workflow
+12. **project_history** - Project audit trail
+13. **validate_after_edit** - Post-edit validation workflow (compile state, error surfacing, re-validation)
+14. **project_agents_md** - Load and apply a project's AGENTS.md guidance (walk up to repo root; nearest-file-wins)
 
 ## Resources
 
@@ -344,7 +328,6 @@ Always use placeholders:
 - Dual versioning (Git commits + dimension properties)
 - Table type awareness (Rules, Spreadsheet, Datatype, etc.)
 - Project ID format handling (current and legacy path formats)
-- Excel file upload/download support
 
 ## Usage Examples
 
@@ -403,17 +386,12 @@ Always use placeholders:
 }
 ```
 
-### Execute Rule
+### Run Project Tests
 ```json
 {
-  "tool": "openl_execute_rule",
+  "tool": "openl_start_project_tests",
   "arguments": {
-    "projectId": "<PROJECT_ID>",
-    "ruleName": "<RULE_NAME>",
-    "inputData": {
-      "<INPUT_FIELD_1>": <INPUT_VALUE_1>,
-      "<INPUT_FIELD_2>": <INPUT_VALUE_2>
-    }
+    "projectId": "<PROJECT_ID>"
   }
 }
 ```
@@ -436,8 +414,7 @@ openl-mcp/
 │   ├── index.ts           # Main entry (stdio transport)
 │   ├── server.ts          # HTTP server (SSE/StreamableHTTP)
 │   ├── client.ts          # OpenL API client
-│   ├── tools.ts           # Tool definitions
-│   ├── tool-handlers.ts   # Tool execution logic
+│   ├── tool-handlers.ts   # Tool definitions and execution logic
 │   ├── auth.ts            # Authentication (Basic/PAT)
 │   ├── schemas.ts         # Zod validation schemas
 │   ├── prompts.ts         # Prompt definitions

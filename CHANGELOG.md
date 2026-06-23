@@ -35,6 +35,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Project status validation — the read-only `openl_project_status` tool and `openl://status/{projectId}` resource report a project's compilation state, diagnostics, and pending changes, with an optional wait-for-compilation mode and live updates; adds resource templates and `projectId`/`branch` autocompletion (EPBDS-15919).
 - Five Project Files tools for working with any file in a project by path: `openl_read_project_file` (read/list/metadata), `openl_write_project_file`, `openl_delete_project_file`, `openl_copy_project_file`, and `openl_move_project_file` (EPBDS-16080).
 - Bundled an `openl-trace-investigation` skill that guides diagnosing unexpected OpenL results (wrong values, nulls, rejected claims), including cases where a clean trace hides an upstream mapping/integration defect (EPBDS-15859).
+- `@jest/globals` is now declared directly as a dev dependency instead of being relied on transitively.
+
+### Removed
+
+- Six tools that were never enabled have been removed along with their input schemas and the client methods that backed them: `openl_upload_file`, `openl_download_file`, `openl_execute_rule`, `openl_revert_version`, `openl_get_file_history`, and `openl_get_project_history`.
+- Three obsolete guidance prompts have been removed: `execute_rule`, `file_history`, and `get_project_errors`.
+- Dropped the dead `src/tools.ts` tool registry (and its tool-category groupings); `tool-handlers.ts` is now the single source of registered tools.
+- Pruned roughly 30 unused type definitions left over from the removed features.
+- Removed unused dev dependencies: `ts-node`, `@types/js-yaml`, and `@types/jest`.
 
 ### Deprecated
 

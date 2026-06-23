@@ -131,7 +131,7 @@ Deep codebase analysis results. Plans are grouped by priority.
 
 ## Plan 5. Split tool-handlers.ts into Modules [HIGH]
 
-**Problem:** `tool-handlers.ts` contains 2,306 lines — all 34+ handlers in a single file. Hard to navigate, test, and review.
+**Problem:** `tool-handlers.ts` is now the single tool registry and contains 3,744 lines — all 40 handlers in one file. Hard to navigate, test, and review.
 
 **Affected files:**
 - `src/tool-handlers.ts` — to be split
@@ -143,12 +143,12 @@ Deep codebase analysis results. Plans are grouped by priority.
    ```
    src/handlers/
    ├── index.ts              — re-exports and registerAllTools()
-   ├── repository-handlers.ts — list_repositories, list_branches, get_features, etc.
-   ├── project-handlers.ts    — list/get/open/save/close projects, etc.
+   ├── repository-handlers.ts — list_repositories, list_branches, list_repository_features, etc.
+   ├── project-handlers.ts    — list/get/open/save/close projects, project_status, revisions, local changes
+   ├── file-handlers.ts       — read/write/copy/move/delete/search project files
    ├── table-handlers.ts      — list/get/update/append/create tables
-   ├── testing-handlers.ts    — start_test, get_test_results, execute_rule
-   ├── deployment-handlers.ts — list/deploy/redeploy
-   ├── history-handlers.ts    — project_history, file_history, revert
+   ├── testing-handlers.ts    — start_project_tests, get_test_results / _summary / _by_table
+   ├── deployment-handlers.ts — list_deployments, deploy/redeploy, list_deploy_repositories
    └── trace-handlers.ts      — trace tools (beta)
    ```
 
@@ -226,7 +226,7 @@ Deep codebase analysis results. Plans are grouped by priority.
    app.use(limiter);
    ```
 
-3. For heavy endpoints (execute_rule, deploy) — add a separate stricter limiter.
+3. For heavy endpoints (deploy, start tests) — add a separate stricter limiter.
 
 4. Make parameters configurable via environment variables (`RATE_LIMIT_MAX`, `RATE_LIMIT_WINDOW_MS`).
 
@@ -238,7 +238,7 @@ Deep codebase analysis results. Plans are grouped by priority.
 
 ## Plan 8. In-Memory Prompt Caching [MEDIUM]
 
-**Problem:** In `prompts-registry.ts`, prompt files (15 total) are read from disk on every `loadPromptContent()` call. Unnecessary I/O overhead.
+**Problem:** In `prompts-registry.ts`, prompt files (14 total) are read from disk on every `loadPromptContent()` call. Unnecessary I/O overhead.
 
 **Affected files:**
 - `src/prompts-registry.ts`
@@ -326,43 +326,9 @@ Deep codebase analysis results. Plans are grouped by priority.
 
 ---
 
-## Plan 11. Remove Dead `tools.ts` and Sync Descriptions to `tool-handlers.ts` [MEDIUM]
+## Plan 11. Remove Dead `tools.ts` and Sync Descriptions to `tool-handlers.ts` [MEDIUM] — ✅ DONE
 
-**Problem:** `src/tools.ts` defines tool metadata (names, descriptions, schemas) but is **not imported anywhere** — it's dead code. Meanwhile, `tool-handlers.ts` is the actual tool registry used at runtime. The two files have diverged: 8 out of 25 shared tools have different descriptions, with `tools.ts` containing more detailed versions (local repo limitations, required fields, usage guidance). This causes confusion and risks stale documentation.
-
-**Affected files:**
-- `src/tools.ts` — to be deleted
-- `src/tool-handlers.ts` — descriptions to be enriched
-- `src/schemas.ts` — update header comment (currently says "Reference it in tools.ts")
-- `AGENTS.md` — update code structure (lists `tools.ts`)
-- `docs/development/contributing.md` — update code structure and "Add Metadata in tools.ts" section
-- `docs/development/code-standards.md` — update file references and "add new tool" instructions
-- `.specify/memory/` — update or remove stale references
-
-**Implementation steps:**
-
-1. Compare descriptions for all 8 diverged tools and merge useful details from `tools.ts` into `tool-handlers.ts`:
-   - `openl_get_project` — add note about `repository: 'local'` support
-   - `openl_open_project` — add branch/revision parameter guidance and local repo limitation
-   - `openl_save_project` — add "(sends status CLOSED)" detail for closeAfterSave
-   - `openl_close_project` — add "Does not work for repository 'local'" note
-   - `openl_update_table` — add required fields list and in-memory modification note
-   - `openl_list_deployments` — add usage guidance sentence
-   - `openl_deploy_project` — add return value and validation requirement notes
-   - `openl_create_project_branch` — add usage guidance sentence
-
-2. Delete `src/tools.ts`.
-
-3. Update all references to `tools.ts` in documentation and comments:
-   - `src/schemas.ts` line 15: change "Reference it in tools.ts" → "Register it in tool-handlers.ts"
-   - `AGENTS.md`: remove `tools.ts` from code structure tree
-   - `docs/development/contributing.md`: replace "Add Metadata in tools.ts" with "Register in tool-handlers.ts"
-   - `docs/development/code-standards.md`: update file list and "add new tool" instructions
-   - `.specify/memory/`: update stale references (implementation-plan.md, constitution.md, task-list.md)
-
-4. Verify build passes (`npm run build`).
-
-**Done criteria:** Single source of truth for tool definitions, no dead code, no stale references to `tools.ts`, enriched descriptions in `tool-handlers.ts`.
+**Outcome:** The dead `src/tools.ts` file (with its `TOOLS` registry and `TOOL_CATEGORIES` constant) has been deleted. `tool-handlers.ts` is now the single source of truth for tool definitions, and the useful description details that previously lived only in `tools.ts` were merged into it. Stale references to `tools.ts` in `schemas.ts`, `AGENTS.md`, and the development docs were updated to point at `tool-handlers.ts`.
 
 ---
 
@@ -458,19 +424,19 @@ Deep codebase analysis results. Plans are grouped by priority.
 
 ## Summary Table
 
-| # | Plan | Priority | Complexity | Files |
-|---|------|----------|------------|-------|
-| 1 | TTL session cleanup | Critical | Medium | server.ts, new session-store.ts |
-| 2 | TTL/LRU for client caches | Critical | Low | client.ts |
-| 3 | Mutex for getClientForSession | Low | Low | server.ts |
-| 4 | File download size validation | High | Low | client.ts, constants.ts |
-| 5 | Split tool-handlers | High | High | tool-handlers.ts, new handlers/ dir |
-| 6 | Replace `any` with types | Medium | Medium | formatters.ts, client.ts, mcp-proxy.ts, types.ts |
-| 7 | Rate limiting | Medium | Low | server.ts, package.json |
-| 8 | Prompt caching | Medium | Low | prompts-registry.ts |
-| 9 | Extract shared code | Medium | Medium | index.ts, server.ts, new mcp-setup.ts |
-| 10 | Structured logging | Low | High | logger.ts, all files |
-| 11 | Remove dead tools.ts, sync descriptions | Medium | Low | tools.ts (delete), tool-handlers.ts |
-| 12 | Version-aware tool availability | High | Medium | client.ts, tool-handlers.ts, constants.ts, index.ts, server.ts |
+| # | Plan | Priority | Complexity | Files | Status |
+|---|------|----------|------------|-------|--------|
+| 1 | TTL session cleanup | Critical | Medium | server.ts, new session-store.ts | Planned |
+| 2 | TTL/LRU for client caches | Critical | Low | client.ts | Planned |
+| 3 | Mutex for getClientForSession | Low | Low | server.ts | Planned |
+| 4 | File download size validation | High | Low | client.ts, constants.ts | Planned |
+| 5 | Split tool-handlers | High | High | tool-handlers.ts, new handlers/ dir | Planned |
+| 6 | Replace `any` with types | Medium | Medium | formatters.ts, client.ts, mcp-proxy.ts, types.ts | Planned |
+| 7 | Rate limiting | Medium | Low | server.ts, package.json | Planned |
+| 8 | Prompt caching | Medium | Low | prompts-registry.ts | Planned |
+| 9 | Extract shared code | Medium | Medium | index.ts, server.ts, new mcp-setup.ts | Planned |
+| 10 | Structured logging | Low | High | logger.ts, all files | Planned |
+| 11 | Remove dead tools.ts, sync descriptions | Medium | Low | tools.ts (deleted), tool-handlers.ts | ✅ Done |
+| 12 | Version-aware tool availability | High | Medium | client.ts, tool-handlers.ts, constants.ts, index.ts, server.ts | Planned |
 
-**Recommended order:** 1 → 2 → 12 → 4 → 9 → 5 → 11 → 8 → 7 → 6 → 3 → 10
+**Recommended order:** 1 → 2 → 12 → 4 → 9 → 5 → 8 → 7 → 6 → 3 → 10  (Plan 11 already complete)

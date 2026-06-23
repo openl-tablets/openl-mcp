@@ -12,7 +12,7 @@ arguments:
 
 ## Summary
 
-After any edit to a table or rule (`openl_update_table`, `openl_append_table`, `openl_create_project_table`, `openl_upload_file`), call `openl_project_status` to confirm the project still compiles. If `compileState` is `errors`, surface the diagnostics with file/module context, propose fixes, re-validate. Only `openl_save_project` once `compileState` is `ok` (or you have explicit approval to save with warnings).
+After any edit to a table or rule (`openl_update_table`, `openl_append_table`, `openl_create_project_table`), call `openl_project_status` to confirm the project still compiles. If `compileState` is `errors`, surface the diagnostics with file/module context, propose fixes, re-validate. Only `openl_save_project` once `compileState` is `ok` (or you have explicit approval to save with warnings).
 
 # Validate-After-Edit Workflow
 
@@ -82,5 +82,5 @@ When `compileState === "ok"` the tool drops `compilation.messages.items` to keep
 
 - Do not save when `compileState` is `errors`. Even if the user insists, surface the diagnostics first.
 - Do not re-call `openl_project_status` in a tight loop while `compileState` is `compiling` — add a delay.
-- Do not assume `pendingChanges` mirrors your edits perfectly — it diffs the working copy against the design revision, so files you uploaded via `openl_upload_file` count as `ADDED` until saved.
+- Do not assume `pendingChanges` mirrors your edits perfectly — it diffs the working copy against the design revision, so newly created files count as `ADDED` until saved.
 - Do not pass `branch` for `repository: "local"` projects — the backend will return 409.
