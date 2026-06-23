@@ -23,6 +23,12 @@ The AGENTS.md file contains:
 - Add a third-party library only when it brings significant benefit — that is, it substantially reduces the code we would otherwise write and maintain. Prefer reimplementing small or simple functionality over taking on a dependency.
 - When a library is used, keep it on the latest version that is practical for the project.
 
+## Testing
+
+- Tests must exercise real logic — the behavior a unit computes (transformations, branches, parsing, error paths, edge cases) — not static facts. Asserting the shape or literal value of a declared constant, that a literal equals itself, or a type the compiler already guarantees adds no coverage; don't write such tests. A test should fail when behavior regresses, not only when someone edits a constant.
+- Do not duplicate tests: cover each behavior once. Before adding a test, check whether an existing one already exercises that path — if so, strengthen it instead of adding a near-copy. A consistency check that cross-validates two independent sources (e.g. code vs. data files) is not a duplicate; it earns its place by catching drift.
+- Keep test location and names predictable and meaningful: a unit's tests live in the conventional, obvious place for that unit, and each test name states the behavior it verifies so a failure reads as a plain statement of what broke.
+
 ## Documentation
 
 - Keep all documentation up to date with every code change. When a change adds, removes, or alters tools, prompts, dependencies, configuration, or behavior, update the affected docs in the same change — never leave them for later.
