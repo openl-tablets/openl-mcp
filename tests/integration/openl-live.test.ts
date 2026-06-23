@@ -11,6 +11,7 @@
  * - SKIP_LIVE_TESTS: Set to 'true' to skip these tests (default in CI)
  */
 
+import { describe, test, expect, beforeAll, afterAll } from '@jest/globals';
 import { OpenLClient } from '../../src/client.js';
 import type * as Types from '../../src/types.js';
 
