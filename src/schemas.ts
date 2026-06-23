@@ -80,18 +80,6 @@ export const projectStatusSchema = z.object({
   response_format: ResponseFormat.optional(),
 }).strict();
 
-export const getProjectInfoSchema = z.object({
-  repository: repositoryNameSchema,
-  projectName: projectNameSchema,
-  response_format: ResponseFormat.optional(),
-}).strict();
-
-export const projectActionSchema = z.object({
-  projectId: projectIdSchema,
-  response_format: ResponseFormat.optional(),
-}).strict();
-
-
 export const openProjectSchema = z.object({
   projectId: projectIdSchema,
   branch: branchNameSchema.optional().describe("Open project on a specific Git branch (e.g., 'main', 'development', 'feature/new-rules')"),
@@ -252,24 +240,6 @@ export const deployProjectSchema = z.object({
 }).strict();
 
 // =============================================================================
-// Testing & Validation (Critical Missing Tools)
-// =============================================================================
-// Note: The following schemas are placeholders for tools that are temporarily disabled
-// pending client.ts support for the OpenL Studio REST API endpoints.
-
-export const validateProjectSchema = z.object({
-  projectId: projectIdSchema,
-  response_format: ResponseFormat.optional(),
-}).strict();
-
-export const testProjectSchema = z.object({
-  projectId: projectIdSchema,
-  testName: z.string().optional().describe("Specific test name to run (e.g., 'testPremiumCalculation'). Omit to run all tests in the project."),
-  allTests: z.boolean().optional().describe("Set to true to explicitly run all tests in the project (default: false). When false and testName is omitted, runs all tests."),
-  response_format: ResponseFormat.optional(),
-}).strict();
-
-// =============================================================================
 // Phase 1: New Tool Schemas
 // =============================================================================
 
@@ -293,28 +263,6 @@ export const downloadFileSchema = z.object({
   fileName: z.string().describe("Name of the Excel file to download. MUST use the exact 'file' field value from list_tables() response (e.g., 'Rules.xlsx', 'rules/Insurance.xlsx'). Do NOT construct paths manually or guess file names - always get the path from list_tables() first."),
   version: z.string().optional().describe("Git commit hash to download specific version (e.g., '7a3f2b1c...'). Omit for latest version (HEAD)"),
   outputFilePath: z.string().describe("Absolute or workspace-relative path where downloaded binary file should be written."),
-  response_format: ResponseFormat.optional(),
-}).strict();
-
-export const createRuleSchema = z.object({
-  projectId: projectIdSchema,
-  name: z.string().min(1).describe("Table name (must be valid Java identifier, e.g., 'calculatePremium')"),
-  tableType: z.enum([
-    // Decision Tables (most common)
-    "Rules", "SimpleRules", "SmartRules", "SimpleLookup", "SmartLookup",
-    // Spreadsheet (most common)
-    "Spreadsheet",
-    // Other types (rarely used)
-    "Method", "TBasic", "Data", "Datatype", "Test", "Run", "Properties", "Configuration"
-  ]).describe("Type of table to create. Most common: Rules/SimpleRules/SmartRules/SimpleLookup/SmartLookup (decision tables) or Spreadsheet (calculations)"),
-  returnType: z.string().optional().describe("Return type (e.g., 'int', 'String', 'SpreadsheetResult', or custom type like 'Policy')"),
-  parameters: z.array(z.object({
-    type: z.string().describe("Parameter type (e.g., 'String', 'int', 'double', 'Policy')"),
-    name: z.string().describe("Parameter name (e.g., 'driverType', 'age', 'policy')")
-  })).optional().describe("Method parameters for the table signature"),
-  file: z.string().optional().describe("Target Excel file (e.g., 'rules/Insurance.xlsx'). If not specified, uses default file."),
-  properties: z.record(z.string(), z.any()).optional().describe("Dimension properties (e.g., { state: 'CA', lob: 'Auto', effectiveDate: '01/01/2025' })"),
-  comment: commentSchema,
   response_format: ResponseFormat.optional(),
 }).strict();
 
@@ -535,17 +483,6 @@ export const EDITABLE_TABLE_TYPES: readonly string[] = discriminatorValues(
 );
 
 // =============================================================================
-// Phase 2: Testing & Validation Schemas
-// =============================================================================
-// Note: runTestSchema removed - endpoint doesn't exist in API
-
-export const getProjectErrorsSchema = z.object({
-  projectId: projectIdSchema,
-  includeWarnings: z.boolean().optional().describe("Include warnings along with errors (default: true). Set to false to show only critical errors that block deployment."),
-  response_format: ResponseFormat.optional(),
-}).strict();
-
-// =============================================================================
 // Phase 3: Versioning & Execution Schemas
 // =============================================================================
 
@@ -612,13 +549,6 @@ export const exportTraceSchema = z.object({
   showRealNumbers: z.boolean().optional(),
   release: z.boolean().optional().describe("Clear trace from memory after export (default: false)."),
   ...traceWaitParams,
-  response_format: ResponseFormat.optional(),
-}).strict();
-
-export const compareVersionsSchema = z.object({
-  projectId: projectIdSchema,
-  baseCommitHash: z.string().describe("Base Git commit hash to compare from (e.g., '7a3f2b1c...')"),
-  targetCommitHash: z.string().describe("Target Git commit hash to compare to (e.g., '9e5d8a2f...')"),
   response_format: ResponseFormat.optional(),
 }).strict();
 
