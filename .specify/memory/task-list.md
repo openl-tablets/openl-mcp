@@ -54,23 +54,23 @@
   - [ ] getProject(), openProject(), closeProject()
   - [ ] saveProject() with validation
 - [ ] Test File Management
-  - [ ] uploadFile() - valid/invalid files
-  - [ ] downloadFile() - with/without version
+  - [ ] readProjectFile(), writeProjectFile()
+  - [ ] copyProjectFile(), moveProjectFile(), deleteProjectFile()
+  - [ ] searchProjectFiles()
   - [ ] createBranch()
 - [ ] Test Rules Management
   - [ ] listTables() with filters
   - [ ] createRule() - success and 405 cases
-  - [ ] getTable(), updateTable(), copyTable()
-  - [ ] executeRule() with timing
+  - [ ] getTable(), updateTable(), appendTable()
 - [ ] Test Deployment
   - [ ] listDeployments()
   - [ ] deployProject()
 - [ ] Test Testing & Validation
-  - [ ] runAllTests(), runTest(), validateProject()
-  - [ ] getProjectErrors() with categorization
+  - [ ] startProjectTests(), getTestResults()
+  - [ ] projectStatus() with diagnostics categorization
 - [ ] Test Version Control
-  - [ ] compareVersions(), revertVersion()
-  - [ ] getFileHistory(), getProjectHistory()
+  - [ ] repositoryProjectRevisions()
+  - [ ] listProjectLocalChanges(), restoreProjectLocalChange()
   - [ ] parseCommitType()
 - [ ] Test Dimension Properties
   - [ ] getFileNamePattern(), setFileNamePattern()
@@ -103,9 +103,9 @@
 
 #### T-004: Implement index.ts Test Coverage (>80%)
 - [ ] Test MCP server initialization
-- [ ] Test tool routing for all 18 openl_* tools
+- [ ] Test tool routing for all 40 openl_* tools
 - [ ] Test resource providers (3 resources)
-- [ ] Test prompt integration (11 prompts)
+- [ ] Test prompt integration (14 prompts)
 - [ ] Test error handling at server level
 - [ ] Test configuration validation
 - [ ] Test integration with tool-handlers.ts
@@ -128,11 +128,9 @@
 
 **Acceptance Criteria**: >95% coverage, 100% branches
 
-#### T-006: Implement tools.ts Test Coverage (>90%)
-- [ ] Verify all 18 openl_* tool definitions are properly structured
-- [ ] Test getToolByName() for all tools
-- [ ] Test getToolsByCategory() for all categories
-- [ ] Test getAllToolNames()
+#### T-006: Verify Tool Registry Coverage (>90%)
+- [ ] Verify all 40 openl_* tool definitions are properly structured in tool-handlers.ts
+- [ ] Test registration of every tool by name
 - [ ] Validate input schemas are valid JSON Schema
 - [ ] Validate metadata completeness
 - [ ] Verify all tools have openl_ prefix
@@ -145,7 +143,7 @@
 - [ ] Test conditional blocks (if/end if)
 - [ ] Test missing arguments handling
 - [ ] Test invalid prompt names
-- [ ] Test all 11 prompts render correctly
+- [ ] Test all 14 prompts render correctly
 
 **Acceptance Criteria**: >85% coverage
 
@@ -157,7 +155,7 @@
 - [ ] Test parameter validation
 - [ ] Test response formatting integration
 - [ ] Test pagination integration
-- [ ] Verify all 18 openl_* tools are registered
+- [ ] Verify all 40 openl_* tools are registered
 
 **Acceptance Criteria**: >85% coverage on tool-handlers.ts
 
@@ -195,7 +193,7 @@
 #### T-012: Test Response Formatting Features
 - [ ] Test markdown formatting end-to-end
 - [ ] Test JSON formatting end-to-end
-- [ ] Test format parameter in all 18 tools
+- [ ] Test format parameter in all 40 tools
 - [ ] Test format fallback behavior
 - [ ] Test character limit enforcement across formats
 
@@ -219,13 +217,13 @@
 - [ ] Discovery Workflow
   - [ ] openl_list_repositories → openl_list_projects → openl_get_project → openl_list_tables
 - [ ] Rule Creation Workflow
-  - [ ] openl_open_project → openl_upload_file → openl_list_tables → openl_save_project → openl_close_project
+  - [ ] openl_open_project → openl_create_project_table → openl_list_tables → openl_save_project → openl_close_project
 - [ ] Testing Workflow
-  - [ ] openl_open_project → openl_run_test → openl_validate_project → openl_get_project_errors
+  - [ ] openl_open_project → openl_start_project_tests → openl_get_test_results → openl_project_status
 - [ ] Deployment Workflow
-  - [ ] openl_validate_project → openl_list_deployments → openl_deploy_project
+  - [ ] openl_project_status → openl_list_deployments → openl_deploy_project
 - [ ] Version Control Workflow
-  - [ ] openl_get_project_history → openl_compare_versions → openl_revert_version
+  - [ ] openl_repository_project_revisions → openl_list_project_local_changes → openl_restore_project_local_change
 
 **Acceptance Criteria**: All workflows execute successfully with mocked OpenL API
 
@@ -243,7 +241,7 @@
 
 #### T-016: Create Performance Benchmark Tests
 - [ ] Tool execution time benchmarks
-- [ ] File upload/download performance
+- [ ] Project file read/write performance
 - [ ] Large project handling (1000+ tables)
 - [ ] Concurrent request handling
 - [ ] Memory usage profiling
@@ -266,7 +264,7 @@
 **Acceptance Criteria**: Complete API reference published
 
 #### T-018: Create Tool Reference Guide
-- [ ] Create detailed guide for each of 18 openl_* tools
+- [ ] Create detailed guide for each of 40 openl_* tools
 - [ ] Include input schema, examples, use cases
 - [ ] Document error scenarios and recovery
 - [ ] Add troubleshooting tips per tool
@@ -415,7 +413,7 @@
   - [x] Add .strict() to all schemas
   - [x] Add response_format and pagination parameters
 - [x] Phase 2: Tool Registration
-  - [x] Rename all 18 tools with openl_ prefix
+  - [x] Rename all tools with openl_ prefix
   - [x] Create tool-handlers.ts with registerTool pattern
   - [x] Add MCP annotations to all tools
   - [x] Replace switch statement in index.ts
@@ -461,7 +459,7 @@
 **Completed**: 2024-Q4
 
 #### T-103: Implement Tool Definitions
-- [x] 18 openl_* tools across 6 categories
+- [x] 40 openl_* tools
 - [x] Tool metadata and categorization
 - [x] Helper functions
 - [x] MCP compliance and annotations
@@ -479,7 +477,7 @@
 **Updated**: 2025-11-16 (Added strict validation)
 
 #### T-105: Implement Prompts
-- [x] 11 prompts with YAML frontmatter
+- [x] 14 prompts with YAML frontmatter
 - [x] Argument substitution
 - [x] Conditional rendering
 - [x] Caching
@@ -557,7 +555,7 @@
 
 ### Sprint 4: Integration Testing (Weeks 7-8)
 - T-004: index.ts tests
-- T-006: tools.ts tests
+- T-006: tool-handlers.ts tests
 - T-007: prompts.ts tests
 - T-014: Workflow tests (updated with openl_* tool names)
 
@@ -566,7 +564,7 @@
 ### Sprint 5: Documentation & Quality (Weeks 9-10)
 - T-015: Error scenario tests
 - T-017: API reference
-- T-018: Tool reference (18 openl_* tools)
+- T-018: Tool reference (40 openl_* tools)
 - T-019: Troubleshooting guide
 
 **Goal**: Complete documentation and edge case testing

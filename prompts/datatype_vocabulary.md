@@ -413,7 +413,7 @@ CA
 1. openl_open_project(projectId) if project not already OPENED/EDITING
 2. openl_get_table(tableId=existingTable) → Get reference structure
 3. openl_create_project_table(moduleName=..., table={...}) → Create with full structure
-4. openl_validate_project() → Check for compilation errors
+4. openl_project_status() → Check for compilation errors
 5. openl_save_project(comment="...") → Persist (only when status EDITING; comment required; new revision, project → OPENED)
 ```
 
@@ -421,7 +421,7 @@ CA
 ```text
 1. openl_get_table(tableId=...) → Get current structure
 2. openl_update_table(tableId=..., view={...}) → Add fields/values
-3. openl_validate_project() → Check for errors
+3. openl_project_status() → Check for errors
 4. IF errors → Fix references in rules
 5. openl_save_project(comment="...") → Persist (only when status EDITING; comment required)
 ```
@@ -434,14 +434,14 @@ For projects with `repository: 'local'`, do not call openl_open_project or openl
 ```text
 1. openl_get_table(tableId=existingTable) → Get reference structure (optional)
 2. openl_create_project_table(moduleName=..., table={...}) → Create with full structure
-3. openl_validate_project() → Check for compilation errors
+3. openl_project_status() → Check for compilation errors
 ```
 
 **Updating Datatype/Vocabulary:**
 ```text
 1. openl_get_table(tableId=...) → Get current structure
 2. openl_update_table(tableId=..., view={...}) → Add fields/values
-3. openl_validate_project() → Check for errors; if errors, fix references in rules
+3. openl_project_status() → Check for errors; if errors, fix references in rules
 ```
 (No save step—changes are applied directly.)
 
@@ -505,5 +505,5 @@ OpenL validates:
 | Add Field | `openl_append_table(tableId=..., appendData={tableType:"Datatype", fields:[newField]})` | Use append for simple additions |
 | Add Value | `openl_append_table(tableId=..., appendData={tableType:"Vocabulary", values:[newValue]})` | Use append for simple additions |
 | Inherit | `openl_create_project_table(moduleName=..., table={tableType:"Datatype", returnType:parentType})` | Parent in returnType |
-| Validate | `openl_validate_project()` | After any change |
+| Validate | `openl_project_status()` | After any change |
 | Save (design repos only) | `openl_save_project(comment="...")` | Design repo: only when EDITING; comment required. Local repo: do not call. |

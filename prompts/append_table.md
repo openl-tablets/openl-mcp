@@ -403,8 +403,7 @@ NOT mean the edit was rolled back).
 # After appending, always verify:
 1. openl_get_table(tableId) → Confirm fields added
    (use the 'tableId' returned by openl_append_table — the pre-edit id is stale)
-2. Manually validate in OpenL Studio UI → Check for type errors
-   (openl_validate_project is temporarily disabled)
+2. openl_project_status(projectId) → Check compileState and diagnostics for type errors
 3. IF validation passes → openl_save_project(comment="...")
 4. IF validation fails → Review field types and references
 ```
@@ -417,13 +416,12 @@ NOT mean the edit was rolled back).
 
 ### After openl_append_table
 - `openl_get_table()` → Verify append succeeded (use the `tableId` from the append response)
-- Validate in OpenL Studio UI → Check for errors
+- `openl_project_status()` → Check compileState and diagnostics for errors
 - `openl_save_project()` → Save changes
 
 ### Alternatives
 - `openl_update_table()` → For complex modifications or replacing entire structure
 - `openl_create_project_table()` → For creating new tables/rules (BETA API)
-- `openl_upload_file()` → For bulk Excel updates
 
 ## Quick Reference
 

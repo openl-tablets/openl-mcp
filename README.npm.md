@@ -98,8 +98,8 @@ Run with just a `<url>` (and no tool name) — or with no arguments at all (fall
 
 ## What you get
 
-- **25 active tools** for repositories, projects, rules tables, tests, and deployments (all prefixed `openl_`)
-- **15 expert-guidance prompts** (`create_rule`, `deploy_project`, `run_test`, …) for complex OpenL Studio workflows
+- **40 active tools** for repositories, projects, rules tables, tests, and deployments (all prefixed `openl_`)
+- **14 expert-guidance prompts** (`create_rule`, `deploy_project`, `run_test`, …) for complex OpenL Studio workflows
 - **Type-safe validation** via Zod schemas
 - **Multiple response formats** — `json`, `markdown`, `markdown_concise`, `markdown_detailed`
 

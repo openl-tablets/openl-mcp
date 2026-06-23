@@ -62,11 +62,11 @@ AFTER modification:
 BEFORE openl_save_project() (design repositories only; not applicable for repository 'local'):
 - openl_save_project works only when project status is EDITING; comment is required; after save, new revision is created and project → OPENED
 - `openl_start_project_tests(projectId)` → `openl_get_test_results(projectId)` MUST pass
-- `Validate in OpenL Studio UI (openl_validate_project temporarily disabled)` MUST pass
+- `openl_project_status(projectId)` MUST report no errors (saving also validates the project)
 - For repository 'local': do not call openl_save_project; run tests without open/save.
 
 BEFORE openl_deploy_project():
-- All above + `openl_get_project_errors()` MUST be 0
+- All above + `openl_project_status(projectId)` MUST report 0 errors in its diagnostics
 
 ## Integration Context
 

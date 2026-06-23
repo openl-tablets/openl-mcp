@@ -233,7 +233,7 @@ SOLUTION:
 1. openl_get_table(testTableId) → Review test cases
 2. Identify outdated expected values
 3. Update _res_ to match new rule behavior
-4. run_test → Verify pass
+4. openl_start_project_tests → Verify pass
 ```
 
 ### Scenario 2: Add Negative Test Cases

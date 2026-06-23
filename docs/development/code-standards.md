@@ -23,8 +23,7 @@ This document outlines all the best practices implemented in the OpenL MCP Serve
 - `server.ts` - HTTP server (SSE/StreamableHTTP transport)
 - `client.ts` - OpenL Studio API client
 - `auth.ts` - Authentication (Basic Auth, PAT)
-- `tool-handlers.ts` - Tool execution handlers
-- `tools.ts` - Tool definitions and schemas
+- `tool-handlers.ts` - Tool definitions, schemas, and execution handlers
 - `schemas.ts` - Input validation schemas
 - `types.ts` - Type definitions
 - `formatters.ts` - Response formatting
@@ -197,9 +196,6 @@ npm run test:coverage # With coverage
 - **[Code Standards](code-standards.md)** - This document
 - **[Tool Review](tool-review.md)** - Technical review of MCP tools vs OpenL API
 
-**Reference:**
-- **[Enable Disabled Tools](../reference/enable-disabled-tools.md)** - Temporarily disabled tools
-
 ### Code Documentation ✓
 
 - JSDoc comments on all public functions
@@ -227,7 +223,6 @@ server.ts           Moderate
 client.ts           Low
 auth.ts             Moderate
 tool-handlers.ts    Moderate
-tools.ts            Low
 schemas.ts          Low
 types.ts            Low
 formatters.ts       Low
@@ -268,9 +263,8 @@ constants.ts        Low
 
 **Easy to add new tools**:
 1. Define Zod schema in `schemas.ts`
-2. Add tool definition in `tools.ts`
-3. Add client method in `client.ts` (if needed)
-4. Add handler in `tool-handlers.ts`
+2. Add client method in `client.ts` (if needed)
+3. Register the tool (definition + handler) in `tool-handlers.ts`
 5. Add tests in `tests/`
 
 **Well-documented extension points**:

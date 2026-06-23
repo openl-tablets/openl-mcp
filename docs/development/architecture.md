@@ -40,7 +40,7 @@ subscribed, why, and how authentication works.
 - **Where:** Standalone repository (separate from OpenL Studio project)
 - **Role:** 
   - Converts Claude commands to API requests to OpenL
-  - Provides 25 tools for working with OpenL
+  - Provides 40 tools for working with OpenL
   - Manages authentication
 
 ### 3. OpenL Studio
@@ -76,6 +76,7 @@ Contains MCP server settings (path, environment variables)
 ```text
 dist/index.js          # Compiled server
 src/                   # Source code
+src/tool-handlers.ts   # Single registry for all 40 MCP tools
 docs/setup/mcp-connection-guide.md  # Complete configuration guide with examples
 ```
 

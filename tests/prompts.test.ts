@@ -23,8 +23,8 @@ const __dirname = dirname(__filename);
 
 describe("Prompts Registry", () => {
   describe("PROMPTS array", () => {
-    test("should contain exactly 17 prompts", () => {
-      expect(PROMPTS).toHaveLength(17);
+    test("should contain exactly 14 prompts", () => {
+      expect(PROMPTS).toHaveLength(14);
     });
 
     test("all prompts should have required fields", () => {
@@ -108,9 +108,6 @@ describe("Prompts Registry", () => {
         "datatype_vocabulary",
         "deploy_project",
         "dimension_properties",
-        "execute_rule",
-        "file_history",
-        "get_project_errors",
         "local_projects",
         "project_agents_md",
         "project_history",
@@ -223,11 +220,6 @@ describe("loadPromptContent", () => {
       expect(content).toContain("validate");
       expect(content).toContain("test");
     });
-
-    test("execute_rule should contain JSON examples", () => {
-      const content = loadPromptContent("execute_rule");
-      expect(content).toContain("JSON");
-    });
   });
 
   describe("Argument substitution", () => {
@@ -330,7 +322,7 @@ describe("Helper functions", () => {
   describe("getPromptNames", () => {
     test("should return all prompt names", () => {
       const names = getPromptNames();
-      expect(names).toHaveLength(17);
+      expect(names).toHaveLength(14);
       expect(names).toContain("create_rule");
       expect(names).toContain("create_rule_decision_tables");
       expect(names).toContain("create_rule_spreadsheet");
@@ -530,9 +522,8 @@ describe("Frontmatter support (Approach 2)", () => {
     });
 
     test("prompts with arguments should have arguments field in frontmatter", () => {
-      const promptsWithArgs = ["create_test", "execute_rule", "deploy_project",
-                                "update_test", "run_test", "get_project_errors",
-                                "file_history", "project_history"];
+      const promptsWithArgs = ["create_test", "deploy_project",
+                                "update_test", "run_test", "project_history"];
 
       promptsWithArgs.forEach((promptName) => {
         const filePath = join(__dirname, "..", "prompts", `${promptName}.md`);
@@ -577,16 +568,6 @@ describe("Frontmatter support (Approach 2)", () => {
       expect(content).toContain("Table Type: SimpleRules");
     });
 
-    test("should substitute arguments in execute_rule", () => {
-      const content = loadPromptContent("execute_rule", {
-        ruleName: "calculatePremium",
-        projectId: "auto-insurance",
-      });
-
-      expect(content).toContain("Executing Rule: `calculatePremium`");
-      expect(content).toContain("Project**: auto-insurance");
-    });
-
     test("should substitute arguments in deploy_project", () => {
       const content = loadPromptContent("deploy_project", {
         projectId: "auto-insurance",
@@ -606,16 +587,6 @@ describe("Frontmatter support (Approach 2)", () => {
       // With argument - conditional content should be included
       const withArg = loadPromptContent("create_test", { tableName: "test" });
       expect(withArg).toContain("Creating Test for:");
-    });
-
-    test("should substitute arguments in file_history", () => {
-      const content = loadPromptContent("file_history", {
-        filePath: "rules/AutoPremium.xlsx",
-        projectId: "auto-insurance",
-      });
-
-      expect(content).toContain("File History: `rules/AutoPremium.xlsx`");
-      expect(content).toContain("Project**: auto-insurance");
     });
 
     test("should substitute arguments in project_history", () => {
@@ -639,7 +610,7 @@ describe("Frontmatter support (Approach 2)", () => {
     });
 
     test("prompts with optional arguments should work without arguments", () => {
-      const promptsWithOptionalArgs = ["create_test", "execute_rule", "deploy_project"];
+      const promptsWithOptionalArgs = ["create_test", "deploy_project"];
 
       promptsWithOptionalArgs.forEach((promptName) => {
         expect(() => loadPromptContent(promptName)).not.toThrow();

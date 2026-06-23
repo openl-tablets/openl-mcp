@@ -50,16 +50,16 @@ Tests are organized by priority and functionality:
 ### P0: Critical Path (Must Work)
 - ✅ Health Check
 - ✅ Project Discovery (list_projects, get_project)
-- ⏳ Project Lifecycle (open, validate, close)
+- ⏳ Project Lifecycle (open, project status, close)
 - ⏳ Table Operations (list_tables, get_table)
 
 ### P1: Important Workflow
-- ⏳ Testing & Execution (run_all_tests)
-- ⏳ File Management (download_file)
+- ⏳ Testing (start_project_tests, get_test_results)
+- ⏳ Project Files (read_project_file, write_project_file)
 
 ### P2: Advanced Features
-- ⏳ Version Control (get_project_history)
-- ⏳ Dimension Properties (get_table_properties)
+- ⏳ Version Control (openl_repository_project_revisions)
+- ⏳ Dimension Properties (get_table, update_table)
 
 ## Expected Output
 

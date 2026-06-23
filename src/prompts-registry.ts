@@ -134,55 +134,9 @@ export const PROMPTS: PromptDefinition[] = [
     description: "Explanation of OpenL dimension properties for business versioning (state, country, lob, effectiveDate) vs Git versioning, with runtime selection logic",
   },
   {
-    name: "execute_rule",
-    title: "Execute Rule",
-    description: "Guide for constructing test data and executing OpenL rules with proper JSON formatting for simple types, complex objects, and arrays",
-    arguments: [
-      {
-        name: "ruleName",
-        description: "Name of the rule to execute",
-        required: false,
-      },
-      {
-        name: "projectId",
-        description: "ID of the project containing the rule",
-        required: false,
-      },
-    ],
-  },
-  {
-    name: "file_history",
-    title: "File History",
-    description: "Guide for viewing Git-based file version history in OpenL, including commit hash navigation and version comparison",
-    arguments: [
-      {
-        name: "filePath",
-        description: "Path to the file (e.g., 'rules/Insurance-CA-Auto.xlsx')",
-        required: false,
-      },
-      {
-        name: "projectId",
-        description: "ID of the project containing the file",
-        required: false,
-      },
-    ],
-  },
-  {
-    name: "get_project_errors",
-    title: "Analyze Project Errors",
-    description: "OpenL error analysis workflow with pattern matching, categorization, and fix recommendations for common validation errors",
-    arguments: [
-      {
-        name: "projectId",
-        description: "ID of project to analyze",
-        required: false,
-      },
-    ],
-  },
-  {
     name: "project_history",
     title: "Project History",
-    description: "Guide for viewing project-wide Git commit history, comparing with file history, and understanding when to use each",
+    description: "Guide for viewing a project's committed Git history with openl_repository_project_revisions and its local workspace changes with openl_list_project_local_changes, and when to use each",
     arguments: [
       {
         name: "projectId",

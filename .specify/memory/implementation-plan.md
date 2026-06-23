@@ -1,6 +1,6 @@
 # OpenL MCP Server - Implementation Plan
 
-> **Status**: Experimental (v1.0.0) - 22/28 tools active, 6 temporarily disabled
+> **Status**: Experimental (v1.0.0) - 40 tools active
 > **Last Updated**: 2026-01-28
 > **Major Milestone**: Completed architectural refactoring from monolithic to modular design
 
@@ -15,7 +15,7 @@ The OpenL MCP Server underwent a **major architectural refactoring** in November
 - ✅ **Response Formatting**: Unified JSON/Markdown formatting with pagination support
 - ✅ **Structured Logging**: stderr-only logging with credential sanitization
 - ✅ **MCP Annotations**: First-class support for readOnlyHint, idempotentHint, destructiveHint, openWorldHint
-- ✅ **Tool Prefix**: All 31 tools now use `openl_` prefix for namespacing (25 active, 6 disabled)
+- ✅ **Tool Prefix**: All 40 tools use the `openl_` prefix for namespacing
 - ✅ **Character Limits**: Automatic truncation at 25,000 characters
 - ✅ **Pagination**: Built-in pagination (limit: 50, max: 200) for all list operations
 
@@ -75,11 +75,11 @@ The OpenL MCP Server underwent a **major architectural refactoring** in November
    - Features: Automatic conversion, maintains metadata
    - Integration: Seamless with Zod
 
-**Development Dependencies** (11):
-- TypeScript tooling: `typescript`, `ts-node`, `ts-jest`
-- Testing: `jest`, `@types/jest`, `nock`
+**Development Dependencies**:
+- TypeScript tooling: `typescript`, `ts-jest`
+- Testing: `jest`, `@jest/globals`, `nock`
 - Linting: `eslint`, `@typescript-eslint/*`
-- Type definitions: `@types/node`, `@types/js-yaml`
+- Type definitions: `@types/node`
 
 **Rationale for Minimal Dependencies**:
 - Reduced attack surface
@@ -99,11 +99,11 @@ The OpenL MCP Server underwent a **major architectural refactoring** in November
 ┌───────────────────▼─────────────────────────────┐
 │            MCP Server (index.ts)                │
 │  ┌──────────────────────────────────────────┐   │
-│  │  Tool Handlers (28 tools)                │   │
+│  │  Tool Handlers (40 tools)                │   │
 │  ├──────────────────────────────────────────┤   │
 │  │  Resource Providers (3 resources)        │   │
 │  ├──────────────────────────────────────────┤   │
-│  │  Prompt Registry (11 prompts)            │   │
+│  │  Prompt Registry (14 prompts)            │   │
 │  └──────────────────────────────────────────┘   │
 └───────────────────┬─────────────────────────────┘
                     │ Uses
@@ -142,15 +142,10 @@ The MCP server has been **refactored from a 766-line monolithic index.ts to a mo
 - `src/tool-handlers.ts` (998 lines, **NEW**)
   - RegisterTool pattern (replaces switch statements)
   - Tool registry and execution
-  - 28 tool registration functions
+  - 40 tool registration functions
   - MCP annotations (readOnlyHint, idempotentHint, destructiveHint, openWorldHint)
   - Centralized tool error handling
   - Handler type definitions
-
-- `src/tools.ts` (370 lines)
-  - Tool metadata definitions
-  - Tool categorization
-  - Helper functions for tool discovery
 
 #### Layer 3: Business Logic
 - `src/client.ts` (1,150 lines)
@@ -207,7 +202,7 @@ The MCP server has been **refactored from a 766-line monolithic index.ts to a mo
 #### Layer 6: Definitions
 - `src/schemas.ts` (270 lines, **ENHANCED**)
   - Zod schemas with .strict() mode
-  - Input validation (28 tool schemas)
+  - Input validation (40 tool schemas)
   - Type inference
   - Runtime safety
 
@@ -447,7 +442,7 @@ const toolHandlers = new Map<string, ToolDefinition>();
 export function registerAllTools(server: Server, client: OpenLClient): void {
   registerTool({ /* tool 1 */ });
   registerTool({ /* tool 2 */ });
-  // ... 28 tools total
+  // ... 40 tools total
 }
 
 // Execute tool by name
@@ -466,7 +461,7 @@ export async function executeTool(name: string, args: unknown, client: OpenLClie
 - **MCP Annotations**: First-class support for tool metadata
 - **Cleaner Code**: index.ts reduced from 766 to 352 lines
 
-**Adding a New Tool** (4-Step Process):
+**Adding a New Tool** (3-Step Process):
 
 **Step 1**: Define schema in `schemas.ts`
 ```typescript
@@ -515,16 +510,6 @@ registerTool({
 ```typescript
 // Already done if you used registerTool() in Step 2
 // The function is called automatically at server startup
-```
-
-**Step 4**: Add metadata to `tools.ts` (optional, for categorization)
-```typescript
-export const MY_NEW_TOOL: ToolMetadata = {
-  name: "openl_my_new_tool",
-  title: "My New Tool",
-  category: ToolCategory.RULES,
-  description: "Short description",
-};
 ```
 
 ### Response Formatting System ⭐ **NEW**
@@ -671,19 +656,19 @@ const formatted = formatResponse(paginated.data, format, {
 1. **readOnlyHint**: Tool does not modify server state
    ```typescript
    annotations: { readOnlyHint: true }
-   // Examples: openl_list_repositories, openl_get_project, openl_search_tables
+   // Examples: openl_list_repositories, openl_get_project, openl_search_project_files
    ```
 
 2. **idempotentHint**: Tool is safe to retry (same result on repeat)
    ```typescript
    annotations: { idempotentHint: true }
-   // Examples: openl_list_projects, openl_get_deployment_info
+   // Examples: openl_list_projects, openl_list_deployments
    ```
 
 3. **destructiveHint**: Tool modifies or deletes data (use with caution)
    ```typescript
    annotations: { destructiveHint: true }
-   // Examples: openl_delete_project, openl_erase_project, openl_update_rules
+   // Examples: openl_delete_project_file, openl_update_table
    ```
 
 4. **openWorldHint**: Tool returns dynamic data (may change between calls)
@@ -694,12 +679,12 @@ const formatted = formatResponse(paginated.data, format, {
 
 **Tool Categorization by Annotations**:
 
-| Annotation | Count | Examples |
-|------------|-------|----------|
-| readOnlyHint | 20/28 | openl_list_*, openl_get_*, openl_search_* |
-| idempotentHint | 18/28 | Most read operations |
-| destructiveHint | 3/28 | openl_delete_project, openl_erase_project, openl_update_rules |
-| openWorldHint | 22/28 | Almost all tools (dynamic data) |
+| Annotation | Examples |
+|------------|----------|
+| readOnlyHint | openl_list_*, openl_get_*, openl_search_project_files |
+| idempotentHint | Most read operations |
+| destructiveHint | openl_delete_project_file, openl_update_table |
+| openWorldHint | Almost all tools (dynamic data) |
 
 **Benefits**:
 - AI agents can understand tool semantics
@@ -1076,7 +1061,7 @@ npm run lint:fix   # Fix automatically
 - Default: 30 seconds
 
 ### 5. Dependency Security
-- Minimal dependencies (5 prod, 11 dev)
+- Minimal dependencies
 - Regular npm audit
 - Dependabot updates
 - Version pinning
@@ -1111,30 +1096,6 @@ npm run lint:fix   # Fix automatically
 - Tool name
 - Sanitized message
 
-### Health Monitoring
-
-**Health Check Tool**:
-- Connectivity test
-- Authentication verification
-- Response time measurement
-- Status reporting
-
-**Usage**:
-```text
-Tool: openl_health_check
-→ Attempts to list repositories
-→ Returns: { status, baseUrl, authMethod, timestamp, serverReachable }
-```
-
-**Annotations**:
-```typescript
-annotations: {
-  readOnlyHint: true,
-  idempotentHint: true,
-  openWorldHint: true,
-}
-```
-
 ## Future Architecture Considerations
 
 ### Potential Enhancements
@@ -1167,11 +1128,11 @@ annotations: {
    - OpenTelemetry integration
 
 6. **MCP Tool Descriptor Sync and Validation**:
-   - Auto-generate `mcps/<server>/tools/*.json` from `src/tools.ts` as part of build or a dedicated `sync` script.
+   - Auto-generate `mcps/<server>/tools/*.json` from the `tool-handlers.ts` registry as part of build or a dedicated `sync` script.
    - Include `name`, `description`, `inputSchema`, and `_meta` in generated descriptors to keep agent-facing metadata consistent.
-   - Add CI check to fail when active tools in `TOOLS` are missing descriptors or have empty descriptions.
+   - Add CI check to fail when registered tools are missing descriptors or have empty descriptions.
    - Add descriptor metadata (`schemaVersion`, `generatedAt`) for traceability and easier debugging.
-   - Document fallback behavior: if descriptor files are missing, use `src/tools.ts` definitions as the source of truth.
+   - Document fallback behavior: if descriptor files are missing, use the `tool-handlers.ts` registry as the source of truth.
 
 ---
 

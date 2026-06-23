@@ -12,7 +12,7 @@ arguments:
 
 ## Summary
 
-**Critical Pre-Deployment Checklist**: All deployments MUST pass validation (0 errors), run all tests (100% pass), and follow environment progression (dev → test → staging → prod). Use OpenL Studio UI for validation and testing since MCP tools are temporarily disabled.
+**Critical Pre-Deployment Checklist**: All deployments MUST pass validation (0 errors), run all tests (100% pass), and follow environment progression (dev → test → staging → prod). Use `openl_project_status` to validate and `openl_start_project_tests` + `openl_get_test_results` to run tests.
 
 # OpenL Deployment Workflow
 
@@ -27,12 +27,12 @@ arguments:
 {end if}
 
 BEFORE any deployment (MANDATORY):
-1. Validate project manually → MUST pass (0 errors)
-   Note: `openl_validate_project` is temporarily disabled - use OpenL Studio UI to validate
+1. Validate project → MUST pass (0 errors)
+   Use `openl_project_status(projectId)` to check `compileState` and review `diagnostics` (errors/warnings with location)
 2. Run all tests → ALL must pass
    Use `openl_start_project_tests()` then `openl_get_test_results()` to run tests, or use OpenL Studio UI
 3. Check for errors → MUST be 0
-   Note: `openl_get_project_errors` is temporarily disabled - use OpenL Studio UI
+   Use `openl_project_status(projectId)` and confirm there are no error diagnostics
 
 WHEN deploying, SELECT environment path:
 - New feature/major change → dev → test → staging → prod{if environment} (You're targeting: {environment}){end if}
@@ -41,15 +41,14 @@ WHEN deploying, SELECT environment path:
 - Critical hotfix → test → prod (expedited)
 
 IF deployment fails:
-1. Check OpenL Studio UI for validation issues
-   (or use `openl_get_project_errors` when re-enabled)
-2. Fix errors and re-validate
+1. Use `openl_project_status(projectId)` to review validation issues (error diagnostics with location)
+2. Fix errors and re-validate (saving with `openl_save_project()` also re-validates)
 3. Redeploy
 
 IF need rollback (manual process):
-1. Use `openl_get_project_history(projectId)` to retrieve Git commit history and identify a stable commit hash from before the problematic deployment
-2. Use `openl_revert_version(projectId, targetVersion=commitHash, confirm=true)` to create a new commit that restores the project state to the selected stable version
-3. Redeploy the reverted version to the environment using `openl_deploy_project()` or `openl_redeploy_project()`
+1. Use `openl_repository_project_revisions(projectId)` to retrieve committed revisions and identify a stable revision from before the problematic deployment
+2. Restore the project to that stable revision in OpenL Studio UI (no MCP tool reverts a project to a previous revision)
+3. Redeploy the restored version to the environment using `openl_deploy_project()` or `openl_redeploy_project()`
 
 **When to use manual rollback:**
 - Deployment fails validation or testing in production
@@ -60,7 +59,6 @@ IF need rollback (manual process):
 ## OpenL Deployment Features
 
 - **Atomic deployment**: All or nothing (entire OpenL project deployed)
-- **Manual rollback**: Use `openl_get_project_history()` + `openl_revert_version()` + redeploy to restore previous version
-- **Version history preserved**: All Git commitHashes maintained for easy rollback
-- **Instant rollback**: Previous version available via `openl_revert_version()` - creates new commit with old state
+- **Manual rollback**: Use `openl_repository_project_revisions()` to find a stable revision, restore it in OpenL Studio UI, then redeploy
+- **Version history preserved**: All committed revisions are listed via `openl_repository_project_revisions()`
 - **Audit trail**: Full deployment history in project commits

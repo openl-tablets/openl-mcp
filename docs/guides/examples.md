@@ -455,7 +455,7 @@ Claude: The new senior discount rule has been added. Drivers over 60 will now re
 User: What changed in the insurance-rules project over the last week?
 
 Claude: Let me check the version history for that project.
-[Calls openl_get_project_history]
+[Calls openl_repository_project_revisions]
 
 Claude: Here are the changes from the last week:
 

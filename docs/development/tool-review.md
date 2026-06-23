@@ -14,11 +14,10 @@ Projects with `repository: 'local'` are stored on disk without Git. For them, **
 |------------|--------|--------|
 | Repositories/projects | `openl_list_repositories`, `openl_list_repository_features`, `openl_list_projects`, `openl_get_project` | ✅ Supported. Note: `openl_list_projects(repository: "local")` may fail if "local" is not in list_repositories; list without filter then filter by `repository === "local"` in response. For repo "local", branches/versions N/A |
 | Open/save/close | `openl_open_project`, `openl_save_project`, `openl_close_project` | ❌ Blocked in MCP and API |
-| Git (branches, history) | `openl_list_branches`, `openl_create_project_branch`, `openl_repository_project_revisions`, `openl_get_project_history`, `openl_get_file_history`, `openl_revert_version` | ❌ Not applicable (no Git) |
+| Git (branches, history) | `openl_list_branches`, `openl_create_project_branch`, `openl_repository_project_revisions` | ❌ Not applicable (no Git) |
 | Session history | `openl_list_project_local_changes`, `openl_restore_project_local_change` | ❌ Require opened project; local cannot be opened |
 | Tables/tests | `openl_list_tables`, `openl_get_table`, `openl_update_table`, `openl_append_table`, `openl_create_project_table`, `openl_start_project_tests`, `openl_get_test_results_*` | ✅ Allowed; no OPENED/EDITING check; tests run without open |
-| Execute rule | `openl_execute_rule` | 🔴 Disabled (temporarily); do not call for any repository |
-| Upload/download | `openl_upload_file`, `openl_download_file` | TBD when enabled |
+| Project files | `openl_read_project_file`, `openl_write_project_file`, `openl_search_project_files`, `openl_copy_project_file`, `openl_move_project_file`, `openl_delete_project_file` | ✅ Work directly on project files |
 | Deploy | `openl_list_deploy_repositories`, `openl_list_deployments`, `openl_deploy_project`, `openl_redeploy_project` | Deploy from design repo; local usually not used |
 
 See **AGENTS.md** § "Local projects (repository: local)" for agent-facing summary.
@@ -130,32 +129,13 @@ See **AGENTS.md** § "Local projects (repository: local)" for agent-facing summa
 
 ## File Management Tools
 
-### 8. `openl_upload_file`
+Project files are managed through the text-oriented file tools `openl_read_project_file`,
+`openl_write_project_file`, `openl_search_project_files`, `openl_copy_project_file`,
+`openl_move_project_file`, and `openl_delete_project_file`.
 
-**Status**: 🔴 DISABLED (Temporarily)  
-**OpenL API**: `POST /projects/{projectId}/files/{fileName}?comment={comment}`
-
-**Extra/Missed Inputs**:
-- ✅ Covered: `projectId`, `fileName`, `localFilePath`, `comment`
-- ✅ Content-Type header handled correctly (`application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`)
-
-**Recommendations**:
-- **CRITICAL**: Re-enable this tool - it's essential for project management
-- Tool is commented out in `tool-handlers.ts` (marked as `TEMPORARILY DISABLED - openl_upload_file`) - needs implementation fixes
-
----
-
-### 9. `openl_download_file`
-
-**Status**: 🔴 DISABLED (Temporarily)  
-**OpenL API**: `GET /projects/{projectId}/files/{fileName}?version={commitHash}`
-
-**Extra/Missed Inputs**:
-- ✅ Covered: `projectId`, `fileName`, `version`, `outputFilePath`
-
-**Recommendations**:
-- **CRITICAL**: Re-enable this tool - it's essential for project management
-- Tool is commented out in `tool-handlers.ts` (marked as `TEMPORARILY DISABLED - openl_download_file`) - needs implementation fixes
+> **Removed**: there is no Excel-file upload/download tool. The earlier
+> `openl_upload_file` / `openl_download_file` tools have been removed and have no
+> MCP replacement.
 
 ---
 
@@ -332,52 +312,11 @@ See **AGENTS.md** § "Local projects (repository: local)" for agent-facing summa
 
 ---
 
-### 22. `openl_revert_version`
-
-**Status**: 🔴 DISABLED (Temporarily)  
-**OpenL API**: `POST /projects/{projectId}/revert` (endpoint may exist)
-
-**Extra/Missed Inputs**:
-- ✅ Covered: `projectId`, `targetVersion` (commit hash), `comment`, `confirm`
-
-**Recommendations**:
-- Tool is commented out in `tool-handlers.ts` (marked as `TEMPORARILY DISABLED - openl_revert_version`) - needs implementation fixes
-- Verify if endpoint exists: `POST /projects/{projectId}/revert` or similar
-- If endpoint doesn't exist, remove client method and tool permanently
-- If endpoint exists but uses different path, update client method
-
----
-
-### 23. `openl_get_file_history`
-
-**Status**: 🔴 DISABLED (Temporarily)  
-**OpenL API**: Not found in current API documentation
-
-**Extra/Missed Inputs**:
-- ✅ Covered: `projectId`, `filePath`, pagination parameters
-
-**Recommendations**:
-- Tool is commented out in `tool-handlers.ts` (marked as `TEMPORARILY DISABLED - openl_get_file_history`) - needs implementation fixes
-- Verify if endpoint exists: `GET /projects/{projectId}/files/{filePath}/history` or similar
-- Consider using `openl_repository_project_revisions` as alternative (shows project-level history)
-- If endpoint doesn't exist, document alternative approach
-
----
-
-### 24. `openl_get_project_history`
-
-**Status**: 🔴 DISABLED (Temporarily)  
-**OpenL API**: Not found in current API documentation
-
-**Extra/Missed Inputs**:
-- ✅ Covered: `projectId`, pagination parameters
-
-**Recommendations**:
-- Tool is commented out in `tool-handlers.ts` (marked as `TEMPORARILY DISABLED - openl_get_project_history`) - needs implementation fixes
-- **USE ALTERNATIVE**: `openl_repository_project_revisions` provides similar functionality
-- Verify if endpoint exists: `GET /projects/{projectId}/history` or similar
-- If endpoint doesn't exist, recommend using `openl_repository_project_revisions` instead
-- Consider removing client method if endpoint doesn't exist
+> **Removed**: `openl_revert_version`, `openl_get_file_history`, and
+> `openl_get_project_history` have been removed (no backing API endpoint).
+> There is no MCP replacement for git revert or single-file history. For
+> project history use `openl_repository_project_revisions` (committed revisions)
+> and `openl_list_project_local_changes` (uncommitted workspace history).
 
 ---
 
@@ -465,82 +404,44 @@ See **AGENTS.md** § "Local projects (repository: local)" for agent-facing summa
 
 ---
 
-### 29. `openl_validate_project` (Missing Tool)
+### 29. `openl_project_status`
 
-**Status**: ❌ MISSING TOOL  
-**OpenL API**: `GET /projects/{projectId}/validation` (may return 404 - endpoint may not exist)
+**Status**: ✅ Complete  
+**OpenL API**: project compilation/validation state
 
-**Extra/Missed Inputs**:
-- Client method exists: `validateProject(projectId)`
-- Schema exists: `validateProjectSchema`
-- **Tool is not registered** - missing from tool handlers
-
-**Recommendations**:
-- **ADD TOOL**: Create `openl_validate_project` tool
-- Verify if endpoint exists (see `validateProject` method in `client.ts` - notes it may return 404)
-- If endpoint doesn't exist, use `openl_get_project_errors` as alternative
-- If endpoint exists, register the tool
-
----
-
-### 30. `openl_get_project_errors` (Missing Tool)
-
-**Status**: ❌ MISSING TOOL  
-**OpenL API**: Uses `GET /projects/{projectId}/validation` internally
-
-**Extra/Missed Inputs**:
-- Client method exists: `getProjectErrors(projectId, includeWarnings)`
-- Schema exists: `getProjectErrorsSchema`
-- **Tool is not registered** - missing from tool handlers
+**Description**: Returns the project's `compileState` plus diagnostics (errors and
+warnings with their location). This is the supported way to check a project for
+compilation errors. Saving a project (`openl_save_project`) also validates it.
 
 **Recommendations**:
-- **ADD TOOL**: Create `openl_get_project_errors` tool
-- This is a higher-level wrapper around validation with error categorization
-- Very useful for debugging - should be exposed as a tool
+- ✅ Use `openl_project_status` to validate a project and surface errors/warnings.
+
+> **Removed**: the previously proposed `openl_validate_project` and
+> `openl_get_project_errors` tools were never registered and have been dropped.
+> Use `openl_project_status` instead.
 
 ---
 
 ## Execution Tools
 
-### 31. `openl_execute_rule`
-
-**Status**: 🔴 DISABLED (Temporarily)  
-**OpenL API**: `POST /projects/{projectId}/rules/{ruleName}/execute` with input data
-
-**Extra/Missed Inputs**:
-- ✅ Covered: `projectId`, `ruleName`, `inputData`
-
-**Recommendations**:
-- **CRITICAL**: Re-enable this tool - it's essential for testing rules
-- Tool is commented out in `tool-handlers.ts` (marked as `TEMPORARILY DISABLED - openl_execute_rule`) - needs implementation fixes
-- Consider adding timeout parameter
-- Consider adding error handling for execution failures
-- Document that project must be compiled/valid before execution
+> **Removed**: `openl_execute_rule` has been removed. There is no MCP tool for
+> executing a rule with input data; run a project's test tables with
+> `openl_start_project_tests` and read results via `openl_get_test_results` /
+> `openl_get_test_results_summary` / `openl_get_test_results_by_table`.
 
 ---
 
 ## Comparison Tools
 
-### 32. `openl_compare_versions` (Missing Tool)
-
-**Status**: ❌ MISSING TOOL  
-**OpenL API**: `GET /projects/{projectId}/versions/compare?base={commitHash}&target={commitHash}`
-
-**Extra/Missed Inputs**:
-- Client method exists: `compareVersions(request)`
-- Schema exists: `compareVersionsSchema`
-- **Tool is not registered** - missing from tool handlers
-
-**Recommendations**:
-- **ADD TOOL**: Create `openl_compare_versions` tool
-- Very useful for reviewing changes between versions
-- Should be exposed as a tool
+> **Removed**: the previously proposed `openl_compare_versions` tool was never
+> registered and has been dropped. There is no MCP tool for comparing two
+> versions.
 
 ---
 
 ## Additional Client Methods Not Exposed as Tools
 
-### 33. `openl_delete_project` (Missing Tool)
+### `openl_delete_project` (Missing Tool)
 
 **Status**: ❌ MISSING TOOL  
 **OpenL API**: `DELETE /projects/{projectId}`
@@ -610,6 +511,8 @@ See **AGENTS.md** § "Local projects (repository: local)" for agent-facing summa
 
 ### Full Tools Table
 
+The server registers **40 tools**. All are listed below.
+
 | # | Tool Name | Category | Status | OpenL API Endpoint | Description |
 |---|-----------|----------|--------|-------------------|-------------|
 | 1 | `openl_list_repositories` | Repository | ✅ Complete | `GET /repos` | List all design repositories |
@@ -618,42 +521,44 @@ See **AGENTS.md** § "Local projects (repository: local)" for agent-facing summa
 | 4 | `openl_list_deploy_repositories` | Deployment | ✅ Complete | `GET /production-repos` | List all deployment repositories |
 | 5 | `openl_list_projects` | Project | ✅ Complete | `GET /projects?repository={repo}&status={status}&tags.{key}={value}` | List projects with filters (repository, status, tags) |
 | 6 | `openl_get_project` | Project | ✅ Complete | `GET /projects/{projectId}` | Get comprehensive project information |
-| 7 | `openl_open_project` | Project | ✅ Complete | `PATCH /projects/{projectId}` with `status: "OPENED"` | Open project for editing (supports branch/revision) |
-| 8 | `openl_save_project` | Project | ✅ Complete | `PATCH /projects/{projectId}` with `{ comment }` | Save project changes to Git (validation optional) |
-| 9 | `openl_close_project` | Project | ✅ Complete | `PATCH /projects/{projectId}` with `status: "CLOSED"` | Close project (with save/discard safety checks) |
-| 10 | `openl_create_project_branch` | Project | ✅ Complete | `POST /projects/{projectId}/branches` | Create new branch from revision |
-| 11 | `openl_list_project_local_changes` | Project | ✅ Complete | `GET /history/project` (session-based) | List local change history (requires project open) |
-| 12 | `openl_restore_project_local_change` | Project | ✅ Complete | `POST /history/restore` with `historyId` | Restore project to previous local version |
-| 13 | `openl_upload_file` | Project | 🔴 Disabled | `POST /projects/{projectId}/files/{fileName}?comment={comment}` | Upload Excel files from `localFilePath` |
-| 14 | `openl_download_file` | Project | 🔴 Disabled | `GET /projects/{projectId}/files/{fileName}?version={commitHash}` | Download Excel files to `outputFilePath` |
-| 15 | `openl_list_tables` | Rules | ✅ Complete | `GET /projects/{projectId}/tables?kind={kind[]}&name={name}` | List all tables/rules in project |
-| 16 | `openl_get_table` | Rules | ✅ Complete | `GET /projects/{projectId}/tables/{tableId}` | Get detailed table structure and data |
-| 17 | `openl_update_table` | Rules | ✅ Complete | `PUT /projects/{projectId}/tables/{tableId}` | Replace entire table structure |
-| 18 | `openl_append_table` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/lines` | Append rows/fields to table |
-| 19 | `openl_create_project_table` | Rules | ✅ Complete | `POST /projects/{projectId}/tables` (BETA API) | Create new table/rule in project |
-| 20 | `openl_list_deployments` | Deployment | ⚠️ Partial | `GET /deployments?repository={repository}` | List active deployments (missing `repository` filter) |
-| 21 | `openl_deploy_project` | Deployment | ✅ Complete | `POST /deployments` | Deploy project to production |
-| 22 | `openl_redeploy_project` | Deployment | ✅ Complete | `POST /deployments/{deploymentId}` | Redeploy with new version |
-| 23 | `openl_repository_project_revisions` | Repository | ✅ Complete | `GET /repos/{repository}/projects/{projectName}/history` | Get project revision history |
-| 24 | `openl_revert_version` | Version Control | 🔴 Disabled | `POST /projects/{projectId}/revert` (may not exist) | Revert project to previous Git commit |
-| 25 | `openl_get_file_history` | Version Control | 🔴 Disabled | `GET /projects/{projectId}/files/{filePath}/history` | Get Git commit history for specific file |
-| 26 | `openl_get_project_history` | Version Control | 🔴 Disabled | `GET /projects/{projectId}/history` | Get Git commit history for entire project |
-| 27 | `openl_start_project_tests` | Project | ✅ Complete | `POST /projects/{projectId}/tests/run` | Start project test execution |
-| 28 | `openl_get_test_results_summary` | Project | ✅ Complete | `GET /projects/{projectId}/tests/summary` | Get brief test execution summary |
-| 29 | `openl_get_test_results` | Project | ✅ Complete | `GET /projects/{projectId}/tests/summary` | Get full test execution results |
-| 30 | `openl_get_test_results_by_table` | Project | ✅ Complete | `GET /projects/{projectId}/tests/summary` + filtering | Get test results filtered by table |
-| 31 | `openl_execute_rule` | Rules | 🔴 Disabled | `POST /projects/{projectId}/rules/{ruleName}/execute` | Execute rule with input data |
-| 32 | `openl_validate_project` | Project | ❌ Missing | `GET /projects/{projectId}/validation` (may return 404) | Validate project for compilation errors |
-| 33 | `openl_get_project_errors` | Project | ❌ Missing | Uses `/projects/{projectId}/validation` internally | Get comprehensive project error analysis |
-| 34 | `openl_compare_versions` | Version Control | ❌ Missing | `GET /projects/{projectId}/versions/compare?base={hash}&target={hash}` | Compare two Git commit versions |
-| 35 | `openl_delete_project` | Project | ❌ Missing | `DELETE /projects/{projectId}` | Delete project (destructive) |
-| 36 | `openl_health_check` | System | ❌ Missing | Uses `GET /repos` as connectivity check | Check OpenL server connectivity |
+| 7 | `openl_create_project` | Project | ✅ Complete | `POST /projects` | Create a new project |
+| 8 | `openl_open_project` | Project | ✅ Complete | `PATCH /projects/{projectId}` with `status: "OPENED"` | Open project for editing (supports branch/revision) |
+| 9 | `openl_save_project` | Project | ✅ Complete | `PATCH /projects/{projectId}` with `{ comment }` | Save project changes to Git (validates on save) |
+| 10 | `openl_close_project` | Project | ✅ Complete | `PATCH /projects/{projectId}` with `status: "CLOSED"` | Close project (with save/discard safety checks) |
+| 11 | `openl_project_status` | Project | ✅ Complete | project compile state + diagnostics | Get `compileState` plus errors/warnings with location |
+| 12 | `openl_get_project_agents_md` | Project | ✅ Complete | project AGENTS.md content | Get the project's AGENTS.md guidance |
+| 13 | `openl_create_project_branch` | Project | ✅ Complete | `POST /projects/{projectId}/branches` | Create new branch from revision |
+| 14 | `openl_list_project_local_changes` | Project | ✅ Complete | `GET /history/project` (session-based) | List local change history (requires project open) |
+| 15 | `openl_restore_project_local_change` | Project | ✅ Complete | `POST /history/restore` with `historyId` | Restore project to previous local version |
+| 16 | `openl_repository_project_revisions` | Repository | ✅ Complete | `GET /repos/{repository}/projects/{projectName}/history` | Get committed project revision history |
+| 17 | `openl_read_project_file` | Files | ✅ Complete | project file read | Read a file from the project |
+| 18 | `openl_write_project_file` | Files | ✅ Complete | project file write | Create or overwrite a project file |
+| 19 | `openl_search_project_files` | Files | ✅ Complete | project file search | Search project files by name/content |
+| 20 | `openl_copy_project_file` | Files | ✅ Complete | project file copy | Copy a project file |
+| 21 | `openl_move_project_file` | Files | ✅ Complete | project file move | Move/rename a project file |
+| 22 | `openl_delete_project_file` | Files | ✅ Complete | project file delete | Delete a project file |
+| 23 | `openl_list_tables` | Rules | ✅ Complete | `GET /projects/{projectId}/tables?kind={kind[]}&name={name}` | List all tables/rules in project |
+| 24 | `openl_get_table` | Rules | ✅ Complete | `GET /projects/{projectId}/tables/{tableId}` | Get detailed table structure and data |
+| 25 | `openl_update_table` | Rules | ✅ Complete | `PUT /projects/{projectId}/tables/{tableId}` | Replace entire table structure |
+| 26 | `openl_append_table` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/lines` | Append rows/fields to table |
+| 27 | `openl_create_project_table` | Rules | ✅ Complete | `POST /projects/{projectId}/tables` (BETA API) | Create new table/rule in project |
+| 28 | `openl_list_deployments` | Deployment | ⚠️ Partial | `GET /deployments?repository={repository}` | List active deployments (missing `repository` filter) |
+| 29 | `openl_deploy_project` | Deployment | ✅ Complete | `POST /deployments` | Deploy project to production |
+| 30 | `openl_redeploy_project` | Deployment | ✅ Complete | `POST /deployments/{deploymentId}` | Redeploy with new version |
+| 31 | `openl_start_project_tests` | Testing | ✅ Complete | `POST /projects/{projectId}/tests/run` | Start project test execution |
+| 32 | `openl_get_test_results_summary` | Testing | ✅ Complete | `GET /projects/{projectId}/tests/summary` | Get brief test execution summary |
+| 33 | `openl_get_test_results` | Testing | ✅ Complete | `GET /projects/{projectId}/tests/summary` | Get full test execution results |
+| 34 | `openl_get_test_results_by_table` | Testing | ✅ Complete | `GET /projects/{projectId}/tests/summary` + filtering | Get test results filtered by table |
+| 35 | `openl_start_trace` | Trace | ✅ Complete | trace start | Start a rule trace session |
+| 36 | `openl_cancel_trace` | Trace | ✅ Complete | trace cancel | Cancel an active trace session |
+| 37 | `openl_get_trace_nodes` | Trace | ✅ Complete | trace nodes | List trace tree nodes |
+| 38 | `openl_get_trace_node_details` | Trace | ✅ Complete | trace node details | Get details for a trace node |
+| 39 | `openl_get_trace_parameter` | Trace | ✅ Complete | trace parameter | Get a trace node parameter value |
+| 40 | `openl_export_trace` | Trace | ✅ Complete | trace export | Export a trace |
 
 **Legend:**
 - ✅ **Complete**: Tool is fully implemented and working
 - ⚠️ **Partial**: Tool works but missing some API parameters
-- 🔴 **Disabled**: Tool is commented out (needs implementation fixes)
-- ❌ **Missing**: Tool should be added (client method exists but tool not registered)
 
 
 ---
@@ -664,10 +569,10 @@ See **AGENTS.md** § "Local projects (repository: local)" for agent-facing summa
 
 | Status | Count | Tools |
 |--------|-------|-------|
-| ✅ Complete | 24 | All repository, project, table, deployment, branch, and test tools (excluding `openl_list_deployments` which is partial). Includes 4 new test execution tools: `openl_start_project_tests`, `openl_get_test_results_summary`, `openl_get_test_results`, `openl_get_test_results_by_table` (replaced `openl_run_project_tests`) |
+| ✅ Complete | 39 | All repository, project, file, table, deployment, testing, and trace tools (excluding `openl_list_deployments`, which is partial). |
 | ⚠️ Partial | 1 | `openl_list_deployments` (missing `repository` filter parameter) |
-| 🔴 Disabled | 6 | `openl_upload_file`, `openl_download_file`, `openl_execute_rule`, `openl_revert_version`, `openl_get_file_history`, `openl_get_project_history` |
-| ❌ Missing | 5 | `openl_validate_project`, `openl_get_project_errors`, `openl_compare_versions`, `openl_delete_project`, `openl_health_check` |
+
+Total registered tools: **40**.
 
 ### Critical Issues
 
@@ -677,32 +582,17 @@ See **AGENTS.md** § "Local projects (repository: local)" for agent-facing summa
 2. **Extra Parameters** (not in API):
    - None
 
-3. **Missing Tools** (should be added):
-   - `openl_validate_project` - Client method exists, tool missing
-   - `openl_get_project_errors` - Client method exists, tool missing
-   - `openl_compare_versions` - Client method exists, tool missing
-   - `openl_delete_project` - Client method exists, tool missing
-   - `openl_health_check` - Client method exists, tool missing
-
-4. **API Endpoint Verification Needed**:
-   - `openl_validate_project` - Endpoint may return 404
-
 ### Recommendations Priority
 
 **HIGH PRIORITY**:
 1. Add `repository` parameter to `openl_list_deployments`
-2. Re-enable disabled tools: `openl_upload_file`, `openl_download_file`, `openl_execute_rule` (fix implementation issues)
-3. Add missing tools: `openl_validate_project`, `openl_get_project_errors`, `openl_compare_versions`
 
 **MEDIUM PRIORITY**:
-4. Verify and re-enable version control tools: `openl_revert_version`, `openl_get_file_history`, `openl_get_project_history` (verify endpoints exist)
-5. Add `openl_delete_project` tool
-6. Add `openl_health_check` tool
-7. Verify `validate_project` endpoint (may return 404)
+2. Consider adding `openl_delete_project` (client `DELETE /projects/{projectId}`) as a `destructiveHint: true` tool with a confirmation parameter.
+3. Consider adding an `openl_health_check` tool (uses `GET /repos` as a connectivity check) for diagnosing connection issues.
 
 **LOW PRIORITY**:
-1. Add timeout parameters to long-running operations
-2. Add polling mechanism for async test execution (not needed - use `openl_start_project_tests` + `openl_get_test_results` separately)
+1. Add timeout parameters to long-running operations.
 
 ---
 
