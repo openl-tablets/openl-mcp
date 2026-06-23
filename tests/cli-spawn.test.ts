@@ -86,13 +86,13 @@ describe("built binary (dist/index.js)", () => {
     });
 
     it("a typo'd tool with no config exits EX_USAGE (64)", async () => {
-      const { code, stderr } = await run(["openl_typo_tool"], envWithoutOpenl());
+      const { code, stderr } = await run(["typo_tool"], envWithoutOpenl());
       expect(code).toBe(64);
       expect(stderr).toContain("Unknown tool");
     });
 
     it("a valid tool with no config exits EX_CONFIG (78) via the CLI loader", async () => {
-      const { code, stderr } = await run(["openl_list_repositories"], envWithoutOpenl());
+      const { code, stderr } = await run(["list_repositories"], envWithoutOpenl());
       expect(code).toBe(78);
       // CLI-mode message (distinct from the MCP-mode message asserted below)
       expect(stderr).toContain("--base-url");
@@ -142,13 +142,14 @@ describe("built binary (dist/index.js)", () => {
       // and the call then fails to connect. This proves the URL flowed through
       // to the client rather than being mistaken for a tool name.
       const { code, stderr } = await run(
-        ["http://127.0.0.1:59999", "openl_list_repositories", "--anonymous"],
+        ["http://127.0.0.1:59999", "list_repositories", "--anonymous"],
         envWithoutOpenl(),
       );
       // ECONNREFUSED on the closed port maps to EX_UNAVAILABLE (69). Pinning
-      // the exact code proves BOTH that the positional URL flowed through as
-      // the base URL (a USAGE/CONFIG/unknown-tool path would not reach the
-      // network) AND that network failures are classified correctly.
+      // the exact code proves the positional URL flowed through as the base URL
+      // (a USAGE/CONFIG/unknown-tool path would not reach the network) AND that
+      // the prefix-less tool name (`list_repositories`) resolved end-to-end in
+      // the built binary, not just in-process.
       expect(code).toBe(69);
       expect(stderr).not.toContain("Unknown tool"); // URL wasn't treated as a tool name
       expect(stderr).not.toMatch(/base URL is required|Invalid OpenL base URL/i);
@@ -206,6 +207,56 @@ describe("built binary (dist/index.js)", () => {
         rmSync(dir, { recursive: true, force: true });
       }
     });
+  });
+
+  describe("MCP protocol boundary (stdio)", () => {
+    it("tools/list advertises openl_-prefixed names (prefix added on the wire, not the registry)", async () => {
+      // A positional URL starts the stdio MCP server. We speak newline-delimited
+      // JSON-RPC: initialize → initialized → tools/list, and assert the advertised
+      // names carry the openl_ prefix — even though the registry and CLI are bare.
+      const child = spawn(process.execPath, [distEntry, "http://localhost:8080"], {
+        cwd: root,
+        env: envWithoutOpenl(),
+      });
+      try {
+        let buf = "";
+        const response = await new Promise<{ result: { tools: Array<{ name: string }> } }>((resolve, reject) => {
+          const timer = setTimeout(
+            () => reject(new Error(`timed out waiting for tools/list; got: ${buf.slice(0, 400)}`)),
+            8000,
+          );
+          child.stdout.on("data", (d) => {
+            buf += d.toString();
+            for (const line of buf.split("\n")) {
+              const t = line.trim();
+              if (!t.startsWith("{")) continue;
+              try {
+                const msg = JSON.parse(t);
+                if (msg.id === 2) {
+                  clearTimeout(timer);
+                  resolve(msg);
+                }
+              } catch {
+                /* partial/!json line — keep accumulating */
+              }
+            }
+          });
+          child.on("error", reject);
+          const send = (o: unknown) => child.stdin.write(JSON.stringify(o) + "\n");
+          send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } } });
+          send({ jsonrpc: "2.0", method: "notifications/initialized" });
+          send({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
+        });
+
+        const names = response.result.tools.map((t) => t.name);
+        expect(names.length).toBeGreaterThan(0);
+        expect(names.every((n) => n.startsWith("openl_"))).toBe(true);
+        expect(names).toContain("openl_list_repositories");
+      } finally {
+        child.stdin.end();
+        child.kill();
+      }
+    }, 20000);
   });
 
   // No persistent processes are spawned (every command terminates), so there's

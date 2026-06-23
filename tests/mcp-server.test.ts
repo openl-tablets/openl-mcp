@@ -7,7 +7,8 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from "@jest/glo
 import MockAdapter from "axios-mock-adapter";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { OpenLClient } from "../src/client.js";
-import { executeTool, registerAllTools } from "../src/tool-handlers.js";
+import { executeTool, getAllTools, registerAllTools } from "../src/tool-handlers.js";
+import { mcpToolName, stripToolPrefix } from "../src/constants.js";
 import type { OpenLConfig, RepositoryInfo, ProjectViewModel, SummaryTableView, ProjectStatusView } from "../src/types.js";
 import {
   mockRepositories,
@@ -49,10 +50,28 @@ describe("MCP Server Tools", () => {
     mockAxios.restore();
   });
 
+  it("registers every tool under a bare name (no openl_ prefix in the registry)", () => {
+    const names = getAllTools().map((t) => t.name);
+    expect(names.length).toBeGreaterThan(0);
+    expect(names.some((n) => n.startsWith("openl_"))).toBe(false);
+    // The bare names are exactly what executeTool / the CLI dispatch on.
+    expect(names).toContain("list_repositories");
+  });
+
+  it("mcpToolName and stripToolPrefix are inverses (the protocol-boundary mapping)", () => {
+    for (const { name } of getAllTools()) {
+      const wire = mcpToolName(name);
+      expect(wire).toBe(`openl_${name}`);
+      expect(stripToolPrefix(wire)).toBe(name);
+    }
+    // strip is a no-op on an already-bare name (robust to clients that omit it).
+    expect(stripToolPrefix("list_repositories")).toBe("list_repositories");
+  });
+
   it("should execute openl_list_repositories", async () => {
     mockAxios.onGet("/repos").reply(200, mockRepositories);
 
-    const result = await executeTool("openl_list_repositories", { response_format: "json" }, client);
+    const result = await executeTool("list_repositories", { response_format: "json" }, client);
     expect(result.content[0].text).toContain("Design Repository");
   });
 
@@ -66,7 +85,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onGet("/projects", { params: { repository: "design", page: 0, size: 50 } }).reply(200, projectsWithStringIds);
 
     const result = await executeTool(
-      "openl_list_projects",
+      "list_projects",
       { repository: "Design Repository", response_format: "json" },
       client
     );
@@ -78,7 +97,7 @@ describe("MCP Server Tools", () => {
     const project = mockProjects[0] as ProjectViewModel;
     mockAxios.onGet(`/projects/${encoded}`).reply(200, project);
 
-    const result = await executeTool("openl_get_project", { projectId }, client);
+    const result = await executeTool("get_project", { projectId }, client);
     expect(result.content[0].text).toContain("insurance-rules");
   });
 
@@ -104,7 +123,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onGet(`/projects/${encoded}/status`).reply(200, fixture);
 
     const result = await executeTool(
-      "openl_project_status",
+      "project_status",
       { projectId, response_format: "json" },
       client
     );
@@ -136,7 +155,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onGet(`/projects/${encoded}/status`).reply(200, fixture);
 
     const result = await executeTool(
-      "openl_project_status",
+      "project_status",
       { projectId, response_format: "json" },
       client
     );
@@ -166,7 +185,7 @@ describe("MCP Server Tools", () => {
     });
 
     const result = await executeTool(
-      "openl_project_status",
+      "project_status",
       { projectId, branch: "develop", response_format: "json" },
       client
     );
@@ -174,7 +193,7 @@ describe("MCP Server Tools", () => {
   });
 
   it("should validate projectId for openl_project_status", async () => {
-    await expect(executeTool("openl_project_status", {}, client)).rejects.toThrow(/projectId/);
+    await expect(executeTool("project_status", {}, client)).rejects.toThrow(/projectId/);
   });
 
   it("should sort compilation.messages.items by severity (ERROR → WARN → INFO)", async () => {
@@ -202,7 +221,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onGet(`/projects/${encoded}/status`).reply(200, fixture);
 
     const result = await executeTool(
-      "openl_project_status",
+      "project_status",
       { projectId, response_format: "json" },
       client,
     );
@@ -241,7 +260,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onGet(`/projects/${encoded}/status`).reply(200, fixture);
 
     const result = await executeTool(
-      "openl_project_status",
+      "project_status",
       { projectId, severity: ["ERROR"], response_format: "json" },
       client,
     );
@@ -274,7 +293,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onGet(`/projects/${encoded}/status`).reply(200, fixture);
 
     const result = await executeTool(
-      "openl_project_status",
+      "project_status",
       { projectId, maxMessages: 2, response_format: "json" },
       client,
     );
@@ -308,7 +327,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onGet(`/projects/${encoded}/status`).reply(200, fixture);
 
     const result = await executeTool(
-      "openl_project_status",
+      "project_status",
       { projectId, wait: true, response_format: "json" },
       client,
     );
@@ -339,7 +358,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onGet(`/projects/${encoded}/status`).reply(200, fixture);
 
     const result = await executeTool(
-      "openl_project_status",
+      "project_status",
       { projectId, wait: true, response_format: "json" },
       client,
     );
@@ -361,7 +380,7 @@ describe("MCP Server Tools", () => {
     });
     mockAxios.onPatch(`/projects/${encoded}`, { status: "OPENED" }).reply(204);
 
-    const result = await executeTool("openl_open_project", { projectId }, client);
+    const result = await executeTool("open_project", { projectId }, client);
     expect(result.content[0].text).toContain("opened");
   });
 
@@ -369,7 +388,7 @@ describe("MCP Server Tools", () => {
     const encoded = encodeProjectPath(projectId);
     mockAxios.onGet(`/projects/${encoded}/tables`).reply(200, mockTables);
 
-    const result = await executeTool("openl_list_tables", { projectId }, client);
+    const result = await executeTool("list_tables", { projectId }, client);
     expect(result.content[0].text).toContain("Rules.xls_1234");
   });
 
@@ -379,7 +398,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onGet(`/projects/${encoded}/tables/${encodeURIComponent(tableId)}`).reply(200, mockDecisionTable);
 
     const result = await executeTool(
-      "openl_get_table",
+      "get_table",
       { projectId, tableId },
       client
     );
@@ -400,7 +419,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onGet(`/projects/${encoded}/tables/${encodeURIComponent("Rules.xls_1234")}`).reply(200, mockDecisionTable);
 
     const result = await executeTool(
-      "openl_update_table",
+      "update_table",
       { projectId, tableId: "Rules.xls_1234", view },
       client
     );
@@ -422,7 +441,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onGet(`/projects/${encoded}/tables/${encodeURIComponent("Customer_1234")}`).reply(200, mockDecisionTable);
 
     const result = await executeTool(
-      "openl_append_table",
+      "append_table",
       { projectId, tableId: "Customer_1234", appendData },
       client
     );
@@ -457,7 +476,7 @@ describe("MCP Server Tools", () => {
       .reply(200);
 
     const result = await executeTool(
-      "openl_append_table",
+      "append_table",
       { projectId, tableId: "RawTable_5678", appendData },
       client
     );
@@ -483,7 +502,7 @@ describe("MCP Server Tools", () => {
 
     await expect(
       executeTool(
-        "openl_append_table",
+        "append_table",
         {
           projectId,
           tableId,
@@ -515,7 +534,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onPost(`/projects/${encoded}/tables/${tableId}/lines`).reply(200);
 
     const result = await executeTool(
-      "openl_append_table",
+      "append_table",
       {
         projectId,
         tableId,
@@ -545,7 +564,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onPost(`/projects/${encoded}/tables/${oldId}/lines`).reply(200);
 
     const result = await executeTool(
-      "openl_append_table",
+      "append_table",
       {
         projectId,
         tableId: oldId,
@@ -582,7 +601,7 @@ describe("MCP Server Tools", () => {
       .reply(200, { id: newId }, { Location: `http://localhost:8080/rest/projects/${encoded}/tables/${newId}` });
 
     const result = await executeTool(
-      "openl_append_table",
+      "append_table",
       {
         projectId,
         tableId: oldId,
@@ -618,7 +637,7 @@ describe("MCP Server Tools", () => {
 
     const view = { id: oldId, ...tableMeta, rows: [{ values: [1, 2] }] };
     const result = await executeTool(
-      "openl_update_table",
+      "update_table",
       { projectId, tableId: oldId, view, response_format: "json" },
       client
     );
@@ -642,7 +661,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onPost(`/projects/${encoded}/tables/${tableId}/lines`).reply(204);
 
     const result = await executeTool(
-      "openl_append_table",
+      "append_table",
       { projectId, tableId, appendData: { tableType: "Data", rows: [{ values: [1, 2, 3] }] }, response_format: "json" },
       client
     );
@@ -670,7 +689,7 @@ describe("MCP Server Tools", () => {
       .replyOnce(200, [{ id: newId, ...tableMeta, pos: "A1:C5" }]);
     mockAxios.onPost(`/projects/${encoded}/tables/${oldId}/lines`).reply(200);
     await executeTool(
-      "openl_append_table",
+      "append_table",
       { projectId, tableId: oldId, appendData: { tableType: "Data", rows: [{ values: [1, 2, 3] }] } },
       client
     );
@@ -681,7 +700,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onGet(`/projects/${encoded}/tables/${newId}`).reply(200, { id: newId, ...tableMeta, pos: "A1:C5" });
 
     const result = await executeTool(
-      "openl_get_table",
+      "get_table",
       { projectId, tableId: oldId, response_format: "json" },
       client
     );
@@ -706,7 +725,7 @@ describe("MCP Server Tools", () => {
       .replyOnce(200, [{ id: newId, ...tableMeta, pos: "A1:B5" }]);
     mockAxios.onPost(`/projects/${encoded}/tables/${oldId}/lines`).reply(200);
     await executeTool(
-      "openl_append_table",
+      "append_table",
       { projectId, tableId: oldId, appendData: { tableType: "Data", rows: [{ values: [1, 2] }] } },
       client
     );
@@ -719,7 +738,7 @@ describe("MCP Server Tools", () => {
 
     const view = { id: oldId, ...tableMeta, rows: [{ values: [9, 9] }] };
     const result = await executeTool(
-      "openl_update_table",
+      "update_table",
       { projectId, tableId: oldId, view, response_format: "json" },
       client
     );
@@ -739,7 +758,7 @@ describe("MCP Server Tools", () => {
       .reply(404, { message: "The table is not found." });
 
     await expect(
-      executeTool("openl_get_table", { projectId, tableId: "deadbeefdeadbeef" }, client)
+      executeTool("get_table", { projectId, tableId: "deadbeefdeadbeef" }, client)
     ).rejects.toThrow(/The table is not found.*does NOT mean the edit was rolled back.*openl_list_tables/s);
   });
 
@@ -748,7 +767,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onGet("/repos").reply(200, repos);
     mockAxios.onGet("/repos/design/branches").reply(200, mockBranches);
 
-    const result = await executeTool("openl_list_branches", { repository: "Design Repository" }, client);
+    const result = await executeTool("list_branches", { repository: "Design Repository" }, client);
     expect(result.content[0].text).toContain("main");
   });
 
@@ -757,7 +776,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onPost(`/projects/${encoded}/branches`, { branch: "feature/test-branch" }).reply(200);
 
     const result = await executeTool(
-      "openl_create_project_branch",
+      "create_project_branch",
       { projectId, branchName: "feature/test-branch" },
       client
     );
@@ -767,7 +786,7 @@ describe("MCP Server Tools", () => {
   it("should execute openl_list_deployments", async () => {
     mockAxios.onGet("/deployments").reply(200, mockDeployments);
 
-    const result = await executeTool("openl_list_deployments", {}, client);
+    const result = await executeTool("list_deployments", {}, client);
     expect(result.content[0].text).toContain("# Deployments");
   });
 
@@ -777,7 +796,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onPost("/deployments").reply(200);
 
     const result = await executeTool(
-      "openl_deploy_project",
+      "deploy_project",
       {
         projectId,
         deploymentName: "insurance-rules",
@@ -789,7 +808,7 @@ describe("MCP Server Tools", () => {
   });
 
   it("should validate required params via handlers", async () => {
-    await expect(executeTool("openl_get_project", {}, client)).rejects.toThrow(/projectId/);
+    await expect(executeTool("get_project", {}, client)).rejects.toThrow(/projectId/);
   });
 
   // ---------------------------------------------------------------------------
@@ -801,7 +820,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onPut("/repos/design/projects/Offer-CW").reply(200, { revision: "abc123", branch: "main" });
 
     const result = await executeTool(
-      "openl_create_project",
+      "create_project",
       { repository: "Design Repository", projectName: "Offer-CW", response_format: "json" },
       client
     );
@@ -815,14 +834,14 @@ describe("MCP Server Tools", () => {
     mockAxios.onPut("/repos/design/projects/Existing").reply(409, { message: "duplicated.project.message" });
 
     await expect(
-      executeTool("openl_create_project", { repository: "design", projectName: "Existing" }, client)
+      executeTool("create_project", { repository: "design", projectName: "Existing" }, client)
     ).rejects.toThrow(/already exists/i);
   });
 
   it("should reject a blank create when a branch is requested", async () => {
     mockAxios.onGet("/repos").reply(200, mockRepositories);
     await expect(
-      executeTool("openl_create_project", { repository: "design", projectName: "Offer-CW", branch: "dev" }, client)
+      executeTool("create_project", { repository: "design", projectName: "Offer-CW", branch: "dev" }, client)
     ).rejects.toThrow(/branch is only supported when cloning/i);
   });
 
@@ -834,7 +853,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onPut("/repos/design/projects/Offer-CW").reply(200, { revision: "def456", branch: "main" });
 
     const result = await executeTool(
-      "openl_create_project",
+      "create_project",
       { repository: "design", template: "Offer-US", projectName: "Offer-CW", response_format: "json" },
       client
     );
@@ -858,7 +877,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onGet("/repos/design/branches/dev/projects/Offer-CW/history").reply(200, { content: [{ revisionNo: "def456" }] });
 
     const result = await executeTool(
-      "openl_create_project",
+      "create_project",
       { repository: "design", template: "Offer-US", projectName: "Offer-CW", branch: "dev", response_format: "json" },
       client
     );
@@ -881,7 +900,7 @@ describe("MCP Server Tools", () => {
 
     await expect(
       executeTool(
-        "openl_create_project",
+        "create_project",
         { repository: "design", template: "Offer-US", projectName: "Existing" },
         client
       )
@@ -894,7 +913,7 @@ describe("MCP Server Tools", () => {
 
     await expect(
       executeTool(
-        "openl_create_project",
+        "create_project",
         { repository: "design", template: "Nope", projectName: "NewOne" },
         client
       )
@@ -902,7 +921,7 @@ describe("MCP Server Tools", () => {
   });
 
   it("should validate required params for create", async () => {
-    await expect(executeTool("openl_create_project", {}, client)).rejects.toThrow(/repository|projectName/);
+    await expect(executeTool("create_project", {}, client)).rejects.toThrow(/repository|projectName/);
   });
 
   // ---------------------------------------------------------------------------
@@ -918,7 +937,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onGet(`/projects/${encoded}/trace/nodes`).reply(200, nodes);
 
     const result = await executeTool(
-      "openl_get_trace_nodes",
+      "get_trace_nodes",
       { projectId, response_format: "json" },
       client
     );
@@ -931,7 +950,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onGet(`/projects/${encoded}/trace/nodes`).reply(409, { message: "Trace is still running" });
 
     await expect(
-      executeTool("openl_get_trace_nodes", { projectId, wait: false }, client)
+      executeTool("get_trace_nodes", { projectId, wait: false }, client)
     ).rejects.toThrow(/409|still running/i);
     expect(mockAxios.history.get.filter((g) => g.url === `/projects/${encoded}/trace/nodes`).length).toBe(1);
   });
@@ -943,7 +962,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onGet(`/projects/${encoded}/trace/nodes`).reply(409, { message: "Trace is still running" });
 
     await expect(
-      executeTool("openl_get_trace_nodes", { projectId: unknownProjectId }, client)
+      executeTool("get_trace_nodes", { projectId: unknownProjectId }, client)
     ).rejects.toThrow(/Pass 'tableId'/);
   });
 
@@ -955,7 +974,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onGet(`/projects/${encoded}/trace/nodes`).reply(409, { message: "Trace is still running" });
 
     await expect(
-      executeTool("openl_get_trace_nodes", { projectId: wsProjectId, tableId: "rule_1" }, client)
+      executeTool("get_trace_nodes", { projectId: wsProjectId, tableId: "rule_1" }, client)
     ).rejects.toThrow(/websocket.*unavailable.*session cookie|session cookie.*websocket/is);
   });
 
@@ -966,7 +985,7 @@ describe("MCP Server Tools", () => {
     mockAxios.onGet(`/projects/${encoded}/trace/nodes`).reply(409, { message: "Trace is still running" });
 
     const started = await executeTool(
-      "openl_start_trace",
+      "start_trace",
       { projectId: traceProjectId, tableId: "calcRule_42", inputJson: { params: { x: 1 } } },
       client
     );
@@ -976,7 +995,7 @@ describe("MCP Server Tools", () => {
     // proceed to the websocket path (which then fails on the missing session
     // cookie rather than asking for tableId).
     await expect(
-      executeTool("openl_get_trace_nodes", { projectId: traceProjectId }, client)
+      executeTool("get_trace_nodes", { projectId: traceProjectId }, client)
     ).rejects.toThrow(/session cookie/i);
   });
 
@@ -986,13 +1005,13 @@ describe("MCP Server Tools", () => {
     mockAxios.onGet(`/projects/${encoded}/trace/export`).reply(409, { message: "Trace is still running" });
 
     await expect(
-      executeTool("openl_export_trace", { projectId: wsProjectId, tableId: "rule_1" }, client)
+      executeTool("export_trace", { projectId: wsProjectId, tableId: "rule_1" }, client)
     ).rejects.toThrow(/websocket.*unavailable|session cookie/is);
 
     // And returns the export verbatim when the trace is already complete.
     mockAxios.reset();
     mockAxios.onGet(`/projects/${encoded}/trace/export`).reply(200, "TRACE: calculatePremium -> 42");
-    const result = await executeTool("openl_export_trace", { projectId: wsProjectId, tableId: "rule_1" }, client);
+    const result = await executeTool("export_trace", { projectId: wsProjectId, tableId: "rule_1" }, client);
     expect(result.content[0].text).toContain("calculatePremium -> 42");
   });
 });

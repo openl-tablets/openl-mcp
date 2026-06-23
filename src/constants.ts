@@ -37,6 +37,47 @@ export const HEADERS = {
 } as const;
 
 /**
+ * The MCP namespace prefix exposed to clients (e.g. `openl_list_repositories`).
+ * It exists only to keep this server's tools distinct from other MCP servers'
+ * tools in a client connected to several at once.
+ *
+ * It is purely a PROTOCOL-BOUNDARY concern. The internal tool registry, the CLI,
+ * and the REST API all use bare names (`list_repositories`); only the MCP
+ * `tools/list` and `tools/call` handlers add and strip the prefix — via
+ * {@link mcpToolName} and {@link stripToolPrefix} — so the namespace lives in
+ * exactly one place and never leaks into the registry.
+ */
+export const TOOL_PREFIX = "openl_";
+
+/** Add the namespace prefix to a bare registry name for the MCP wire (`list_repositories` → `openl_list_repositories`). */
+export function mcpToolName(base: string): string {
+  return `${TOOL_PREFIX}${base}`;
+}
+
+/** Strip the namespace prefix off an MCP wire name back to the bare registry name; returns the input unchanged when it carries no prefix. Inverse of {@link mcpToolName}. */
+export function stripToolPrefix(name: string): string {
+  return name.startsWith(TOOL_PREFIX) ? name.slice(TOOL_PREFIX.length) : name;
+}
+
+/**
+ * Display categories for grouping tools in the CLI `--help` catalog, in the
+ * order they should appear. Each tool declares its category directly on its
+ * ToolDefinition, so the CLI groups by that field rather than guessing from
+ * the tool name.
+ */
+export const TOOL_CATEGORIES = [
+  "Repository",
+  "Project",
+  "Rules & Tables",
+  "Project Files",
+  "Trace",
+  "Deployment",
+] as const;
+
+/** A tool's display category — one of {@link TOOL_CATEGORIES}. */
+export type ToolCategory = (typeof TOOL_CATEGORIES)[number];
+
+/**
  * Server information
  */
 export const SERVER_INFO = {

@@ -33,6 +33,7 @@ import {
 } from "./stomp-waits.js";
 import { getProjectTemplateZip } from "./project-templates.js";
 import { RESPONSE_LIMITS } from "./constants.js";
+import type { ToolCategory } from "./constants.js";
 import type * as Types from "./types.js";
 
 /**
@@ -65,6 +66,8 @@ interface ToolDefinition {
   name: string;
   title: string;
   description: string;
+  /** Display category for CLI `--help` grouping. */
+  category: ToolCategory;
   inputSchema: Record<string, unknown>;
   version: string; // Semantic version (e.g., "2.0.0")
   annotations?: {
@@ -141,7 +144,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   // =============================================================================
 
   registerTool({
-    name: "openl_list_repositories",
+    name: "list_repositories",
+    category: "Repository",
     title: "List Design Repositories",
     version: "1.0.0",
     description:
@@ -191,7 +195,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_list_branches",
+    name: "list_branches",
+    category: "Repository",
     title: "List Git Branches",
     version: "1.0.0",
     description:
@@ -246,7 +251,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   // =============================================================================
 
   registerTool({
-    name: "openl_list_projects",
+    name: "list_projects",
+    category: "Project",
     title: "List Projects",
     version: "1.0.0",
     description:
@@ -387,7 +393,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_get_project",
+    name: "get_project",
+    category: "Project",
     title: "Get Project Details",
     version: "1.0.0",
     description:
@@ -421,7 +428,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_project_status",
+    name: "project_status",
+    category: "Project",
     title: "Get Project Status",
     version: "1.0.0",
     description:
@@ -501,7 +509,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
 
   registerTool({
-    name: "openl_open_project",
+    name: "open_project",
+    category: "Project",
     title: "Open Project for Editing",
     version: "1.0.0",
     description:
@@ -571,7 +580,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_save_project",
+    name: "save_project",
+    category: "Project",
     title: "Save Project to Git",
     version: "1.0.0",
     description:
@@ -610,7 +620,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_close_project",
+    name: "close_project",
+    category: "Project",
     title: "Close Project",
     version: "1.0.0",
     description:
@@ -727,7 +738,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   // =============================================================================
 
   registerTool({
-    name: "openl_read_project_file",
+    name: "read_project_file",
+    category: "Project Files",
     title: "Read Project File",
     version: "1.0.0",
     description:
@@ -855,7 +867,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_write_project_file",
+    name: "write_project_file",
+    category: "Project Files",
     title: "Write Project File",
     version: "1.0.0",
     description:
@@ -989,7 +1002,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_delete_project_file",
+    name: "delete_project_file",
+    category: "Project Files",
     title: "Delete Project File",
     version: "1.0.0",
     description:
@@ -1031,7 +1045,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_search_project_files",
+    name: "search_project_files",
+    category: "Project Files",
     title: "Search Project Files",
     version: "1.0.0",
     description:
@@ -1104,7 +1119,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_get_project_agents_md",
+    name: "get_project_agents_md",
+    category: "Project Files",
     title: "Get Project AGENTS.md",
     version: "1.0.0",
     description:
@@ -1141,7 +1157,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_copy_project_file",
+    name: "copy_project_file",
+    category: "Project Files",
     title: "Copy Project File",
     version: "1.0.0",
     description:
@@ -1197,7 +1214,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_move_project_file",
+    name: "move_project_file",
+    category: "Project Files",
     title: "Move or Rename Project File",
     version: "1.0.0",
     description:
@@ -1257,7 +1275,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   // =============================================================================
 
   registerTool({
-    name: "openl_list_tables",
+    name: "list_tables",
+    category: "Rules & Tables",
     title: "List Project Tables",
     version: "1.0.0",
     description: "List all tables/rules in a project with optional filters for type, name, and file. Returns table metadata including 'tableId' (the 'id' field) which is required for calling get_table(), update_table(), append_table(), or run_project_tests(). Use the 'tableId' field from the response to reference specific tables in other API calls. IMPORTANT: a table id is derived from its location and changes when an edit relocates the table (it had no room to grow in place). After openl_update_table/openl_append_table, use the 'tableId' those tools return (or re-run openl_list_tables); an id from a listing taken before such an edit is stale.",
@@ -1374,7 +1393,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_get_table",
+    name: "get_table",
+    category: "Rules & Tables",
     title: "Get Table Structure & Data",
     version: "1.0.0",
     description:
@@ -1435,7 +1455,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_update_table",
+    name: "update_table",
+    category: "Rules & Tables",
     title: "Replace Entire Table",
     version: "1.0.0",
     description:
@@ -1549,7 +1570,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_append_table",
+    name: "append_table",
+    category: "Rules & Tables",
     title: "Append Rows/Fields to Table",
     version: "1.0.0",
     description:
@@ -1732,7 +1754,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_create_project_table",
+    name: "create_project_table",
+    category: "Rules & Tables",
     title: "Create New Table",
     version: "1.0.0",
     description:
@@ -1792,7 +1815,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   // =============================================================================
 
   registerTool({
-    name: "openl_list_deployments",
+    name: "list_deployments",
+    category: "Deployment",
     title: "List Active Deployments",
     version: "1.0.0",
     description:
@@ -1842,7 +1866,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_deploy_project",
+    name: "deploy_project",
+    category: "Deployment",
     title: "Deploy Project to Production",
     version: "1.0.0",
     description:
@@ -1898,7 +1923,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   // =============================================================================
 
   registerTool({
-    name: "openl_start_trace",
+    name: "start_trace",
+    category: "Trace",
     title: "Start Rule Trace",
     version: "1.0.0",
     description:
@@ -1945,7 +1971,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_get_trace_nodes",
+    name: "get_trace_nodes",
+    category: "Trace",
     title: "Get Trace Tree Nodes",
     version: "1.0.0",
     description:
@@ -1985,7 +2012,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
           tableId: typedArgs.tableId,
           wait: typedArgs.wait !== false,
           timeoutMs: typedArgs.waitTimeoutMs,
-          toolName: "openl_get_trace_nodes",
+          toolName: "get_trace_nodes",
           extra,
         },
       );
@@ -1998,7 +2025,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_get_trace_node_details",
+    name: "get_trace_node_details",
+    category: "Trace",
     title: "Get Trace Node Details",
     version: "1.0.0",
     description:
@@ -2037,7 +2065,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_get_trace_parameter",
+    name: "get_trace_parameter",
+    category: "Trace",
     title: "Get Trace Parameter Value",
     version: "1.0.0",
     description:
@@ -2072,7 +2101,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
 
 
   registerTool({
-    name: "openl_cancel_trace",
+    name: "cancel_trace",
+    category: "Trace",
     title: "Cancel Ongoing Trace",
     version: "1.0.0",
     description: "Cancel ongoing trace execution for a project.",
@@ -2094,7 +2124,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_export_trace",
+    name: "export_trace",
+    category: "Trace",
     title: "Export Trace as Text",
     version: "1.0.0",
     description:
@@ -2132,7 +2163,7 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
           tableId: typedArgs.tableId,
           wait: typedArgs.wait !== false,
           timeoutMs: typedArgs.waitTimeoutMs,
-          toolName: "openl_export_trace",
+          toolName: "export_trace",
           extra,
         },
       );
@@ -2148,7 +2179,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   // =============================================================================
 
   registerTool({
-    name: "openl_list_repository_features",
+    name: "list_repository_features",
+    category: "Repository",
     title: "Get Repository Features",
     version: "1.0.0",
     description:
@@ -2187,7 +2219,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_repository_project_revisions",
+    name: "repository_project_revisions",
+    category: "Repository",
     title: "Get Project Revision History",
     version: "1.0.0",
     description:
@@ -2245,7 +2278,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_list_deploy_repositories",
+    name: "list_deploy_repositories",
+    category: "Repository",
     title: "List Deployment Repositories",
     version: "1.0.0",
     description:
@@ -2291,7 +2325,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   // =============================================================================
 
   registerTool({
-    name: "openl_create_project_branch",
+    name: "create_project_branch",
+    category: "Project",
     title: "Create Project Branch",
     version: "1.0.0",
     description:
@@ -2339,7 +2374,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   // =============================================================================
 
   registerTool({
-    name: "openl_create_project",
+    name: "create_project",
+    category: "Project",
     title: "Create or Clone Project",
     version: "2.0.0",
     description:
@@ -2556,7 +2592,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   // =============================================================================
 
   registerTool({
-    name: "openl_list_project_local_changes",
+    name: "list_project_local_changes",
+    category: "Project",
     title: "List Local Change History",
     version: "1.0.0",
     description:
@@ -2589,7 +2626,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_restore_project_local_change",
+    name: "restore_project_local_change",
+    category: "Project",
     title: "Restore Previous Local Version",
     version: "1.0.0",
     description:
@@ -2637,7 +2675,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   // =============================================================================
 
   registerTool({
-    name: "openl_start_project_tests",
+    name: "start_project_tests",
+    category: "Project",
     title: "Start Project Tests",
     version: "1.0.0",
     description:
@@ -2680,7 +2719,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_get_test_results_summary",
+    name: "get_test_results_summary",
+    category: "Project",
     title: "Get Test Results Summary",
     version: "1.0.0",
     description:
@@ -2722,7 +2762,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_get_test_results",
+    name: "get_test_results",
+    category: "Project",
     title: "Get Full Test Results",
     version: "1.0.0",
     description:
@@ -2781,7 +2822,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   });
 
   registerTool({
-    name: "openl_get_test_results_by_table",
+    name: "get_test_results_by_table",
+    category: "Project",
     title: "Get Test Results By Table",
     version: "1.0.0",
     description:
@@ -2839,7 +2881,8 @@ export function registerAllTools(_server: Server, _client: OpenLClient): void {
   // =============================================================================
 
   registerTool({
-    name: "openl_redeploy_project",
+    name: "redeploy_project",
+    category: "Deployment",
     title: "Redeploy with New Version",
     version: "1.0.0",
     description:
@@ -3479,9 +3522,9 @@ interface ToolValidationSpec {
  * runs. Keyed by tool name; only the structured-payload table tools are listed.
  */
 const TOOL_VALIDATION: Record<string, ToolValidationSpec> = {
-  openl_append_table: { schema: schemas.appendTableSchema, payloadArg: "appendData", tableTypes: schemas.APPEND_TABLE_TYPES },
-  openl_update_table: { schema: schemas.updateTableSchema, payloadArg: "view", tableTypes: schemas.EDITABLE_TABLE_TYPES },
-  openl_create_project_table: { schema: schemas.createProjectTableSchema, payloadArg: "table", tableTypes: schemas.EDITABLE_TABLE_TYPES },
+  append_table: { schema: schemas.appendTableSchema, payloadArg: "appendData", tableTypes: schemas.APPEND_TABLE_TYPES },
+  update_table: { schema: schemas.updateTableSchema, payloadArg: "view", tableTypes: schemas.EDITABLE_TABLE_TYPES },
+  create_project_table: { schema: schemas.createProjectTableSchema, payloadArg: "table", tableTypes: schemas.EDITABLE_TABLE_TYPES },
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

@@ -38,7 +38,7 @@ import {
 
 // Import our modular components
 import { OpenLClient } from "./client.js";
-import { SERVER_INFO } from "./constants.js";
+import { SERVER_INFO, mcpToolName, stripToolPrefix } from "./constants.js";
 import { PROMPTS, loadPromptContent, getPromptDefinition } from "./prompts-registry.js";
 import { registerAllTools, getAllTools, executeTool } from "./tool-handlers.js";
 import {
@@ -123,10 +123,11 @@ class OpenLMCPServer {
    * Setup MCP request handlers
    */
   private setupHandlers(): void {
-    // List available tools
+    // List available tools. The registry holds bare names; the `openl_`
+    // namespace prefix is a protocol concern applied only here, on the wire.
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: getAllTools().map(({ name, title, description, inputSchema, annotations }) => ({
-        name,
+        name: mcpToolName(name),
         title,
         description,
         inputSchema,
@@ -136,8 +137,9 @@ class OpenLMCPServer {
 
     // Handle tool execution. `extra` carries the SDK request context (progressToken,
     // per-session sendNotification, AbortSignal) that long-running tools need.
+    // Strip the wire prefix back to the bare registry name before dispatching.
     this.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
-      const result = await executeTool(request.params.name, request.params.arguments, this.client, extra);
+      const result = await executeTool(stripToolPrefix(request.params.name), request.params.arguments, this.client, extra);
       return result as any; // Type cast needed due to MCP SDK generic return type
     });
 

@@ -91,8 +91,11 @@ describe("CLI", () => {
       expect(code).toBe(0);
       const out = h.getStdout();
       expect(out).toContain("Usage:");
-      expect(out).toContain("openl_list_repositories");
       expect(out).toContain("--base-url");
+      // Catalog lists tools by their prefix-less CLI name (line starts with the
+      // short name, not `openl_…`), and the prefix-optional rule is documented.
+      expect(out).toMatch(/^\s+list_repositories\b/m);
+      expect(out).toMatch(/prefix is not used/i);
       // Requirement: --help shows the positional <url> as required and
       // documents the OPENL_BASE_URL fallback + precedence.
       expect(out).toContain("openl-mcp <url>");
@@ -138,14 +141,14 @@ describe("CLI", () => {
   });
 
   describe("happy path", () => {
-    it("invokes openl_list_repositories with inline JSON and writes result to stdout", async () => {
+    it("invokes list_repositories with inline JSON and writes result to stdout", async () => {
       const { client, mock: m } = createMockClient();
       mock = m;
       m.onGet("/repos").reply(200, mockRepositories);
 
       const h = createHarness();
       const code = await runCli({
-        argv: ["openl_list_repositories", '{"response_format":"json"}'],
+        argv: ["list_repositories", '{"response_format":"json"}'],
         env: ENV_OK,
         stdin: h.stdin,
         stdout: h.stdout,
@@ -165,7 +168,7 @@ describe("CLI", () => {
 
       const h = createHarness('{"response_format":"json"}');
       const code = await runCli({
-        argv: ["openl_list_repositories", "--stdin"],
+        argv: ["list_repositories", "--stdin"],
         env: ENV_OK,
         stdin: h.stdin,
         stdout: h.stdout,
@@ -189,7 +192,7 @@ describe("CLI", () => {
 
         const h = createHarness();
         const code = await runCli({
-          argv: ["openl_list_repositories", `@${file}`],
+          argv: ["list_repositories", `@${file}`],
           env: ENV_OK,
           stdin: h.stdin,
           stdout: h.stdout,
@@ -211,7 +214,7 @@ describe("CLI", () => {
 
       const h = createHarness();
       const code = await runCli({
-        argv: ["openl_list_repositories"],
+        argv: ["list_repositories"],
         env: ENV_OK,
         stdin: h.stdin,
         stdout: h.stdout,
@@ -231,7 +234,7 @@ describe("CLI", () => {
       const h = createHarness();
       const code = await runCli({
         argv: [
-          "openl_list_repositories",
+          "list_repositories",
           "--base-url",
           "http://localhost:8080",
           "--user",
@@ -263,7 +266,7 @@ describe("CLI", () => {
       try {
         const h = createHarness();
         const code = await runCli({
-          argv: ["openl_list_repositories", "--client-document-id", "ticket-42"],
+          argv: ["list_repositories", "--client-document-id", "ticket-42"],
           env: ENV_OK,
           stdin: h.stdin,
           stdout: h.stdout,
@@ -289,7 +292,7 @@ describe("CLI", () => {
 
       const h = createHarness();
       const code = await runCli({
-        argv: ["openl_list_repositories"], // no args at all
+        argv: ["list_repositories"], // no args at all
         env: ENV_OK,
         stdin: h.stdin,
         stdout: h.stdout,
@@ -311,7 +314,7 @@ describe("CLI", () => {
 
       const h = createHarness();
       const code = await runCli({
-        argv: ["openl_list_repositories", '{"response_format":"json"}'],
+        argv: ["list_repositories", '{"response_format":"json"}'],
         env: ENV_OK,
         stdin: h.stdin,
         stdout: h.stdout,
@@ -337,7 +340,7 @@ describe("CLI", () => {
       try {
         const h = createHarness();
         const code = await runCli({
-          argv: ["openl_list_repositories"],
+          argv: ["list_repositories"],
           env: ENV_OK,
           stdin: h.stdin,
           stdout: h.stdout,
@@ -371,7 +374,7 @@ describe("CLI", () => {
 
         const h = createHarness();
         const code = await runCli({
-          argv: ["openl_list_repositories", "--cookie-jar", jarPath],
+          argv: ["list_repositories", "--cookie-jar", jarPath],
           env: ENV_OK,
           stdin: h.stdin,
           stdout: h.stdout,
@@ -414,7 +417,7 @@ describe("CLI", () => {
 
         const h = createHarness();
         const code = await runCli({
-          argv: ["openl_list_repositories", "--cookie-jar", jarPath],
+          argv: ["list_repositories", "--cookie-jar", jarPath],
           env: ENV_OK,
           stdin: h.stdin,
           stdout: h.stdout,
@@ -444,7 +447,7 @@ describe("CLI", () => {
 
         const h = createHarness();
         const code = await runCli({
-          argv: ["openl_list_repositories", "--cookie-jar", jarPath],
+          argv: ["list_repositories", "--cookie-jar", jarPath],
           env: ENV_OK,
           stdin: h.stdin,
           stdout: h.stdout,
@@ -482,7 +485,7 @@ describe("CLI", () => {
 
         const h = createHarness();
         const code = await runCli({
-          argv: ["openl_list_repositories", "--cookie-jar", jarPath],
+          argv: ["list_repositories", "--cookie-jar", jarPath],
           env: ENV_OK,
           stdin: h.stdin,
           stdout: h.stdout,
@@ -507,7 +510,7 @@ describe("CLI", () => {
 
         const h = createHarness();
         const code = await runCli({
-          argv: ["openl_list_repositories", "--cookie-jar", jarPath],
+          argv: ["list_repositories", "--cookie-jar", jarPath],
           env: ENV_OK,
           stdin: h.stdin,
           stdout: h.stdout,
@@ -532,7 +535,7 @@ describe("CLI", () => {
 
         const h = createHarness();
         const code = await runCli({
-          argv: ["openl_list_repositories", "--cookie-jar", jarPath],
+          argv: ["list_repositories", "--cookie-jar", jarPath],
           env: ENV_OK,
           stdin: h.stdin,
           stdout: h.stdout,
@@ -562,7 +565,7 @@ describe("CLI", () => {
     it("returns EX_CONFIG (78) when OPENL_BASE_URL is missing", async () => {
       const h = createHarness();
       const code = await runCli({
-        argv: ["openl_list_repositories", "{}"],
+        argv: ["list_repositories", "{}"],
         env: {},
         stdin: h.stdin,
         stdout: h.stdout,
@@ -575,7 +578,7 @@ describe("CLI", () => {
     it("returns EX_CONFIG (78) when no auth method is configured", async () => {
       const h = createHarness();
       const code = await runCli({
-        argv: ["openl_list_repositories", "{}"],
+        argv: ["list_repositories", "{}"],
         env: { OPENL_BASE_URL: "http://localhost:8080" },
         stdin: h.stdin,
         stdout: h.stdout,
@@ -594,7 +597,7 @@ describe("CLI", () => {
 
       const h = createHarness();
       const code = await runCli({
-        argv: ["openl_list_repositories", "--anonymous"],
+        argv: ["list_repositories", "--anonymous"],
         env: { OPENL_BASE_URL: "http://localhost:8080" }, // base URL only, no auth
         stdin: h.stdin,
         stdout: h.stdout,
@@ -608,7 +611,7 @@ describe("CLI", () => {
     it("still requires OPENL_BASE_URL even with --anonymous", async () => {
       const h = createHarness();
       const code = await runCli({
-        argv: ["openl_list_repositories", "--anonymous"],
+        argv: ["list_repositories", "--anonymous"],
         env: {}, // no base URL
         stdin: h.stdin,
         stdout: h.stdout,
@@ -648,7 +651,7 @@ describe("CLI", () => {
       const { client } = createMockClient();
       const h = createHarness();
       const code = await runCli({
-        argv: ["openl_list_repositories", "{not-json"],
+        argv: ["list_repositories", "{not-json"],
         env: ENV_OK,
         stdin: h.stdin,
         stdout: h.stdout,
@@ -662,7 +665,7 @@ describe("CLI", () => {
     it("returns EX_USAGE (64) when more than one args source is provided", async () => {
       const h = createHarness();
       const code = await runCli({
-        argv: ["openl_list_repositories", "{}", "--stdin"],
+        argv: ["list_repositories", "{}", "--stdin"],
         env: ENV_OK,
         stdin: h.stdin,
         stdout: h.stdout,
@@ -676,7 +679,7 @@ describe("CLI", () => {
       const { client } = createMockClient();
       const h = createHarness();
       const code = await runCli({
-        argv: ["openl_does_not_exist", "{}"],
+        argv: ["does_not_exist", "{}"],
         env: ENV_OK,
         stdin: h.stdin,
         stdout: h.stdout,
@@ -697,7 +700,7 @@ describe("CLI", () => {
       // the config error doesn't mask the more actionable usage error.
       const h = createHarness();
       const code = await runCli({
-        argv: ["openl_typo_tool"],
+        argv: ["typo_tool"],
         env: {}, // no base url, no auth
         stdin: h.stdin,
         stdout: h.stdout,
@@ -723,7 +726,7 @@ describe("CLI", () => {
     it("returns EX_CONFIG (78) when --base-url is invalid", async () => {
       const h = createHarness();
       const code = await runCli({
-        argv: ["openl_list_repositories", "{}", "--base-url", "not-a-url"],
+        argv: ["list_repositories", "{}", "--base-url", "not-a-url"],
         env: { OPENL_USERNAME: "admin", OPENL_PASSWORD: "admin" },
         stdin: h.stdin,
         stdout: h.stdout,
@@ -767,7 +770,7 @@ describe("CLI", () => {
     it("renders schema details when a known tool is passed with --help", async () => {
       const h = createHarness();
       const code = await runCli({
-        argv: ["openl_list_repositories", "--help"],
+        argv: ["list_repositories", "--help"],
         env: {},
         stdin: h.stdin,
         stdout: h.stdout,
@@ -775,7 +778,7 @@ describe("CLI", () => {
       });
       expect(code).toBe(EXIT_CODES.OK);
       const out = h.getStdout();
-      expect(out).toContain("openl_list_repositories");
+      expect(out).toMatch(/^list_repositories\s+v\d/m); // bare-name header
       expect(out).toContain("Arguments:");
       expect(out).toContain("response_format");
     });
@@ -783,7 +786,7 @@ describe("CLI", () => {
     it("returns EX_USAGE (64) for unknown tool with --help", async () => {
       const h = createHarness();
       const code = await runCli({
-        argv: ["openl_fake_tool_xyz", "--help"],
+        argv: ["fake_tool_xyz", "--help"],
         env: {},
         stdin: h.stdin,
         stdout: h.stdout,
@@ -797,11 +800,11 @@ describe("CLI", () => {
   describe("documentation consistency", () => {
     /**
      * Defends against the class of bug where help text or README examples
-     * reference a tool that's been disabled or renamed. Extracts every
-     * `openl_*` token from the rendered global help and asserts each is
-     * actually registered.
+     * reference a tool that's been disabled or renamed. Extracts every tool
+     * name the catalog lists and asserts each is actually registered. (Names
+     * are bare — the `openl_` prefix is an MCP-wire concern, absent here.)
      */
-    it("every openl_* tool name in --help refers to a registered tool", async () => {
+    it("every tool listed in the --help catalog is actually registered", async () => {
       const h = createHarness();
       const code = await runCli({
         argv: ["--help"],
@@ -812,7 +815,6 @@ describe("CLI", () => {
       });
       expect(code).toBe(EXIT_CODES.OK);
 
-      const cited = new Set(h.getStdout().match(/openl_[a-z_]+/g) ?? []);
       // --list-tools dump → array of registered tool definitions
       const listH = createHarness();
       const listCode = await runCli({
@@ -830,7 +832,17 @@ describe("CLI", () => {
         (JSON.parse(listH.getStdout()) as Array<{ name: string }>).map((t) => t.name),
       );
 
-      const missing = [...cited].filter((name) => !registered.has(name));
+      // Catalog entries are indented "  <name>   <Title>" lines under the
+      // "Available tools" header; category headers ("Repository:") are not
+      // indented and are skipped. Scope to the catalog so prose/usage lines
+      // (which mention `openl_list_repositories` as the wire-name example) don't
+      // get mistaken for tool names.
+      const catalog = h.getStdout().slice(h.getStdout().indexOf("Available tools"));
+      const listed = new Set(
+        [...catalog.matchAll(/^ {2}([a-z][a-z_]+)\s{2,}\S/gm)].map((m) => m[1]),
+      );
+      expect(listed.size).toBeGreaterThan(0);
+      const missing = [...listed].filter((name) => !registered.has(name));
       expect(missing).toEqual([]);
     });
 
@@ -888,6 +900,77 @@ describe("CLI", () => {
     });
   });
 
+  describe("prefix-less tool names (CLI drops openl_)", () => {
+    it("runs a tool given by its short name (openl_ omitted)", async () => {
+      const { client, mock: m } = createMockClient();
+      mock = m;
+      m.onGet("/repos").reply(200, mockRepositories);
+
+      const h = createHarness();
+      const code = await runCli({
+        argv: ["list_repositories", '{"response_format":"json"}'],
+        env: ENV_OK,
+        stdin: h.stdin,
+        stdout: h.stdout,
+        stderr: h.stderr,
+        clientFactory: () => client,
+      });
+
+      expect(code).toBe(EXIT_CODES.OK);
+      expect(h.getStdout()).toContain("Design Repository");
+      expect(h.getStderr()).toBe("");
+    });
+
+    it("rejects the fully-qualified openl_ name (prefix is not accepted on the CLI)", async () => {
+      const h = createHarness();
+      const code = await runCli({
+        argv: ["openl_list_repositories"],
+        env: ENV_OK,
+        stdin: h.stdin,
+        stdout: h.stdout,
+        stderr: h.stderr,
+      });
+
+      expect(code).toBe(EXIT_CODES.USAGE);
+      expect(h.getStderr()).toContain("Unknown tool");
+    });
+
+
+    it("an unknown short name is still EX_USAGE", async () => {
+      const h = createHarness();
+      const code = await runCli({
+        argv: ["does_not_exist"],
+        env: ENV_OK,
+        stdin: h.stdin,
+        stdout: h.stdout,
+        stderr: h.stderr,
+      });
+      expect(code).toBe(EXIT_CODES.USAGE);
+      expect(h.getStderr()).toContain("Unknown tool");
+    });
+
+    it("--help catalog lists every registered tool by its prefix-less name", async () => {
+      const helpH = createHarness();
+      expect(
+        await runCli({ argv: ["--help"], env: {}, stdin: helpH.stdin, stdout: helpH.stdout, stderr: helpH.stderr }),
+      ).toBe(EXIT_CODES.OK);
+      const listH = createHarness();
+      expect(
+        await runCli({ argv: ["--list-tools"], env: {}, stdin: listH.stdin, stdout: listH.stdout, stderr: listH.stderr }),
+      ).toBe(EXIT_CODES.OK);
+
+      const help = helpH.getStdout();
+      const names = (JSON.parse(listH.getStdout()) as Array<{ name: string }>).map((t) => t.name);
+      // The CLI is prefix-free everywhere: --list-tools reports bare names (no
+      // openl_), and each appears verbatim on a catalog line in --help.
+      expect(names.length).toBeGreaterThan(0);
+      for (const name of names) {
+        expect(name.startsWith("openl_")).toBe(false);
+        expect(help).toMatch(new RegExp(`^\\s+${name}\\b`, "m"));
+      }
+    });
+  });
+
   describe("positional <url> argument", () => {
     it("parseArgs captures a leading http(s) URL as baseUrlPositional, not toolName", () => {
       const p = parseArgs(["https://studio.example.com"]);
@@ -897,13 +980,13 @@ describe("CLI", () => {
     });
 
     it("parseArgs accepts <url> and <tool> in either order", () => {
-      const a = parseArgs(["http://localhost:8080", "openl_list_repositories"]);
+      const a = parseArgs(["http://localhost:8080", "list_repositories"]);
       expect(a.baseUrlPositional).toBe("http://localhost:8080");
-      expect(a.toolName).toBe("openl_list_repositories");
+      expect(a.toolName).toBe("list_repositories");
 
-      const b = parseArgs(["openl_list_repositories", "http://localhost:8080"]);
+      const b = parseArgs(["list_repositories", "http://localhost:8080"]);
       expect(b.baseUrlPositional).toBe("http://localhost:8080");
-      expect(b.toolName).toBe("openl_list_repositories");
+      expect(b.toolName).toBe("list_repositories");
     });
 
     it("parseArgs treats a non-http(s) URL-ish token as a tool name", () => {
@@ -913,18 +996,18 @@ describe("CLI", () => {
     });
 
     it("parseArgs reports a second URL as an error, not as the tool name", () => {
-      const p = parseArgs(["http://a:1", "http://b:2", "openl_list_repositories"]);
+      const p = parseArgs(["http://a:1", "http://b:2", "list_repositories"]);
       expect(p.baseUrlPositional).toBe("http://a:1");
       // The genuine tool name is kept; the duplicate URL is the error, so the
       // diagnostic points at the right token.
-      expect(p.toolName).toBe("openl_list_repositories");
+      expect(p.toolName).toBe("list_repositories");
       expect(p.errors).toContain("Multiple base URLs are not allowed: http://b:2");
     });
 
     it("parseArgs reports a third positional (after <url> <tool>) as unexpected", () => {
-      const p = parseArgs(["http://localhost:8080", "openl_list_repositories", "extra"]);
+      const p = parseArgs(["http://localhost:8080", "list_repositories", "extra"]);
       expect(p.baseUrlPositional).toBe("http://localhost:8080");
-      expect(p.toolName).toBe("openl_list_repositories");
+      expect(p.toolName).toBe("list_repositories");
       expect(p.errors).toContain("Unexpected positional argument: extra");
     });
 
@@ -934,8 +1017,8 @@ describe("CLI", () => {
       // URL + server flags, still no tool → server launch
       expect(isCliInvocation(parseArgs(["http://localhost:8080", "--user", "u", "--password", "p"]))).toBe(false);
       // anything tool-ish → CLI
-      expect(isCliInvocation(parseArgs(["openl_list_repositories"]))).toBe(true);
-      expect(isCliInvocation(parseArgs(["http://localhost:8080", "openl_list_repositories"]))).toBe(true);
+      expect(isCliInvocation(parseArgs(["list_repositories"]))).toBe(true);
+      expect(isCliInvocation(parseArgs(["http://localhost:8080", "list_repositories"]))).toBe(true);
       expect(isCliInvocation(parseArgs(["--help"]))).toBe(true);
       expect(isCliInvocation(parseArgs(["--list-tools"]))).toBe(true);
       expect(isCliInvocation(parseArgs(["{}"]))).toBe(true); // json arg but no tool → CLI renders the usage error
@@ -950,7 +1033,7 @@ describe("CLI", () => {
       let seenBaseUrl: string | undefined;
       const h = createHarness();
       const code = await runCli({
-        argv: ["http://localhost:8080", "openl_list_repositories", "--anonymous"],
+        argv: ["http://localhost:8080", "list_repositories", "--anonymous"],
         env: { OPENL_BASE_URL: "http://env-host:1234" }, // positional must win
         stdin: h.stdin,
         stdout: h.stdout,
@@ -976,7 +1059,7 @@ describe("CLI", () => {
       const code = await runCli({
         argv: [
           "http://positional:8080",
-          "openl_list_repositories",
+          "list_repositories",
           "--base-url",
           "http://flag-host:5555",
           "--anonymous",
@@ -1058,7 +1141,7 @@ describe("CLI", () => {
 
       const h = createHarness();
       const code = await runCli({
-        argv: ["openl_list_repositories"],
+        argv: ["list_repositories"],
         env: ENV_OK,
         stdin: h.stdin,
         stdout: h.stdout,
@@ -1075,7 +1158,7 @@ describe("CLI", () => {
 
       const h = createHarness();
       const code = await runCli({
-        argv: ["openl_list_repositories"],
+        argv: ["list_repositories"],
         env: ENV_OK,
         stdin: h.stdin,
         stdout: h.stdout,
@@ -1090,7 +1173,7 @@ describe("CLI", () => {
     it("errors when a value-taking flag is missing its value", async () => {
       const h = createHarness();
       const code = await runCli({
-        argv: ["openl_list_repositories", "--base-url"], // no value follows
+        argv: ["list_repositories", "--base-url"], // no value follows
         env: {},
         stdin: h.stdin,
         stdout: h.stdout,
@@ -1103,7 +1186,7 @@ describe("CLI", () => {
     it("rejects an invalid --timeout value", async () => {
       const h = createHarness();
       const code = await runCli({
-        argv: ["openl_list_repositories", "--timeout", "not-a-number"],
+        argv: ["list_repositories", "--timeout", "not-a-number"],
         env: ENV_OK,
         stdin: h.stdin,
         stdout: h.stdout,
@@ -1116,7 +1199,7 @@ describe("CLI", () => {
     it("rejects an invalid OPENL_TIMEOUT env value (EX_CONFIG)", async () => {
       const h = createHarness();
       const code = await runCli({
-        argv: ["openl_list_repositories"],
+        argv: ["list_repositories"],
         env: { ...ENV_OK, OPENL_TIMEOUT: "-5" },
         stdin: h.stdin,
         stdout: h.stdout,

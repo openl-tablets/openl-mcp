@@ -330,13 +330,11 @@ All dependencies actively maintained and secure:
   - `idempotentHint`: Identifies idempotent operations
   - `openWorldHint`: Indicates operations that may access external data
 
-**Implementation-Specific Metadata** (`_meta` fields):
-- **version**: Semantic versioning for tool versioning
-- **category**: Logical grouping for organization (internal use)
-- **requiresAuth**: Auth requirement flag (internal use)
-- **modifiesState**: State modification flag (internal use)
+**Tool Definition fields** (top-level on each `registerTool` call in `tool-handlers.ts`):
+- **version**: Semantic version of the tool
+- **category**: Display category for CLI `--help` grouping — one of `TOOL_CATEGORIES` (`src/constants.ts`)
 
-*Note: `_meta` fields are implementation-specific and used internally for tool management. The MCP SDK uses `annotations` for protocol-level metadata.*
+*Note: tool names are stored bare (no `openl_` prefix); the prefix is added/stripped only on the MCP `tools/list` / `tools/call` wire. The MCP SDK uses `annotations` for protocol-level metadata.*
 
 ### Health Check ✓
 

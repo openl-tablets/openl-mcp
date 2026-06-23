@@ -55,7 +55,7 @@ describe("Tool Handler Integration Tests", () => {
 
       mockAxios.onGet("/repos").reply(200, mockRepos);
 
-      const result = await executeTool("openl_list_repositories", {}, client);
+      const result = await executeTool("list_repositories", {}, client);
 
       expect(result).toHaveProperty("content");
       expect(Array.isArray(result.content)).toBe(true);
@@ -72,7 +72,7 @@ describe("Tool Handler Integration Tests", () => {
       // Mock branches API call (uses repository ID)
       mockAxios.onGet("/repos/design/branches").reply(200, ["main", "development"]);
 
-      const result = await executeTool("openl_list_branches", {
+      const result = await executeTool("list_branches", {
         repository: "Design Repository", // Use repository name, not ID
       }, client);
 
@@ -105,7 +105,7 @@ describe("Tool Handler Integration Tests", () => {
 
       mockAxios.onGet("/projects", { params: { repository: "design", page: 0, size: 50 } }).reply(200, mockProjects);
 
-      const result = await executeTool("openl_list_projects", {
+      const result = await executeTool("list_projects", {
         repository: "Design Repository", // Use repository name, not ID
       }, client);
 
@@ -130,7 +130,7 @@ describe("Tool Handler Integration Tests", () => {
       // getProject uses buildProjectPath and calls /projects/{projectIdPath}
       mockAxios.onGet(`/projects/${encodeURIComponent(projectIdForPath)}`).reply(200, mockProject);
 
-      const result = await executeTool("openl_get_project", {
+      const result = await executeTool("get_project", {
         projectId: "design-project1",
       }, client);
 
@@ -162,7 +162,7 @@ describe("Tool Handler Integration Tests", () => {
       // list_tables uses buildProjectPath
       mockAxios.onGet(/\/projects\/.*\/tables/).reply(200, mockTables);
 
-      const result = await executeTool("openl_list_tables", {
+      const result = await executeTool("list_tables", {
         projectId: "design-project1",
       }, client);
 
@@ -193,7 +193,7 @@ describe("Tool Handler Integration Tests", () => {
       // get_table uses buildProjectPath
       mockAxios.onGet(/\/projects\/.*\/tables\/calculatePremium_1234/).reply(200, mockTable);
 
-      const result = await executeTool("openl_get_table", {
+      const result = await executeTool("get_table", {
         projectId: "design-project1",
         tableId: "calculatePremium_1234",
       }, client);
@@ -210,7 +210,7 @@ describe("Tool Handler Integration Tests", () => {
       });
 
       // Agent's bug: lowercase "datatype" — must be sent to the backend as "Datatype".
-      await executeTool("openl_create_project_table", {
+      await executeTool("create_project_table", {
         projectId: "p1",
         moduleName: "Main",
         table: { tableType: "datatype", kind: "Datatype", name: "LoanApplication", fields: [{ name: "age", type: "Integer" }] },
@@ -227,7 +227,7 @@ describe("Tool Handler Integration Tests", () => {
       });
 
       await expect(
-        executeTool("openl_create_project_table", {
+        executeTool("create_project_table", {
           projectId: "p1",
           moduleName: "Main",
           table: { tableType: "frobnicate", name: "X" },
@@ -244,7 +244,7 @@ describe("Tool Handler Integration Tests", () => {
       });
 
       await expect(
-        executeTool("openl_create_project_table", {
+        executeTool("create_project_table", {
           projectId: "p1",
           moduleName: "Main",
           table: { tableType: "SimpleRules", name: "CreditCategory", signature: "String CreditCategory(Integer creditScore)", rules: [] },
@@ -255,7 +255,7 @@ describe("Tool Handler Integration Tests", () => {
 
     it("openl_create_project_table rejects a missing tableType", async () => {
       await expect(
-        executeTool("openl_create_project_table", {
+        executeTool("create_project_table", {
           projectId: "p1",
           moduleName: "Main",
           table: { name: "X", fields: [] },
@@ -274,7 +274,7 @@ describe("Tool Handler Integration Tests", () => {
 
       // Agent bug #1: a payload that omits the required tableType discriminator.
       await expect(
-        executeTool("openl_append_table", {
+        executeTool("append_table", {
           projectId: "p1",
           tableId: "t1",
           appendData: { rules: [{ "Commission Type": "UDI", "Partner Code": "CIDP_CL_FB" }] },
@@ -294,7 +294,7 @@ describe("Tool Handler Integration Tests", () => {
       });
 
       // Agent bug #2: the whole payload arrives as a JSON *string*, not an object.
-      const result = await executeTool("openl_append_table", {
+      const result = await executeTool("append_table", {
         projectId: "p1",
         tableId: "t1",
         appendData: '{"tableType":"Data","rows":[{"values":[2035,"01/01/2035",1000]}]}',
@@ -314,7 +314,7 @@ describe("Tool Handler Integration Tests", () => {
       });
 
       await expect(
-        executeTool("openl_append_table", {
+        executeTool("append_table", {
           projectId: "p1",
           tableId: "t1",
           appendData: '{"tableType":"Data","rows":[',
@@ -332,7 +332,7 @@ describe("Tool Handler Integration Tests", () => {
 
       // Data appends use rows:[{values}], not rules — the union must catch this.
       await expect(
-        executeTool("openl_append_table", {
+        executeTool("append_table", {
           projectId: "p1",
           tableId: "t1",
           appendData: { tableType: "Data", rules: [{ a: 1 }] },
@@ -351,7 +351,7 @@ describe("Tool Handler Integration Tests", () => {
         return [200];
       });
 
-      await executeTool("openl_append_table", {
+      await executeTool("append_table", {
         projectId: "p1",
         tableId: "t1",
         appendData: { tableType: "data", rows: [{ values: [1, 2, 3] }] },
@@ -371,7 +371,7 @@ describe("Tool Handler Integration Tests", () => {
       });
 
       const view = { id: "t1", name: "calc", tableType: "SimpleRules", kind: "Rules", rules: [{ x: 1 }] };
-      const result = await executeTool("openl_update_table", {
+      const result = await executeTool("update_table", {
         projectId: "p1",
         tableId: "t1",
         view: JSON.stringify(view),
@@ -389,12 +389,12 @@ describe("Tool Handler Integration Tests", () => {
       });
 
       await expect(
-        executeTool("openl_update_table", {
+        executeTool("update_table", {
           projectId: "p1",
           tableId: "t1",
           view: "SimpleRules",
         }, client)
-      ).rejects.toThrow(/Invalid arguments for openl_update_table/);
+      ).rejects.toThrow(/Invalid arguments for update_table/);
       expect(called).toBe(false);
     });
 
@@ -406,7 +406,7 @@ describe("Tool Handler Integration Tests", () => {
       });
 
       await expect(
-        executeTool("openl_append_table", {
+        executeTool("append_table", {
           projectId: "p1",
           tableId: "t1",
           appendData: { tableType: "Spreadsheet", rows: [{ name: "Step1", type: "Double" }] },
@@ -424,7 +424,7 @@ describe("Tool Handler Integration Tests", () => {
 
       // 2 row headers but only 1 cell row — caught before any backend probe/POST.
       await expect(
-        executeTool("openl_append_table", {
+        executeTool("append_table", {
           projectId: "p1",
           tableId: "t1",
           appendData: {
@@ -447,7 +447,7 @@ describe("Tool Handler Integration Tests", () => {
         return [200];
       });
 
-      const result = await executeTool("openl_append_table", {
+      const result = await executeTool("append_table", {
         projectId: "p1",
         tableId: "sheet1",
         appendData: { tableType: "Spreadsheet", cells: [[{ value: "=1+1" }], [{ value: "=2+2" }]] },
@@ -467,7 +467,7 @@ describe("Tool Handler Integration Tests", () => {
         { path: "foo/AGENTS.md", name: "AGENTS.md", type: "file", basePath: "foo", content: "root guidance" },
       ]);
 
-      const result = await executeTool("openl_get_project_agents_md", {
+      const result = await executeTool("get_project_agents_md", {
         projectId: "design-P1",
       }, client);
 
@@ -482,7 +482,7 @@ describe("Tool Handler Integration Tests", () => {
     it("returns a 'no files' note when the project has no AGENTS.md", async () => {
       mockAxios.onPost(/\/projects\/.*\/file-search/).reply(200, []);
 
-      const result = await executeTool("openl_get_project_agents_md", {
+      const result = await executeTool("get_project_agents_md", {
         projectId: "design-P2",
       }, client);
 
@@ -496,7 +496,7 @@ describe("Tool Handler Integration Tests", () => {
         { id: "design", name: "Design" },
       ]);
 
-      const result = await executeTool("openl_list_repositories", {
+      const result = await executeTool("list_repositories", {
         response_format: "json",
       }, client);
 
@@ -538,7 +538,7 @@ describe("Tool Handler Integration Tests", () => {
         .onGet("/projects", { params: { repository: "design", page: 0, size: 50 } })
         .reply(200, formatVariantProjects);
 
-      const result = await executeTool("openl_list_projects", {
+      const result = await executeTool("list_projects", {
         repository: "Design Repository", // Use repository name, not ID
         response_format,
       }, client);
@@ -586,7 +586,7 @@ describe("Tool Handler Integration Tests", () => {
         deploymentName: "project1",
       });
 
-      const result = await executeTool("openl_deploy_project", {
+      const result = await executeTool("deploy_project", {
         projectId: "design-project1",
         deploymentName: "project1",
         productionRepositoryId: "Production Repository", // Use repository name, not ID
@@ -616,7 +616,7 @@ describe("Tool Handler Integration Tests", () => {
         status: "OPENED",
       }).reply(204);
 
-      const result = await executeTool("openl_open_project", {
+      const result = await executeTool("open_project", {
         projectId: "design-project1",
       }, client);
 
@@ -643,7 +643,7 @@ describe("Tool Handler Integration Tests", () => {
         branch: "develop",
       }).reply(204);
 
-      const result = await executeTool("openl_open_project", {
+      const result = await executeTool("open_project", {
         projectId: "design-project1",
         branch: "develop",
       }, client);
@@ -675,7 +675,7 @@ describe("Tool Handler Integration Tests", () => {
         comment: "Test commit",
       }).reply(204);
 
-      const result = await executeTool("openl_save_project", {
+      const result = await executeTool("save_project", {
         projectId: "design-project1",
         comment: "Test commit",
       }, client);
@@ -707,7 +707,7 @@ describe("Tool Handler Integration Tests", () => {
         return [204];
       });
 
-      const result = await executeTool("openl_save_project", {
+      const result = await executeTool("save_project", {
         projectId: "design-project1",
         comment: "Save and close",
         closeAfterSave: true,
@@ -739,7 +739,7 @@ describe("Tool Handler Integration Tests", () => {
         status: "CLOSED",
       }).reply(200);
 
-      const result = await executeTool("openl_close_project", {
+      const result = await executeTool("close_project", {
         projectId: "design-project1",
       }, client);
 
@@ -773,7 +773,7 @@ describe("Tool Handler Integration Tests", () => {
         return [404];
       });
 
-      const result = await executeTool("openl_close_project", {
+      const result = await executeTool("close_project", {
         projectId: "design-project1",
         saveChanges: true,
         comment: "Save before close",
@@ -804,7 +804,7 @@ describe("Tool Handler Integration Tests", () => {
         status: "CLOSED",
       }).reply(200);
 
-      const result = await executeTool("openl_close_project", {
+      const result = await executeTool("close_project", {
         projectId: "design-project1",
         discardChanges: true,
         confirmDiscard: true,
@@ -828,7 +828,7 @@ describe("Tool Handler Integration Tests", () => {
         modifiedAt: "2024-01-01T00:00:00Z",
       });
 
-      const result = await executeTool("openl_close_project", {
+      const result = await executeTool("close_project", {
         projectId: "design-project1",
         discardChanges: true,
         // no confirmDiscard
@@ -856,7 +856,7 @@ describe("Tool Handler Integration Tests", () => {
       });
 
       await expect(
-        executeTool("openl_close_project", {
+        executeTool("close_project", {
           projectId: "design-project1",
           // No saveChanges or discardChanges
         }, client)
@@ -879,7 +879,7 @@ describe("Tool Handler Integration Tests", () => {
       });
 
       await expect(
-        executeTool("openl_close_project", {
+        executeTool("close_project", {
           projectId: "design-project1",
           saveChanges: true,
           // Missing comment
@@ -908,7 +908,7 @@ describe("Tool Handler Integration Tests", () => {
 
       mockAxios.onGet("/projects", { params: { repository: "design", page: 0, size: 10 } }).reply(200, mockProjects);
 
-      const result = await executeTool("openl_list_projects", {
+      const result = await executeTool("list_projects", {
         repository: "Design Repository", // Use repository name, not ID
         limit: 10,
         offset: 0,
@@ -931,7 +931,7 @@ describe("Tool Handler Integration Tests", () => {
       mockAxios.onGet("/repos").reply(200, mockRepos);
 
       await expect(
-        executeTool("openl_list_projects", {
+        executeTool("list_projects", {
           repository: "Design Repository", // Use repository name, not ID
           limit: 300, // Exceeds max
         }, client)
@@ -946,7 +946,7 @@ describe("Tool Handler Integration Tests", () => {
       mockAxios.onGet("/repos").reply(200, mockRepos);
 
       await expect(
-        executeTool("openl_list_projects", {
+        executeTool("list_projects", {
           repository: "Design Repository", // Use repository name, not ID
           limit: 0,
         }, client)
@@ -957,12 +957,12 @@ describe("Tool Handler Integration Tests", () => {
   describe("Error Handling", () => {
     it("should return actionable error for missing projectId", async () => {
       await expect(
-        executeTool("openl_get_project", {
+        executeTool("get_project", {
           // Missing projectId
         }, client)
       ).rejects.toThrow(/Missing required argument: projectId/);
       await expect(
-        executeTool("openl_get_project", {}, client)
+        executeTool("get_project", {}, client)
       ).rejects.toThrow(/openl_list_projects/);
     });
 
@@ -974,7 +974,7 @@ describe("Tool Handler Integration Tests", () => {
       mockAxios.onGet("/repos").reply(200, mockRepos);
 
       await expect(
-        executeTool("openl_list_projects", {
+        executeTool("list_projects", {
           repository: "Design Repository", // Use repository name, not ID
           response_format: "xml" as any,
         }, client)
@@ -999,7 +999,7 @@ describe("Tool Handler Integration Tests", () => {
       });
     });
 
-    describe("openl_start_project_tests", () => {
+    describe("start_project_tests", () => {
       it("should execute openl_start_project_tests and store session headers", async () => {
         // Mock /tests/run endpoint - returns 202 with session headers
         const sessionHeaders = {
@@ -1011,7 +1011,7 @@ describe("Tool Handler Integration Tests", () => {
           status: "accepted",
         }, sessionHeaders);
 
-        const result = await executeTool("openl_start_project_tests", {
+        const result = await executeTool("start_project_tests", {
           projectId: "design-project1",
         }, client);
 
@@ -1034,7 +1034,7 @@ describe("Tool Handler Integration Tests", () => {
           status: "accepted",
         }, sessionHeaders);
 
-        const result = await executeTool("openl_start_project_tests", {
+        const result = await executeTool("start_project_tests", {
           projectId: "design-project1",
           tableId: "Test_calculatePremium_1234",
         }, client);
@@ -1068,7 +1068,7 @@ describe("Tool Handler Integration Tests", () => {
           status: "accepted",
         }, sessionHeaders);
 
-        const result = await executeTool("openl_start_project_tests", {
+        const result = await executeTool("start_project_tests", {
           projectId: "design-project1",
         }, client);
 
@@ -1086,7 +1086,7 @@ describe("Tool Handler Integration Tests", () => {
           status: "accepted",
         }, sessionHeaders);
 
-        await executeTool("openl_start_project_tests", {
+        await executeTool("start_project_tests", {
           projectId: "design-project1",
         }, client);
 
@@ -1107,13 +1107,13 @@ describe("Tool Handler Integration Tests", () => {
           }];
         });
 
-        await executeTool("openl_get_test_results_summary", {
+        await executeTool("get_test_results_summary", {
           projectId: "design-project1",
         }, client);
       });
     });
 
-    describe("openl_get_test_results_summary", () => {
+    describe("get_test_results_summary", () => {
       it("should execute openl_get_test_results_summary with stored headers", async () => {
         // First, start test execution to store headers
         const sessionHeaders = {
@@ -1125,7 +1125,7 @@ describe("Tool Handler Integration Tests", () => {
           status: "accepted",
         }, sessionHeaders);
 
-        await executeTool("openl_start_project_tests", {
+        await executeTool("start_project_tests", {
           projectId: "design-project1",
         }, client);
 
@@ -1144,7 +1144,7 @@ describe("Tool Handler Integration Tests", () => {
           return [200, mockSummary];
         });
 
-        const result = await executeTool("openl_get_test_results_summary", {
+        const result = await executeTool("get_test_results_summary", {
           projectId: "design-project1",
         }, client);
 
@@ -1160,7 +1160,7 @@ describe("Tool Handler Integration Tests", () => {
         // Client checks for headers first and throws before API call
         // But error gets wrapped by tool handler, so just check that error is thrown
         await expect(
-          executeTool("openl_get_test_results_summary", {
+          executeTool("get_test_results_summary", {
             projectId: "design-project1",
           }, client)
         ).rejects.toThrow();
@@ -1172,7 +1172,7 @@ describe("Tool Handler Integration Tests", () => {
           status: "accepted",
         }, { "x-test-execution-id": "test-session-failures" });
 
-        await executeTool("openl_start_project_tests", {
+        await executeTool("start_project_tests", {
           projectId: "design-project1",
         }, client);
 
@@ -1186,7 +1186,7 @@ describe("Tool Handler Integration Tests", () => {
           numberOfFailures: 2,
         });
 
-        const result = await executeTool("openl_get_test_results_summary", {
+        const result = await executeTool("get_test_results_summary", {
           projectId: "design-project1",
           failures: 5,
         }, client);
@@ -1199,7 +1199,7 @@ describe("Tool Handler Integration Tests", () => {
           status: "accepted",
         }, { "x-test-execution-id": "test-session-summary-unpaged" });
 
-        await executeTool("openl_start_project_tests", {
+        await executeTool("start_project_tests", {
           projectId: "design-project1",
         }, client);
 
@@ -1212,7 +1212,7 @@ describe("Tool Handler Integration Tests", () => {
           numberOfFailures: 2,
         });
 
-        const result = await executeTool("openl_get_test_results_summary", {
+        const result = await executeTool("get_test_results_summary", {
           projectId: "design-project1",
           unpaged: true,
         }, client);
@@ -1221,7 +1221,7 @@ describe("Tool Handler Integration Tests", () => {
       });
     });
 
-    describe("openl_get_test_results", () => {
+    describe("get_test_results", () => {
       it("should execute openl_get_test_results with stored headers", async () => {
         // Start test execution
         const sessionHeaders = {
@@ -1233,7 +1233,7 @@ describe("Tool Handler Integration Tests", () => {
           status: "accepted",
         }, sessionHeaders);
 
-        await executeTool("openl_start_project_tests", {
+        await executeTool("start_project_tests", {
           projectId: "design-project1",
         }, client);
 
@@ -1273,7 +1273,7 @@ describe("Tool Handler Integration Tests", () => {
           return [200, mockResults];
         });
 
-        const result = await executeTool("openl_get_test_results", {
+        const result = await executeTool("get_test_results", {
           projectId: "design-project1",
         }, client);
 
@@ -1290,7 +1290,7 @@ describe("Tool Handler Integration Tests", () => {
         // Client checks for headers first and throws before API call
         // But error gets wrapped by tool handler, so just check that error is thrown
         await expect(
-          executeTool("openl_get_test_results", {
+          executeTool("get_test_results", {
             projectId: "design-project1",
           }, client)
         ).rejects.toThrow();
@@ -1302,7 +1302,7 @@ describe("Tool Handler Integration Tests", () => {
           status: "accepted",
         }, { "x-test-execution-id": "test-session-pagination" });
 
-        await executeTool("openl_start_project_tests", {
+        await executeTool("start_project_tests", {
           projectId: "design-project1",
         }, client);
 
@@ -1321,7 +1321,7 @@ describe("Tool Handler Integration Tests", () => {
           params: { page: 1, size: 50 },
         }).reply(200, mockResults);
 
-        const result = await executeTool("openl_get_test_results", {
+        const result = await executeTool("get_test_results", {
           projectId: "design-project1",
           page: 1,
           size: 50,
@@ -1341,7 +1341,7 @@ describe("Tool Handler Integration Tests", () => {
           status: "accepted",
         }, { "x-test-execution-id": "test-session-offset" });
 
-        await executeTool("openl_start_project_tests", {
+        await executeTool("start_project_tests", {
           projectId: "design-project1",
         }, client);
 
@@ -1359,7 +1359,7 @@ describe("Tool Handler Integration Tests", () => {
           params: { page: 2, size: 25 },
         }).reply(200, mockResults);
 
-        const result = await executeTool("openl_get_test_results", {
+        const result = await executeTool("get_test_results", {
           projectId: "design-project1",
           page: 2,
           size: 25,
@@ -1378,7 +1378,7 @@ describe("Tool Handler Integration Tests", () => {
           status: "accepted",
         }, { "x-test-execution-id": "test-session-failures-only" });
 
-        await executeTool("openl_start_project_tests", {
+        await executeTool("start_project_tests", {
           projectId: "design-project1",
         }, client);
 
@@ -1391,7 +1391,7 @@ describe("Tool Handler Integration Tests", () => {
           numberOfFailures: 5,
         });
 
-        const result = await executeTool("openl_get_test_results", {
+        const result = await executeTool("get_test_results", {
           projectId: "design-project1",
           failuresOnly: true,
         }, client);
@@ -1404,7 +1404,7 @@ describe("Tool Handler Integration Tests", () => {
           status: "accepted",
         }, { "x-test-execution-id": "test-session-results-unpaged" });
 
-        await executeTool("openl_start_project_tests", {
+        await executeTool("start_project_tests", {
           projectId: "design-project1",
         }, client);
 
@@ -1420,7 +1420,7 @@ describe("Tool Handler Integration Tests", () => {
           numberOfElements: 10,
         });
 
-        const result = await executeTool("openl_get_test_results", {
+        const result = await executeTool("get_test_results", {
           projectId: "design-project1",
           unpaged: true,
         }, client);
@@ -1429,7 +1429,7 @@ describe("Tool Handler Integration Tests", () => {
       });
     });
 
-    describe("openl_get_test_results_by_table", () => {
+    describe("get_test_results_by_table", () => {
       it("should execute openl_get_test_results_by_table with stored headers", async () => {
         // Start test execution
         const sessionHeaders = {
@@ -1441,7 +1441,7 @@ describe("Tool Handler Integration Tests", () => {
           status: "accepted",
         }, sessionHeaders);
 
-        await executeTool("openl_start_project_tests", {
+        await executeTool("start_project_tests", {
           projectId: "design-project1",
         }, client);
 
@@ -1498,7 +1498,7 @@ describe("Tool Handler Integration Tests", () => {
           return [200, allResults];
         });
 
-        const result = await executeTool("openl_get_test_results_by_table", {
+        const result = await executeTool("get_test_results_by_table", {
           projectId: "design-project1",
           tableId: "Test_calculatePremium_1234",
         }, client);
@@ -1514,7 +1514,7 @@ describe("Tool Handler Integration Tests", () => {
         // Client checks for headers first and throws before API call
         // But error gets wrapped by tool handler, so just check that error is thrown
         await expect(
-          executeTool("openl_get_test_results_by_table", {
+          executeTool("get_test_results_by_table", {
             projectId: "design-project1",
             tableId: "Test_calculatePremium_1234",
           }, client)
@@ -1523,7 +1523,7 @@ describe("Tool Handler Integration Tests", () => {
 
       it("should error when tableId is missing", async () => {
         await expect(
-          executeTool("openl_get_test_results_by_table", {
+          executeTool("get_test_results_by_table", {
             projectId: "design-project1",
             // Missing tableId
           }, client)
@@ -1536,7 +1536,7 @@ describe("Tool Handler Integration Tests", () => {
           status: "accepted",
         }, { "x-test-execution-id": "test-session-by-table-pagination" });
 
-        await executeTool("openl_start_project_tests", {
+        await executeTool("start_project_tests", {
           projectId: "design-project1",
         }, client);
 
@@ -1562,7 +1562,7 @@ describe("Tool Handler Integration Tests", () => {
           params: { page: 0, size: 50 },
         }).reply(200, allResults);
 
-        const result = await executeTool("openl_get_test_results_by_table", {
+        const result = await executeTool("get_test_results_by_table", {
           projectId: "design-project1",
           tableId: "Test_calculatePremium_1234",
           page: 0,
@@ -1580,7 +1580,7 @@ describe("Tool Handler Integration Tests", () => {
           "content-disposition": "attachment; filename=readme.md",
         });
 
-        const result = await executeTool("openl_read_project_file", {
+        const result = await executeTool("read_project_file", {
           projectId: "p1",
           path: "readme.md",
         }, client);
@@ -1595,7 +1595,7 @@ describe("Tool Handler Integration Tests", () => {
           "content-disposition": "attachment",
         });
 
-        const result = await executeTool("openl_read_project_file", {
+        const result = await executeTool("read_project_file", {
           projectId: "p1",
           path: "data.bin",
           response_format: "json",
@@ -1613,7 +1613,7 @@ describe("Tool Handler Integration Tests", () => {
           "content-disposition": "attachment",
         });
 
-        const result = await executeTool("openl_read_project_file", {
+        const result = await executeTool("read_project_file", {
           projectId: "p1",
           path: "nums.txt",
           offset: 2,
@@ -1630,7 +1630,7 @@ describe("Tool Handler Integration Tests", () => {
           "content-disposition": "attachment",
         });
 
-        const result = await executeTool("openl_read_project_file", { projectId: "p1", path: "big.txt" }, client);
+        const result = await executeTool("read_project_file", { projectId: "p1", path: "big.txt" }, client);
         const text = result.content[0].text;
         expect(text.startsWith("A".repeat(100))).toBe(true);
         // First 25000 chars of content + a continuation note pointing at the next byte offset.
@@ -1647,7 +1647,7 @@ describe("Tool Handler Integration Tests", () => {
           "content-type": "application/json",
         });
 
-        const result = await executeTool("openl_read_project_file", {
+        const result = await executeTool("read_project_file", {
           projectId: "p1",
           path: "",
           recursive: true,
@@ -1665,7 +1665,7 @@ describe("Tool Handler Integration Tests", () => {
           "content-type": "application/json",
         });
 
-        const result = await executeTool("openl_read_project_file", {
+        const result = await executeTool("read_project_file", {
           projectId: "p1",
           path: "a.xlsx",
           view: "meta",
@@ -1683,7 +1683,7 @@ describe("Tool Handler Integration Tests", () => {
           return [201, {}];
         });
 
-        const result = await executeTool("openl_write_project_file", {
+        const result = await executeTool("write_project_file", {
           projectId: "p1",
           path: "docs/new.md",
           content: Buffer.from("hello").toString("base64"),
@@ -1712,7 +1712,7 @@ describe("Tool Handler Integration Tests", () => {
           return [204];
         });
 
-        const result = await executeTool("openl_write_project_file", {
+        const result = await executeTool("write_project_file", {
           projectId: "p1",
           path: "docs/x.md",
           content: "hello",
@@ -1729,7 +1729,7 @@ describe("Tool Handler Integration Tests", () => {
       it("openl_delete_project_file deletes and reports success", async () => {
         mockAxios.onDelete("/projects/p1/files/old.txt").reply(204);
 
-        const result = await executeTool("openl_delete_project_file", {
+        const result = await executeTool("delete_project_file", {
           projectId: "p1",
           path: "old.txt",
           response_format: "json",
@@ -1748,7 +1748,7 @@ describe("Tool Handler Integration Tests", () => {
           return [200, nodes];
         });
 
-        const result = await executeTool("openl_search_project_files", {
+        const result = await executeTool("search_project_files", {
           projectId: "p1",
           pattern: "**/*.xlsx",
           content: "premium",
@@ -1765,14 +1765,14 @@ describe("Tool Handler Integration Tests", () => {
         const nodes = Array.from({ length: 5 }, (_, i) => ({ path: `f${i}.xlsx`, name: `f${i}.xlsx`, type: "file" }));
         mockAxios.onPost("/projects/p1/file-search").reply(200, nodes);
 
-        const page1 = JSON.parse((await executeTool("openl_search_project_files", {
+        const page1 = JSON.parse((await executeTool("search_project_files", {
           projectId: "p1", pattern: "**/*.xlsx", limit: 2, offset: 0, response_format: "json",
         }, client)).content[0].text);
         expect(page1.data).toHaveLength(2);
         expect(page1.data[0].name).toBe("f0.xlsx");
         expect(page1.pagination).toMatchObject({ limit: 2, offset: 0, total_count: 5, has_more: true });
 
-        const page3 = JSON.parse((await executeTool("openl_search_project_files", {
+        const page3 = JSON.parse((await executeTool("search_project_files", {
           projectId: "p1", pattern: "**/*.xlsx", limit: 2, offset: 4, response_format: "json",
         }, client)).content[0].text);
         expect(page3.data).toHaveLength(1);
@@ -1787,7 +1787,7 @@ describe("Tool Handler Integration Tests", () => {
           return [201];
         });
 
-        const result = await executeTool("openl_copy_project_file", {
+        const result = await executeTool("copy_project_file", {
           projectId: "p1",
           sourcePath: "rules/M.xlsx",
           destinationPath: "rules/M-copy.xlsx",
@@ -1807,7 +1807,7 @@ describe("Tool Handler Integration Tests", () => {
           return [204];
         });
 
-        const result = await executeTool("openl_move_project_file", {
+        const result = await executeTool("move_project_file", {
           projectId: "p1",
           sourcePath: "rules/M.xlsx",
           destinationPath: "legacy/M.xlsx",
@@ -1827,7 +1827,7 @@ describe("Tool Handler Integration Tests", () => {
           return [200, "x", { "content-type": "text/plain", "content-disposition": "attachment" }];
         });
 
-        await executeTool("openl_read_project_file", {
+        await executeTool("read_project_file", {
           projectId: "p1",
           path: "a.xlsx",
           version: "rev1",
@@ -1844,7 +1844,7 @@ describe("Tool Handler Integration Tests", () => {
           "content-disposition": "attachment",
         });
 
-        const result = await executeTool("openl_read_project_file", {
+        const result = await executeTool("read_project_file", {
           projectId: "p1",
           path: "data.bin",
           encoding: "utf-8",
@@ -1864,7 +1864,7 @@ describe("Tool Handler Integration Tests", () => {
 
         // Default response_format (markdown): binary must still come back as an
         // intact JSON envelope, NOT a truncated markdown string.
-        const result = await executeTool("openl_read_project_file", {
+        const result = await executeTool("read_project_file", {
           projectId: "p1",
           path: "big.bin",
         }, client);
@@ -1883,7 +1883,7 @@ describe("Tool Handler Integration Tests", () => {
           return [200, zip, { "content-type": "application/zip", "content-disposition": "attachment; filename=rules.zip" }];
         });
 
-        const result = await executeTool("openl_read_project_file", {
+        const result = await executeTool("read_project_file", {
           projectId: "p1",
           path: "rules/",
           download: true,
@@ -1902,7 +1902,7 @@ describe("Tool Handler Integration Tests", () => {
           "content-type": "application/octet-stream",
           "content-disposition": "attachment",
         });
-        const textResult = await executeTool("openl_read_project_file", { projectId: "p1", path: "a.txt" }, client);
+        const textResult = await executeTool("read_project_file", { projectId: "p1", path: "a.txt" }, client);
         expect(textResult.content[0].text).toBe(oneCtrl.toString("utf-8"));
 
         mockAxios.reset();
@@ -1911,7 +1911,7 @@ describe("Tool Handler Integration Tests", () => {
           "content-type": "application/octet-stream",
           "content-disposition": "attachment",
         });
-        const binResult = await executeTool("openl_read_project_file", { projectId: "p1", path: "b.txt", response_format: "json" }, client);
+        const binResult = await executeTool("read_project_file", { projectId: "p1", path: "b.txt", response_format: "json" }, client);
         expect(JSON.parse(binResult.content[0].text).data.encoding).toBe("base64");
       });
 
@@ -1922,7 +1922,7 @@ describe("Tool Handler Integration Tests", () => {
           return [201, {}];
         });
 
-        const result = await executeTool("openl_write_project_file", {
+        const result = await executeTool("write_project_file", {
           projectId: "p1",
           path: "docs/x.md",
           content: "hi",
@@ -1946,7 +1946,7 @@ describe("Tool Handler Integration Tests", () => {
           return [204];
         });
 
-        const result = await executeTool("openl_write_project_file", {
+        const result = await executeTool("write_project_file", {
           projectId: "p1",
           path: "docs/x.md",
           content: "v2-overwrite",
@@ -1968,7 +1968,7 @@ describe("Tool Handler Integration Tests", () => {
           return [204];
         });
 
-        const result = await executeTool("openl_write_project_file", {
+        const result = await executeTool("write_project_file", {
           projectId: "p1",
           path: "docs/x.md",
           content: "v2",
@@ -1991,7 +1991,7 @@ describe("Tool Handler Integration Tests", () => {
         });
 
         await expect(
-          executeTool("openl_write_project_file", {
+          executeTool("write_project_file", {
             projectId: "p1",
             path: "x.bin",
             content: "not valid base64 @@@!!!",
@@ -2005,7 +2005,7 @@ describe("Tool Handler Integration Tests", () => {
         mockAxios.onPost("/projects/p1/files/exists.md").reply(409, { message: "already exists" });
 
         await expect(
-          executeTool("openl_write_project_file", { projectId: "p1", path: "exists.md", content: "x" }, client)
+          executeTool("write_project_file", { projectId: "p1", path: "exists.md", content: "x" }, client)
         ).rejects.toThrow(/already exists|conflictPolicy/);
       });
 
@@ -2016,7 +2016,7 @@ describe("Tool Handler Integration Tests", () => {
           return [200, []];
         });
 
-        await executeTool("openl_search_project_files", {
+        await executeTool("search_project_files", {
           projectId: "p1",
           extensions: ["xlsx", "xml"],
           type: "FOLDER",
@@ -2040,7 +2040,7 @@ describe("Tool Handler Integration Tests", () => {
         mockAxios.onPost("/projects/p1/file-copy").reply(409, { message: "exists" });
 
         await expect(
-          executeTool("openl_copy_project_file", {
+          executeTool("copy_project_file", {
             projectId: "p1",
             sourcePath: "a.xlsx",
             destinationPath: "b.xlsx",
@@ -2052,7 +2052,7 @@ describe("Tool Handler Integration Tests", () => {
         mockAxios.onPost("/projects/p1/file-move").reply(409, { message: "exists" });
 
         await expect(
-          executeTool("openl_move_project_file", {
+          executeTool("move_project_file", {
             projectId: "p1",
             sourcePath: "a.xlsx",
             destinationPath: "b.xlsx",
@@ -2062,13 +2062,13 @@ describe("Tool Handler Integration Tests", () => {
 
       it("openl_read_project_file rejects a path-traversal attempt", async () => {
         await expect(
-          executeTool("openl_read_project_file", { projectId: "p1", path: "rules/../../etc/passwd" }, client)
+          executeTool("read_project_file", { projectId: "p1", path: "rules/../../etc/passwd" }, client)
         ).rejects.toThrow(/project-relative|not allowed/);
       });
 
       it("openl_read_project_file requires projectId", async () => {
         await expect(
-          executeTool("openl_read_project_file", { path: "x" }, client)
+          executeTool("read_project_file", { path: "x" }, client)
         ).rejects.toThrow(/projectId/);
       });
     });

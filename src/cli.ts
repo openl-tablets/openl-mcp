@@ -24,7 +24,7 @@ import { createRequire } from "node:module";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 
 import { OpenLClient } from "./client.js";
-import { SERVER_INFO } from "./constants.js";
+import { SERVER_INFO, TOOL_CATEGORIES } from "./constants.js";
 import { executeTool, getAllTools, registerAllTools } from "./tool-handlers.js";
 import { hashFingerprint, sanitizeError } from "./utils.js";
 import type * as Types from "./types.js";
@@ -606,50 +606,17 @@ function applyEnvOverrides(overrides: ParsedArgs["overrides"]): () => void {
 }
 
 /**
- * Map a tool name to a human-readable category for `--help` grouping.
+ * Resolve a user-typed CLI tool name to a registered name, or `undefined` when
+ * nothing matches.
  *
- * `tool-handlers.ts` doesn't carry a category field on its ToolDefinition
- * (the parallel `tools.ts` has `_meta.category` but isn't the runtime source
- * of truth), so we derive the category from the tool name. Patterns mirror
- * the section comments in `tool-handlers.ts` (`Repository Tools`,
- * `Project Tools`, …).
+ * The registry uses bare names — the `openl_` prefix is an MCP-protocol concern
+ * added only on the wire — so the CLI matches directly: `list_repositories`
+ * resolves, while the fully-qualified `openl_…` wire form is not a CLI command
+ * and simply isn't found.
  */
-function categoryOf(toolName: string): string {
-  if (/^openl_(list_repositories|list_branches|list_repository_features|repository_project_revisions|list_deploy_repositories)$/.test(toolName)) {
-    return "Repository";
-  }
-  if (/^openl_(start_trace|cancel_trace|export_trace|get_trace_)/.test(toolName)) {
-    return "Trace";
-  }
-  if (/^openl_(list_tables|get_table|update_table|append_table|create_project_table|execute_rule)$/.test(toolName)) {
-    return "Rules & Tables";
-  }
-  if (/^openl_(read|write|delete|search|copy|move)_project_file(s)?$/.test(toolName) || toolName === "openl_get_project_agents_md") {
-    return "Project Files";
-  }
-  if (/^openl_(get_project_history|get_file_history|revert_version)$/.test(toolName)) {
-    return "Version Control";
-  }
-  if (/^openl_(list_deployments|deploy_project|redeploy_project)$/.test(toolName)) {
-    return "Deployment";
-  }
-  if (/^openl_(list_projects|get_project|project_status|open_project|save_project|close_project|create_project|create_project_branch|list_project_local_changes|restore_project_local_change|upload_file|download_file|start_project_tests|get_test_results)/.test(toolName)) {
-    return "Project";
-  }
-  return "Other";
+function resolveToolName(input: string): string | undefined {
+  return getAllTools().some((t) => t.name === input) ? input : undefined;
 }
-
-/** Stable order in which category sections appear in `--help`. */
-const CATEGORY_ORDER = [
-  "Repository",
-  "Project",
-  "Rules & Tables",
-  "Project Files",
-  "Trace",
-  "Version Control",
-  "Deployment",
-  "Other",
-];
 
 /**
  * Render help for a specific tool: title, description, and a human-readable
@@ -707,22 +674,22 @@ function renderHelp(): string {
   // gives the machine-readable JSON.
   const byCategory = new Map<string, Array<{ name: string; title: string }>>();
   for (const t of getAllTools()) {
-    const cat = categoryOf(t.name);
-    let bucket = byCategory.get(cat);
+    let bucket = byCategory.get(t.category);
     if (!bucket) {
       bucket = [];
-      byCategory.set(cat, bucket);
+      byCategory.set(t.category, bucket);
     }
+    // Registry names are already bare — that's exactly what you type on the CLI.
     bucket.push({ name: t.name, title: t.title ?? "" });
   }
   const sections: string[] = [];
-  for (const cat of CATEGORY_ORDER) {
+  for (const cat of TOOL_CATEGORIES) {
     const items = byCategory.get(cat);
     if (!items || items.length === 0) continue;
     items.sort((a, b) => a.name.localeCompare(b.name));
     sections.push(`${cat}:`);
     for (const t of items) {
-      sections.push(`  ${t.name.padEnd(42)} ${t.title}`);
+      sections.push(`  ${t.name.padEnd(34)} ${t.title}`);
     }
     sections.push("");
   }
@@ -747,6 +714,10 @@ function renderHelp(): string {
     `           binary starts the MCP server on stdio using OPENL_BASE_URL — the`,
     `           default for Claude Desktop / Cursor / other MCP clients.`,
     ``,
+    `Tool names: the \`openl_\` prefix is not used on the CLI — run \`list_repositories\`,`,
+    `not \`openl_list_repositories\`. The prefix is added only on the MCP protocol wire;`,
+    `the catalog below and \`--list-tools\` both report the bare names.`,
+    ``,
     `Argument sources (mutually exclusive):`,
     `  '{"foo":"bar"}'    inline JSON literal`,
     `  @path/args.json    load JSON from file`,
@@ -764,23 +735,23 @@ function renderHelp(): string {
     `  --anonymous                 allow running without credentials (for`,
     `                              servers that permit unauthenticated access)`,
     ``,
-    `Tip: complex tools (openl_update_table, openl_append_table, …) take`,
+    `Tip: complex tools (update_table, append_table, …) take`,
     `large structured JSON — pass it via @file.json or --stdin rather than`,
     `inline. On Windows cmd, prefer @file.json (single quotes won't work).`,
     ``,
     `Output: defaults to markdown (agent-friendly, same as the MCP server).`,
     `For machine-parseable output, pass "response_format":"json" in args:`,
-    `  npx -y openl-mcp-server openl_list_repositories '{"response_format":"json"}' | jq`,
+    `  npx -y openl-mcp-server list_repositories '{"response_format":"json"}' | jq`,
     ``,
     `Discovery:`,
     `  --help                      human-readable: this catalog of tool titles`,
     `  <tool> --help               human-readable: full description + arg schema`,
-    `  --list-tools                machine-readable: JSON (name/title/description/schema)`,
+    `  --list-tools                machine-readable: JSON (bare name/title/description/schema)`,
     ``,
     `Examples:`,
-    `  npx -y openl-mcp-server openl_list_repositories`,
+    `  npx -y openl-mcp-server list_repositories`,
     `  echo '{"projectId":"p","comment":"fix CA rates"}' | \\`,
-    `    npx -y openl-mcp-server openl_save_project --stdin`,
+    `    npx -y openl-mcp-server save_project --stdin`,
     ``,
     `Available tools (${getAllTools().length}, grouped by category):`,
     tools,
@@ -844,7 +815,9 @@ export async function runCli(options: RunCliOptions): Promise<number> {
       // instead of the global help. If the tool name is unknown, fall
       // through to a USAGE error.
       if (parsed.toolName) {
-        const help = renderToolHelp(parsed.toolName);
+        // Accept the short (prefix-less) or fully-qualified name.
+        const canonical = resolveToolName(parsed.toolName);
+        const help = canonical ? renderToolHelp(canonical) : null;
         if (help === null) {
           stderr.write(`Error: Unknown tool: ${parsed.toolName}\n\nRun --list-tools to see available tools.\n`);
           return EXIT_CODES.USAGE;
@@ -880,10 +853,13 @@ export async function runCli(options: RunCliOptions): Promise<number> {
     return EXIT_CODES.USAGE;
   }
 
-  // Unknown tool is a user-typed-wrong-name case → EX_USAGE (consistent with
-  // the `<tool> --help` path). Without this pre-check, the error would surface
-  // from executeTool as an MCP error and misclassify as GENERIC (1).
-  if (!getAllTools().some((t) => t.name === parsed.toolName)) {
+  // Resolve the typed name (short or fully-qualified) to the canonical
+  // registered name. Unknown tool is a user-typed-wrong-name case → EX_USAGE
+  // (consistent with the `<tool> --help` path). Without this pre-check, the
+  // error would surface from executeTool as an MCP error and misclassify as
+  // GENERIC (1).
+  const canonicalToolName = resolveToolName(parsed.toolName);
+  if (!canonicalToolName) {
     stderr.write(
       `Error: Unknown tool: ${parsed.toolName}\n\nRun --list-tools to see available tools.\n`,
     );
@@ -933,7 +909,7 @@ export async function runCli(options: RunCliOptions): Promise<number> {
       );
     }
 
-    const result = await executeTool(parsed.toolName, toolArgs, client);
+    const result = await executeTool(canonicalToolName, toolArgs, client);
 
     // Persist any session cookie established by this call for the next one.
     if (parsed.cookieJarPath && cookieBinding) {

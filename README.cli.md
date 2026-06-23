@@ -58,16 +58,16 @@ npx -y openl-mcp-server --list-tools | jq '.[].name'    # machine-readable
 
 # 2. Single call — base URL as a positional argument (markdown by default)
 npx -y openl-mcp-server https://studio.example.com \
-  openl_list_repositories --token openl_pat_…
+  list_repositories --token openl_pat_…
 
 #    …or with env-based config
 export OPENL_BASE_URL=https://studio.example.com
 export OPENL_PERSONAL_ACCESS_TOKEN=openl_pat_…
-npx -y openl-mcp-server openl_list_repositories
+npx -y openl-mcp-server list_repositories
 
 # 3. Add response_format=json when you want to pipe into jq
 npx -y openl-mcp-server https://studio.example.com \
-  openl_list_projects '{"response_format":"json"}' \
+  list_projects '{"response_format":"json"}' \
   --token openl_pat_… \
   | jq '.data[] | {name, status}'
 ```
@@ -86,6 +86,8 @@ openl-mcp-server                          # no args → MCP stdio server (uses O
 ```
 
 The OpenL Studio base URL can be given as a **positional argument** (in any position relative to the tool name), via `--base-url`, or via `OPENL_BASE_URL` — see [Configuration](#configuration) for precedence.
+
+**Tool names drop the `openl_` prefix on the CLI.** The namespace prefix that keeps tools distinct across servers is just noise in a shell, so the CLI uses bare names — `list_repositories`, not `openl_list_repositories` (the prefixed form is not accepted). The prefix is a protocol-boundary concern: the tool registry, the CLI (`--help`, `--list-tools`, and what you type), and the REST API all use bare names; only the MCP `tools/list` / `tools/call` wire adds and strips the `openl_` prefix.
 
 You can invoke the binary three ways:
 
@@ -125,8 +127,8 @@ npx -y openl-mcp-server --version    # or -V — prints "openl-mcp-server X.Y.Z"
 For detailed help on a specific tool — title, full description, every argument with type / required / enum / description, and example invocations:
 
 ```bash
-npx -y openl-mcp-server openl_update_table --help
-npx -y openl-mcp-server openl_append_table --help
+npx -y openl-mcp-server update_table --help
+npx -y openl-mcp-server append_table --help
 ```
 
 Output includes the input-schema breakdown rendered for humans (use `--list-tools | jq` for the full machine-readable JSON Schema).
@@ -170,10 +172,10 @@ The OpenL Studio API supports two methods; the CLI accepts either.
 ```bash
 # Via env
 OPENL_PERSONAL_ACCESS_TOKEN=<your-token> \
-  npx -y openl-mcp-server openl_list_repositories
+  npx -y openl-mcp-server list_repositories
 
 # Via flag
-npx -y openl-mcp-server openl_list_repositories --token <your-token>
+npx -y openl-mcp-server list_repositories --token <your-token>
 ```
 
 Generate a PAT in OpenL Studio under **User Settings → Personal Access Tokens**.
@@ -183,10 +185,10 @@ Generate a PAT in OpenL Studio under **User Settings → Personal Access Tokens*
 ```bash
 # Via env
 OPENL_USERNAME=<your-username> OPENL_PASSWORD=<your-password> \
-  npx -y openl-mcp-server openl_list_repositories
+  npx -y openl-mcp-server list_repositories
 
 # Via flag
-npx -y openl-mcp-server openl_list_repositories --user <your-username> --password <your-password>
+npx -y openl-mcp-server list_repositories --user <your-username> --password <your-password>
 ```
 
 > **Security note.** When you pass `--password` or `--token` on the command line, the value is visible in process listings (`ps aux`). Prefer env vars for shared/multi-user hosts.
@@ -200,7 +202,7 @@ If your OpenL Studio server permits unauthenticated access, pass `--anonymous` t
 ```bash
 # Server allows anonymous reads — no creds needed
 OPENL_BASE_URL=https://studio.example.com \
-  npx -y openl-mcp-server openl_list_repositories --anonymous
+  npx -y openl-mcp-server list_repositories --anonymous
 ```
 
 `--anonymous` only relaxes the credential requirement; `OPENL_BASE_URL` is still required. A server that *does* require auth will respond `401`, which the CLI reports with exit code `77` (`EX_NOPERM`).
@@ -226,7 +228,7 @@ Every tool accepts a single JSON object matching its input schema (use `--list-t
 Best for simple, short payloads:
 
 ```bash
-npx -y openl-mcp-server openl_list_projects '{"status":"OPENED","limit":10}'
+npx -y openl-mcp-server list_projects '{"status":"OPENED","limit":10}'
 ```
 
 ### 2. `@file.json`
@@ -241,7 +243,7 @@ cat > /tmp/save.json <<'EOF'
 }
 EOF
 
-npx -y openl-mcp-server openl_save_project @/tmp/save.json
+npx -y openl-mcp-server save_project @/tmp/save.json
 ```
 
 ### 3. `--stdin`
@@ -251,10 +253,10 @@ Best for **piping** from other commands:
 ```bash
 # Build payload programmatically and pipe in
 jq -n --arg id "$PROJECT_ID" '{projectId:$id, response_format:"json"}' \
-  | npx -y openl-mcp-server openl_get_project --stdin
+  | npx -y openl-mcp-server get_project --stdin
 
 # Or via heredoc
-npx -y openl-mcp-server openl_save_project --stdin <<'EOF'
+npx -y openl-mcp-server save_project --stdin <<'EOF'
 {"projectId":"…", "comment":"saved from CI"}
 EOF
 ```
@@ -264,9 +266,9 @@ EOF
 For tools whose schema has no required fields:
 
 ```bash
-npx -y openl-mcp-server openl_list_repositories
+npx -y openl-mcp-server list_repositories
 # Equivalent to:
-npx -y openl-mcp-server openl_list_repositories '{}'
+npx -y openl-mcp-server list_repositories '{}'
 ```
 
 ---
@@ -277,16 +279,16 @@ CLI mode defaults `response_format` to **`markdown`** — the same default as th
 
 ```bash
 # Default — markdown (agent-readable)
-npx -y openl-mcp-server openl_list_projects
+npx -y openl-mcp-server list_projects
 
 # Machine-parseable JSON for jq pipelines
-npx -y openl-mcp-server openl_list_projects '{"response_format":"json"}' | jq
+npx -y openl-mcp-server list_projects '{"response_format":"json"}' | jq
 
 # Concise markdown summary
-npx -y openl-mcp-server openl_list_projects '{"response_format":"markdown_concise"}'
+npx -y openl-mcp-server list_projects '{"response_format":"markdown_concise"}'
 
 # Detailed markdown (best for printing)
-npx -y openl-mcp-server openl_get_project \
+npx -y openl-mcp-server get_project \
   '{"projectId":"…", "response_format":"markdown_detailed"}'
 ```
 
@@ -304,11 +306,11 @@ The rule of thumb: **whenever you pipe into `jq`, request `response_format:"json
 
 ```bash
 # ✅ Correct — explicit json, then jq
-npx -y openl-mcp-server openl_list_projects '{"response_format":"json"}' \
+npx -y openl-mcp-server list_projects '{"response_format":"json"}' \
   | jq '.data[].name'
 
 # ❌ Wrong — default markdown isn't JSON, jq errors out
-npx -y openl-mcp-server openl_list_projects | jq '.data[].name'
+npx -y openl-mcp-server list_projects | jq '.data[].name'
 ```
 
 The one exception is `--list-tools`, which is **always** JSON regardless of `response_format` (it's the machine-readable discovery endpoint):
@@ -333,18 +335,18 @@ In CLI mode each `npx` invocation is a fresh process with no session memory. Wit
 JAR=/tmp/openl-trace.jar
 
 # 1. Start trace — server sets JSESSIONID, CLI persists it to $JAR
-npx -y openl-mcp-server openl_start_trace --cookie-jar $JAR @start.json
+npx -y openl-mcp-server start_trace --cookie-jar $JAR @start.json
 
 # 2. Inspect — CLI loads JSESSIONID from $JAR and sends it
-npx -y openl-mcp-server openl_get_trace_nodes --cookie-jar $JAR \
+npx -y openl-mcp-server get_trace_nodes --cookie-jar $JAR \
   '{"projectId":"…"}'
 
 # 3. Drill into a node
-npx -y openl-mcp-server openl_get_trace_node_details --cookie-jar $JAR \
+npx -y openl-mcp-server get_trace_node_details --cookie-jar $JAR \
   '{"projectId":"…", "nodeId":3}'
 
 # 4. Clean up
-npx -y openl-mcp-server openl_cancel_trace --cookie-jar $JAR \
+npx -y openl-mcp-server cancel_trace --cookie-jar $JAR \
   '{"projectId":"…"}'
 rm $JAR   # optional — the next start_trace will overwrite
 ```
@@ -367,13 +369,13 @@ OpenL Studio honors the `Client-Document-Id` header for audit/correlation. Pass 
 
 ```bash
 # Per-call
-npx -y openl-mcp-server openl_save_project \
+npx -y openl-mcp-server save_project \
   --client-document-id ticket-EPBDS-12345 \
   '{"projectId":"…", "comment":"Fix CA premium rates"}'
 
 # Or via env
 export OPENL_CLIENT_DOCUMENT_ID=$(uuidgen)
-npx -y openl-mcp-server openl_deploy_project '…'
+npx -y openl-mcp-server deploy_project '…'
 ```
 
 The value is added as a header to every HTTP request the CLI makes during that invocation.
@@ -389,7 +391,7 @@ Shell/CI patterns for the secondary (human/scripting) audience. They request `re
 When piping into `jq`, request JSON explicitly (markdown is the default):
 
 ```bash
-npx -y openl-mcp-server openl_list_projects \
+npx -y openl-mcp-server list_projects \
   '{"status":"OPENED","limit":100,"response_format":"json"}' \
   | jq '.data[].name'
 ```
@@ -397,7 +399,7 @@ npx -y openl-mcp-server openl_list_projects \
 ### Save a project with a structured commit message
 
 ```bash
-npx -y openl-mcp-server openl_save_project @<(jq -n \
+npx -y openl-mcp-server save_project @<(jq -n \
   --arg id "$PROJECT_ID" \
   --arg msg "$(git log -1 --format=%s)" \
   '{projectId:$id, comment:$msg}')
@@ -406,7 +408,7 @@ npx -y openl-mcp-server openl_save_project @<(jq -n \
 ### Fetch a project's tables and find one by kind
 
 ```bash
-TABLES=$(npx -y openl-mcp-server openl_list_tables \
+TABLES=$(npx -y openl-mcp-server list_tables \
   "{\"projectId\":\"$PROJECT_ID\",\"response_format\":\"json\"}")
 
 echo "$TABLES" | jq '.data[] | select(.kind=="SimpleRules") | .name'
@@ -415,9 +417,9 @@ echo "$TABLES" | jq '.data[] | select(.kind=="SimpleRules") | .name'
 ### Run all tests in a project, exit non-zero on failure
 
 ```bash
-SUMMARY=$(npx -y openl-mcp-server openl_start_project_tests \
+SUMMARY=$(npx -y openl-mcp-server start_project_tests \
   '{"projectId":"…"}')
-# … poll openl_get_test_results_summary until done …
+# … poll get_test_results_summary until done …
 # (full pattern shown in the OpenL docs Test execution guide)
 ```
 
@@ -427,21 +429,21 @@ SUMMARY=$(npx -y openl-mcp-server openl_start_project_tests \
 JAR=/tmp/trace-$$.jar
 trap 'rm -f $JAR' EXIT
 
-npx -y openl-mcp-server openl_start_trace --cookie-jar $JAR \
+npx -y openl-mcp-server start_trace --cookie-jar $JAR \
   '{"projectId":"…","tableId":"calcPremium_42"}'
 
 # Get root nodes (json for jq processing)
-ROOTS=$(npx -y openl-mcp-server openl_get_trace_nodes --cookie-jar $JAR \
+ROOTS=$(npx -y openl-mcp-server get_trace_nodes --cookie-jar $JAR \
   '{"projectId":"…","response_format":"json"}')
 
 # For each root, fetch details
 echo "$ROOTS" | jq -r '.data[].id' | while read -r nodeId; do
-  npx -y openl-mcp-server openl_get_trace_node_details --cookie-jar $JAR \
+  npx -y openl-mcp-server get_trace_node_details --cookie-jar $JAR \
     "{\"projectId\":\"…\",\"nodeId\":$nodeId,\"response_format\":\"json\"}" \
     | jq '{nodeId, result}'
 done
 
-npx -y openl-mcp-server openl_cancel_trace --cookie-jar $JAR \
+npx -y openl-mcp-server cancel_trace --cookie-jar $JAR \
   '{"projectId":"…"}'
 ```
 
@@ -487,10 +489,10 @@ Single-quoted JSON literals don't work — `cmd.exe` doesn't strip single quotes
 
 ```bat
 :: Escaped double quotes (ugly but works)
-npx -y openl-mcp-server openl_list_projects "{\"status\":\"OPENED\"}"
+npx -y openl-mcp-server list_projects "{\"status\":\"OPENED\"}"
 
 :: …or use @file.json (recommended)
-npx -y openl-mcp-server openl_list_projects @args.json
+npx -y openl-mcp-server list_projects @args.json
 ```
 
 ### Windows PowerShell
@@ -499,7 +501,7 @@ Single quotes work as literals (no interpolation), but JSON escaping is nicer vi
 
 ```powershell
 @{ status = 'OPENED'; limit = 10 } | ConvertTo-Json -Compress |
-  ForEach-Object { npx -y openl-mcp-server openl_list_projects $_ }
+  ForEach-Object { npx -y openl-mcp-server list_projects $_ }
 ```
 
 ### Shells with non-POSIX redirection

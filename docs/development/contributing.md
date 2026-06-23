@@ -62,13 +62,15 @@ export const myToolSchema = z.object({
 }).strict(); // Always use .strict()
 ```
 
-### 2. Add Handler in `tool-handlers.ts`
+### 2. Register the Tool in `tool-handlers.ts`
 
 ```typescript
 registerTool({
-  name: "openl_my_tool",
+  name: "my_tool",                 // bare name — the openl_ prefix is added on the MCP wire
   title: "My Tool",
   description: "Tool description",
+  category: "Project",             // one of TOOL_CATEGORIES (src/constants.ts)
+  version: "1.0.0",
   inputSchema: schemas.z.toJSONSchema(myToolSchema),
   annotations: {
     readOnlyHint: true,    // If read-only
@@ -89,23 +91,7 @@ registerTool({
 });
 ```
 
-### 3. Add Metadata in `tools.ts`
-
-```typescript
-{
-  name: "openl_my_tool",
-  description: "Tool description",
-  inputSchema: schemas.z.toJSONSchema(myToolSchema),
-  _meta: {
-    version: "1.0.0",
-    category: TOOL_CATEGORIES.PROJECT,
-    requiresAuth: true,
-    modifiesState: false,
-  },
-}
-```
-
-### 4. Add API Method (if needed) in `client.ts`
+### 3. Add API Method (if needed) in `client.ts`
 
 ```typescript
 async myMethod(projectId: string): Promise<ReturnType> {
@@ -117,7 +103,7 @@ async myMethod(projectId: string): Promise<ReturnType> {
 }
 ```
 
-### 5. Add Tests
+### 4. Add Tests
 
 ```typescript
 describe("openl_my_tool", () => {
@@ -131,7 +117,7 @@ describe("openl_my_tool", () => {
 });
 ```
 
-### 6. Update Documentation
+### 5. Update Documentation
 
 Add examples to `../guides/examples.md` and update `README.md` if needed.
 

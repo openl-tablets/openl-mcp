@@ -17,6 +17,7 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { OpenLClient } from './client.js';
 import { ResourceSubscriptionManager } from './resource-subscriptions.js';
 import { getAllTools, executeTool, registerAllTools } from './tool-handlers.js';
+import { mcpToolName, stripToolPrefix } from './constants.js';
 import { sanitizeError } from './utils.js';
 import { logger } from './logger.js';
 import type * as Types from './types.js';
@@ -190,7 +191,7 @@ async function initializeMCPServer(): Promise<void> {
   // Setup MCP handlers (similar to index.ts)
   mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: getAllTools().map(({ name, title, description, inputSchema, annotations }) => ({
-      name,
+      name: mcpToolName(name),
       title,
       description,
       inputSchema,
@@ -202,7 +203,7 @@ async function initializeMCPServer(): Promise<void> {
     // Get client from request context (session ID stored in transport)
     // For now, use default client - we'll update this to use session-specific clients
     const client = getDefaultClientOrThrow();
-    const result = await executeTool(request.params.name, request.params.arguments, client, extra);
+    const result = await executeTool(stripToolPrefix(request.params.name), request.params.arguments, client, extra);
     return result as any;
   });
 
@@ -273,7 +274,7 @@ function setupSessionHandlers(
 ): void {
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: getAllTools().map(({ name, title, description, inputSchema, annotations }) => ({
-      name,
+      name: mcpToolName(name),
       title,
       description,
       inputSchema,
@@ -282,7 +283,7 @@ function setupSessionHandlers(
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
-    const result = await executeTool(request.params.name, request.params.arguments, client, extra);
+    const result = await executeTool(stripToolPrefix(request.params.name), request.params.arguments, client, extra);
     return result as any;
   });
 

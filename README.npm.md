@@ -81,15 +81,16 @@ The same binary can invoke any `openl_*` tool directly from the shell — useful
 npx -y openl-mcp-server --help          # human catalog (tool titles)
 npx -y openl-mcp-server --list-tools    # machine-readable JSON (name/title/schema)
 
-# Single call — base URL as a positional argument (markdown by default)
-npx -y openl-mcp-server <host> openl_list_repositories --token <pat>
+# Single call — base URL as a positional argument (markdown by default).
+# Tool names drop the openl_ prefix on the CLI (use list_repositories, not openl_list_repositories).
+npx -y openl-mcp-server <host> list_repositories --token <pat>
 
 # …or via env vars
 OPENL_BASE_URL=<host> OPENL_PERSONAL_ACCESS_TOKEN=<pat> \
-  npx -y openl-mcp-server openl_list_repositories
+  npx -y openl-mcp-server list_repositories
 
 # JSON for jq pipelines
-npx -y openl-mcp-server <host> openl_list_repositories '{"response_format":"json"}' --token <pat> | jq
+npx -y openl-mcp-server <host> list_repositories '{"response_format":"json"}' --token <pat> | jq
 ```
 
 **See [`README.cli.md`](https://github.com/openl-tablets/openl-mcp/blob/main/README.cli.md)** for the full CLI guide: configuration, all flags (`--base-url`, `--token`, `--user`, `--password`, `--timeout`, `--client-document-id`, `--cookie-jar`), argument-passing modes (`@file.json`, `--stdin`), session handling for trace flows, recipes, exit codes, Windows notes, and troubleshooting.
