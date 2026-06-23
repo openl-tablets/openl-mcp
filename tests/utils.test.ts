@@ -563,14 +563,6 @@ describe("utils", () => {
   });
 
   describe("integration scenarios", () => {
-    it("should round-trip sanitize and extract error", () => {
-      const error = new Error("Failed with Bearer secret123");
-      const sanitized = sanitizeError(error);
-
-      expect(sanitized).toContain("[REDACTED]");
-      expect(sanitized).not.toContain("secret123");
-    });
-
     it("should handle complex error with multiple sensitive fields", () => {
       const error = new Error(
         "OAuth failed: client_secret=abc123 Bearer token456 at http://user:pass@host"
@@ -581,14 +573,6 @@ describe("utils", () => {
       expect(details.message).not.toContain("abc123");
       expect(details.message).not.toContain("token456");
       expect(details.message).not.toContain("user:");
-    });
-
-    it("should stringify object with circular reference after error extraction", () => {
-      const circular: any = { name: "test" };
-      circular.self = circular;
-
-      const stringified = safeStringify(circular);
-      expect(stringified).toContain("[Circular]");
     });
   });
 

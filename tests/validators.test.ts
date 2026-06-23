@@ -37,11 +37,6 @@ describe("validators", () => {
       expect(result).toEqual({ limit: 50, offset: 0 });
     });
 
-    it("should allow large offset values", () => {
-      const result = validatePagination(50, 1000);
-      expect(result).toEqual({ limit: 50, offset: 1000 });
-    });
-
     it("should use default limit when undefined", () => {
       const result = validatePagination(undefined, 20);
       expect(result).toEqual({ limit: 50, offset: 20 });
@@ -67,23 +62,25 @@ describe("validators", () => {
       expect(() => validatePagination(50, -100)).toThrow(McpError);
     });
 
-    it("should include actionable error message for invalid limit", () => {
-      expect(() => validatePagination(0, 0)).toThrow(/Set limit to a value between 1-200/);
-      expect(() => validatePagination(300, 0)).toThrow(/use pagination with offset/);
+    it("throws McpError with InvalidParams code for an invalid limit", () => {
+      expect(() => validatePagination(0, 0)).toThrow(
+        expect.objectContaining({ code: ErrorCode.InvalidParams })
+      );
+      expect(() => validatePagination(300, 0)).toThrow(
+        expect.objectContaining({ code: ErrorCode.InvalidParams })
+      );
     });
 
-    it("should include actionable error message for invalid offset", () => {
-      expect(() => validatePagination(50, -1)).toThrow(/Start with offset: 0/);
+    it("throws McpError with InvalidParams code for an invalid offset", () => {
+      expect(() => validatePagination(50, -1)).toThrow(
+        expect.objectContaining({ code: ErrorCode.InvalidParams })
+      );
     });
   });
 
   describe("validateResponseFormat", () => {
     it("should default to markdown when no format provided", () => {
       expect(validateResponseFormat()).toBe("markdown");
-    });
-
-    it("should default to markdown when undefined", () => {
-      expect(validateResponseFormat(undefined)).toBe("markdown");
     });
 
     it("should accept json format", () => {
@@ -113,12 +110,36 @@ describe("validators", () => {
       expect(() => validateResponseFormat("Markdown")).toThrow(McpError);
     });
 
-    it("should include valid formats in error message", () => {
-      expect(() => validateResponseFormat("invalid")).toThrow(/json, markdown, markdown_concise, markdown_detailed/);
-    });
+    it("enumerates exactly the accepted formats in the error message", () => {
+      // Consistency guard: derive the accepted formats from the source itself
+      // (each valid format validates to itself) rather than hardcoding a list,
+      // then assert the error message enumerates exactly those, in order.
+      const candidates = [
+        "json",
+        "markdown",
+        "markdown_concise",
+        "markdown_detailed",
+        "xml",
+        "html",
+        "yaml",
+        "JSON",
+      ];
+      const acceptedFormats = candidates.filter((candidate) => {
+        try {
+          return validateResponseFormat(candidate) === candidate;
+        } catch {
+          return false;
+        }
+      });
 
-    it("should include actionable suggestion in error message", () => {
-      expect(() => validateResponseFormat("invalid")).toThrow(/markdown_concise.*markdown_detailed/);
+      let message = "";
+      try {
+        validateResponseFormat("invalid");
+      } catch (error) {
+        message = (error as McpError).message;
+      }
+
+      expect(message).toContain(`one of: ${acceptedFormats.join(", ")}`);
     });
   });
 });

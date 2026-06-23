@@ -252,18 +252,6 @@ describeIntegration('OpenL Studio 6.0.0 Live Integration Tests', () => {
   });
 
   // ============================================================================
-  // P1: Important Workflow - Testing
-  // ============================================================================
-
-  describe('5. Testing & Execution (P1)', () => {
-    // Note: run_all_tests and run_test tools removed - endpoints don't exist in API
-    // Use openl_execute_rule to manually test individual rules with input data instead
-    test('Test tools removed (endpoints do not exist)', () => {
-      console.log(`✅ Test tools (run_all_tests, run_test) removed - use openl_execute_rule instead`);
-    });
-  });
-
-  // ============================================================================
   // P1: Important Workflow - File Management
   // ============================================================================
 

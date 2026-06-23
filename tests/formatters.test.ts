@@ -11,6 +11,7 @@ import {
   toMarkdownConcise,
   toMarkdownDetailed,
   formatAgentsDocument,
+  AGENTS_DOCUMENT_NOTE,
 } from "../src/formatters.js";
 import { RESPONSE_LIMITS } from "../src/constants.js";
 import type { AgentsFile } from "../src/types.js";
@@ -246,9 +247,9 @@ describe("formatters", () => {
 
       const result = formatResponse(largeArray, "json");
 
-      if (result.length > 25000) {
-        expect(result).toContain("truncated");
-      }
+      // This input is far over the limit, so the array-truncation path always runs.
+      expect(result).toContain("truncated");
+      expect(result).toContain(RESPONSE_LIMITS.TRUNCATION_MESSAGE);
     });
 
     it("should handle empty data", () => {
@@ -259,11 +260,6 @@ describe("formatters", () => {
     it("should handle null data", () => {
       const result = formatResponse(null, "json");
       expect(result).toContain("null");
-    });
-
-    it("should handle undefined data", () => {
-      const result = formatResponse(undefined, "json");
-      expect(result).toBeDefined();
     });
 
     it("should preserve data structure in JSON format", () => {
@@ -486,15 +482,6 @@ describe("formatters", () => {
       expect(() => formatResponse(circular, "json")).not.toThrow();
     });
 
-    it("should handle special characters in markdown", () => {
-      const data = {
-        text: "Test with **bold** and _italic_ and [link](url)",
-      };
-
-      const result = formatResponse(data, "markdown");
-      expect(result).toBeDefined();
-    });
-
     it("should handle unicode characters", () => {
       const data = {
         emoji: "😀🎉",
@@ -526,8 +513,9 @@ describe("formatters", () => {
 
     it("includes the precedence note header", () => {
       const doc = formatAgentsDocument(chain);
-      expect(doc).toContain("*Important note about this document*");
-      expect(doc).toContain("each later AGENTS.md file takes precedence over the earlier ones");
+      // Assert against the source constant so the test auto-tracks any rewording
+      // while still guarding that the precedence note actually ships.
+      expect(doc).toContain(AGENTS_DOCUMENT_NOTE);
     });
 
     it("orders sections root-first (project folder last = highest priority)", () => {

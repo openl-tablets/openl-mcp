@@ -202,33 +202,6 @@ describe("Tool Handler Integration Tests", () => {
       expect(result.content[0].text).toContain("calculatePremium");
     });
 
-    // Test for openl_create_project_table - see test below
-    it.skip("should execute openl_create_project_table", async () => {
-      // TODO: Add test for openl_create_project_table (BETA API)
-      // This test should verify the new BETA API format with moduleName and full table structure
-      mockAxios.onPost(/\/projects\/.*\/tables/).reply(201, {
-        id: "newRule_1234",
-        name: "newRule",
-        tableType: "SimpleRules",
-      });
-
-      // Example test structure (not implemented yet):
-      const result = await executeTool("openl_create_project_table", {
-        projectId: "design-project1",
-        moduleName: "Rules",
-        table: {
-          id: "newRule",
-          tableType: "SimpleRules",
-          kind: "Rules",
-          name: "newRule",
-          returnType: "double",
-        }
-      }, client);
-
-      expect(result.content[0].type).toBe("text");
-      expect(result.content[0].text).toContain("newRule");
-    });
-
     it("openl_create_project_table normalizes a miscased tableType to the canonical token", async () => {
       let body: Record<string, any> = {};
       mockAxios.onPost(/\/projects\/.*\/tables/).reply((config) => {
@@ -487,44 +460,6 @@ describe("Tool Handler Integration Tests", () => {
     });
   });
 
-  describe("File Tools", () => {
-    it.skip("should execute openl_upload_file", async () => {
-      // TEMPORARILY DISABLED - openl_upload_file is disabled
-      // upload_file uses buildProjectPath
-      mockAxios.onPost(/\/projects\/.*\/files\/Rules\.xlsx/).reply(200, {
-        success: true,
-      });
-
-      const localFilePath = "/tmp/Rules.xlsx";
-
-      const result = await executeTool("openl_upload_file", {
-        projectId: "design-project1",
-        fileName: "Rules.xlsx",
-        localFilePath,
-      }, client);
-
-      expect(result.content[0].type).toBe("text");
-      expect(result.content[0].text).toContain("success");
-    });
-
-    it.skip("should execute openl_download_file", async () => {
-      // TEMPORARILY DISABLED - openl_download_file is disabled
-      const fileBuffer = Buffer.from("test file content");
-      // download_file uses buildProjectPath
-      mockAxios.onGet(/\/projects\/.*\/files\/Rules\.xlsx/).reply(200, fileBuffer);
-
-      const result = await executeTool("openl_download_file", {
-        projectId: "design-project1",
-        fileName: "Rules.xlsx",
-        outputFilePath: "/tmp/Rules.xlsx",
-      }, client);
-
-      expect(result.content[0].type).toBe("text");
-      // Response should contain output file path metadata
-      expect(result.content[0].text).toBeDefined();
-    });
-  });
-
   describe("AGENTS.md Tool", () => {
     it("should execute openl_get_project_agents_md (aggregated document, root-first)", async () => {
       mockAxios.onPost(/\/projects\/.*\/file-search/).reply(200, [
@@ -572,111 +507,72 @@ describe("Tool Handler Integration Tests", () => {
       expect(data).toHaveProperty("data");
     });
 
-    it("should support markdown_concise response format", async () => {
-      // Mock repositories list for getRepositoryIdByName
+    // Shared project data so concise and detailed renders are compared on the SAME input.
+    const formatVariantProjects = [
+      {
+        id: "design:p1:hash1",
+        name: "p1",
+        repository: "design",
+        status: "OPENED",
+        path: "p1",
+        modifiedBy: "admin",
+        modifiedAt: "2024-01-01T00:00:00Z",
+      },
+      {
+        id: "design:p2:hash2",
+        name: "p2",
+        repository: "design",
+        status: "CLOSED",
+        path: "p2",
+        modifiedBy: "admin",
+        modifiedAt: "2024-01-01T00:00:00Z",
+      },
+    ];
+
+    async function renderProjects(response_format: "markdown_concise" | "markdown_detailed") {
       const mockRepos: RepositoryInfo[] = [
         { id: "design", name: "Design Repository", aclId: "acl-design" },
       ];
       mockAxios.onGet("/repos").reply(200, mockRepos);
-
-      mockAxios.onGet("/projects", { params: { repository: "design", page: 0, size: 50 } }).reply(200, [
-        {
-          id: "design:p1:hash1",
-          name: "p1",
-          repository: "design",
-          status: "OPENED",
-          path: "p1",
-          modifiedBy: "admin",
-          modifiedAt: "2024-01-01T00:00:00Z",
-        },
-        {
-          id: "design:p2:hash2",
-          name: "p2",
-          repository: "design",
-          status: "CLOSED",
-          path: "p2",
-          modifiedBy: "admin",
-          modifiedAt: "2024-01-01T00:00:00Z",
-        },
-      ]);
+      mockAxios
+        .onGet("/projects", { params: { repository: "design", page: 0, size: 50 } })
+        .reply(200, formatVariantProjects);
 
       const result = await executeTool("openl_list_projects", {
         repository: "Design Repository", // Use repository name, not ID
-        response_format: "markdown_concise",
+        response_format,
       }, client);
+      return result.content[0].text as string;
+    }
 
-      const text = result.content[0].text;
-      expect(text).toContain("Found");
-      expect(text.length).toBeLessThan(500); // Should be concise
+    it("should support markdown_concise response format", async () => {
+      const concise = await renderProjects("markdown_concise");
+      mockAxios.reset();
+      const detailed = await renderProjects("markdown_detailed");
+
+      // Concise emits the "Found N project(s)" summary line (toMarkdownConcise) ...
+      expect(concise).toContain("Found 2 projects");
+      // ... and must NOT include the detail-only Status Breakdown line.
+      expect(concise).not.toContain("**Status Breakdown:**");
+      // ... and is strictly shorter than the detailed render of the SAME data.
+      expect(concise.length).toBeLessThan(detailed.length);
     });
 
     it("should support markdown_detailed response format", async () => {
-      // Mock repositories list for getRepositoryIdByName
-      const mockRepos: RepositoryInfo[] = [
-        { id: "design", name: "Design Repository", aclId: "acl-design" },
-      ];
-      mockAxios.onGet("/repos").reply(200, mockRepos);
+      const detailed = await renderProjects("markdown_detailed");
+      mockAxios.reset();
+      const concise = await renderProjects("markdown_concise");
 
-      mockAxios.onGet("/projects", { params: { repository: "design", page: 0, size: 50 } }).reply(200, [
-        {
-          id: "design:p1:hash1",
-          name: "p1",
-          repository: "design",
-          status: "OPENED",
-          path: "p1",
-          modifiedBy: "admin",
-          modifiedAt: "2024-01-01T00:00:00Z",
-        },
-      ]);
-
-      const result = await executeTool("openl_list_projects", {
-        repository: "Design Repository", // Use repository name, not ID
-        response_format: "markdown_detailed",
-      }, client);
-
-      const text = result.content[0].text;
-      expect(text).toContain("Summary");
-      expect(text).toContain("Retrieved");
+      // toMarkdownDetailed emits a "**Status Breakdown:** N opened, M closed" line for projects ...
+      expect(detailed).toContain("**Status Breakdown:** 1 opened, 1 closed");
+      // ... plus the Summary/Retrieved headings, none of which the concise render emits.
+      expect(detailed).toContain("**Summary:**");
+      expect(detailed).toContain("**Retrieved:**");
+      expect(concise).not.toContain("**Status Breakdown:**");
     });
   });
 
   describe("Destructive Operation Confirmation", () => {
-    it.skip("should require confirmation for openl_revert_version", async () => {
-      // TEMPORARILY DISABLED - openl_revert_version is disabled
-      await expect(
-        executeTool("openl_revert_version", {
-          projectId: "design-project1",
-          targetVersion: "abc123",
-          // Missing confirm: true
-        }, client)
-      ).rejects.toThrow(/confirm/);
-    });
-
-    it.skip("should execute openl_revert_version with confirmation", async () => {
-      // TEMPORARILY DISABLED - openl_revert_version is disabled
-      // revert_version needs multiple API calls: get version, validate, revert
-      mockAxios.onGet(/\/projects\/.*\/versions\/abc123/).reply(200, {
-        version: "abc123",
-        content: {},
-      });
-      mockAxios.onGet(/\/projects\/.*\/validation/).reply(200, {
-        valid: true,
-        errors: [],
-      });
-      mockAxios.onPost(/\/projects\/.*\/revert/).reply(200, {
-        version: "new-commit",
-      });
-
-      const result = await executeTool("openl_revert_version", {
-        projectId: "design-project1",
-        targetVersion: "abc123",
-        confirm: true,
-      }, client);
-
-      expect(result.content[0].type).toBe("text");
-      expect(result.content[0].text).toContain("success");
-    });
-
     it("should execute openl_deploy_project", async () => {
       // Mock production repositories list for getProductionRepositoryIdByName
       const mockProdRepos: RepositoryInfo[] = [
@@ -1083,24 +979,6 @@ describe("Tool Handler Integration Tests", () => {
           response_format: "xml" as any,
         }, client)
       ).rejects.toThrow(/markdown_concise.*markdown_detailed/);
-    });
-
-    it("should handle network errors gracefully", async () => {
-      // Reset any existing mocks first to ensure clean state
-      mockAxios.reset();
-      // Set up network error mock - use networkError() to simulate network failure
-      // Note: This test may be flaky if mocks from other tests interfere
-      // The important thing is that network errors are handled, not the exact mechanism
-      try {
-        mockAxios.onGet("/repos").networkError();
-        await executeTool("openl_list_repositories", {}, client);
-        // If we get here, the mock didn't work - skip this test for now
-        // This is a known limitation of axios-mock-adapter with networkError()
-        expect(true).toBe(true); // Pass the test
-      } catch (error) {
-        // If error is thrown, that's what we expect
-        expect(error).toBeDefined();
-      }
     });
   });
 

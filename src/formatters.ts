@@ -714,7 +714,7 @@ export function paginateResults<T>(
  * the nearest-wins precedence so a consuming agent can apply the guidance correctly
  * from the document alone.
  */
-const AGENTS_DOCUMENT_NOTE =
+export const AGENTS_DOCUMENT_NOTE =
   "*Important note about this document*\n" +
   "This is the aggregated content of all AGENTS.md files, ordered from the root folder to the project folder.\n" +
   "In case of conflicting instructions, each later AGENTS.md file takes precedence over the earlier ones. The root file has the lowest priority.";

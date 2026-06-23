@@ -55,16 +55,6 @@ describe("OpenLClient", () => {
       const testClient = new OpenLClient(config);
       expect(testClient.getBaseUrl()).toMatch(/\/rest$/);
     });
-
-
-    it("should handle custom timeout", () => {
-      const config: OpenLConfig = {
-        baseUrl: "http://localhost:8080",
-        timeout: 60000,
-      };
-      const testClient = new OpenLClient(config);
-      expect(testClient).toBeDefined();
-    });
   });
 
   describe("Repository Management", () => {
@@ -700,18 +690,6 @@ describe("OpenLClient", () => {
         await client.listTables("design-project1", { name: "calculate" });
         expect(mockAxios.history.get.length).toBe(1);
       });
-
-      it("should filter by file", async () => {
-        const projectIdForPath = "design-project1";
-        const encodedProjectId = encodeURIComponent(projectIdForPath);
-        
-        // Note: file filtering might not be directly supported in the API
-        // This test may need adjustment based on actual API behavior
-        mockAxios.onGet(`/projects/${encodedProjectId}/tables`).reply(200, []);
-
-        await client.listTables("design-project1", {});
-        expect(mockAxios.history.get.length).toBe(1);
-      });
     });
 
     describe("getTable", () => {
@@ -962,24 +940,6 @@ describe("OpenLClient", () => {
           expect(data.projectId).toBe(projectIdForPath);
           expect(data.deploymentName).toBe("project1");
           expect(data.productionRepositoryId).toBe("production-deploy");
-          return [200];
-        });
-
-        await client.deployProject({
-          projectId: "design-project1",
-          deploymentName: "project1",
-          productionRepositoryId: "production-deploy",
-        });
-      });
-
-      it("should include version when provided", async () => {
-        // Note: version parameter is not supported in DeployProjectRequest
-        // This test may need adjustment based on actual API behavior
-        const projectIdForPath = "design-project1";
-        
-        mockAxios.onPost("/deployments").reply((config) => {
-          const data = JSON.parse(config.data);
-          expect(data.projectId).toBe(projectIdForPath);
           return [200];
         });
 
@@ -1346,11 +1306,11 @@ describe("OpenLClient", () => {
     });
 
     it("should encode special characters in project names", async () => {
-      // getProject normalizes projectId for request path, so we match a generic projects path
+      // buildProjectPath URL-encodes the projectId, so spaces become %20 (hyphens are
+      // left literal by encodeURIComponent). The full path must be exactly encoded;
+      // this assertion fails if encodeURIComponent is dropped.
       mockAxios.onGet(/\/projects\/.*/).reply((config) => {
-        // The projectId "design-Example 1 - Bank Rating" will be normalized for path usage
-        // and then URL-encoded, so we just check that it's a valid projects path
-        expect(config.url).toMatch(/^\/projects\//);
+        expect(config.url).toBe("/projects/design-Example%201%20-%20Bank%20Rating");
         return [200, {}];
       });
 
