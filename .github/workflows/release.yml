@@ -93,10 +93,11 @@ jobs:
       # And push the tag BEFORE npm publish.
       # If anything below fails, git state stays consistent and recoverable.
       - name: Bump package.json version, create commit and tag
-        id: bump
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
           NEW_VERSION=$(npm version "${{ inputs.bump }}" --tag-version-prefix="" --message "Release %s")
-          git push --atomic origin "HEAD:${{ github.ref_name }}" "refs/tags/${NEW_VERSION}"
+          git push --atomic origin "HEAD:${REF_NAME}" "refs/tags/${NEW_VERSION}"
 
       # README swap is done after the push so the npm-specific README is
       # not committed to main. It only ends up in the npm tarball.
