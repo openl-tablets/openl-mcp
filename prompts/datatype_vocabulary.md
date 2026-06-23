@@ -1,6 +1,6 @@
 ---
-name: datatype_vocabulary
-description: Creating custom data structures (Datatypes) and enumerations (Vocabularies) in OpenL
+title: Define Datatypes and Vocabularies
+description: Guide for creating custom datatypes (domain objects) and vocabularies (enumerations) in OpenL Studio with inheritance, field types, and validation
 ---
 
 ## Summary

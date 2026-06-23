@@ -183,8 +183,8 @@ The MCP server has been **refactored from a 766-line monolithic index.ts to a mo
   - Request interceptors
   - Multi-method support (Basic, API Key, OAuth 2.1)
 
-- `src/prompts-registry.ts` (365 lines)
-  - Prompt loading and caching
+- `src/prompts-registry.ts` (262 lines)
+  - Registry built from prompt-file frontmatter (name derived from filename)
   - YAML frontmatter parsing
   - Argument substitution
   - Template rendering
@@ -747,10 +747,10 @@ function sanitizeContext(context: LogContext): LogContext {
 
 **Design**: YAML frontmatter + template rendering
 
-**File Format**:
+**File Format** (the prompt name is derived from the filename, e.g. `create_rule.md` → `create_rule`, never declared in the frontmatter):
 ```markdown
 ---
-name: create_rule
+title: Create OpenL Table
 description: Guide for creating OpenL tables
 arguments:
   - name: tableName
@@ -768,7 +768,7 @@ Content with {variable} placeholders...
 ```
 
 **Rendering**:
-1. Load prompt file
+1. Discover prompt files in `prompts/` and build the registry from their frontmatter (name = filename)
 2. Parse YAML frontmatter (metadata)
 3. Extract content (Markdown)
 4. Substitute arguments: `{tableName}` → actual value

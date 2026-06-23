@@ -1,6 +1,6 @@
 ---
-name: validate_after_edit
-description: Workflow for validating OpenL projects after editing tables or rules — check compile state, surface errors with location, fix, and re-validate
+title: Validate Project After Edit
+description: "Workflow for validating OpenL projects after editing tables/rules: call openl_project_status, branch on compileState, surface errors with location, and re-validate after fixes"
 arguments:
   - name: projectId
     description: ID of the project being edited

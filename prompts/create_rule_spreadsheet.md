@@ -1,6 +1,6 @@
 ---
-name: create_rule_spreadsheet
-description: Guide for creating Spreadsheet tables in OpenL Studio for multi-step calculations
+title: Create Spreadsheet Tables
+description: Detailed guide for creating Spreadsheet tables in OpenL Studio for multi-step calculations with formula syntax, JSON structure, and common mistakes
 ---
 
 ## Summary

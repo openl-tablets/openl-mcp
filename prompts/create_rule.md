@@ -1,6 +1,6 @@
 ---
-name: create_rule
-description: Comprehensive guide for creating decision tables, spreadsheets, and other OpenL table types
+title: Create OpenL Table
+description: Comprehensive guide for creating OpenL decision tables, spreadsheets, and datatypes with examples for all table types (Rules, SimpleRules, SmartRules, SimpleLookup, SmartLookup, Spreadsheet)
 ---
 
 ## Summary

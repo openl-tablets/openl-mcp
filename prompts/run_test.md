@@ -1,9 +1,9 @@
 ---
-name: run_test
-description: Test selection logic and workflow for efficient test execution
+title: Run Tests
+description: Test selection logic and workflow for running OpenL tests efficiently based on scope (single table, multiple tables, or all tests)
 arguments:
   - name: scope
-    description: Test scope (single, multiple, all)
+    description: "Test scope: 'single', 'multiple', or 'all'"
     required: false
   - name: tableIds
     description: Comma-separated list of table IDs being tested

@@ -231,26 +231,9 @@ Deep codebase analysis results. Plans are grouped by priority.
 
 ---
 
-## Plan 8. In-Memory Prompt Caching [MEDIUM]
+## Plan 8. In-Memory Prompt Caching [MEDIUM] — ✅ DONE
 
-**Problem:** In `prompts-registry.ts`, prompt files (14 total) are read from disk on every `loadPromptContent()` call. Unnecessary I/O overhead.
-
-**Affected files:**
-- `src/prompts-registry.ts`
-
-**Implementation steps:**
-
-1. Add a `Map<string, string>` for caching prompt content.
-
-2. On first `loadPromptContent(name)` call — read the file and store in the Map.
-
-3. On subsequent calls — return from the Map.
-
-4. Optional: add a `PROMPTS_CACHE=false` environment variable to disable caching in dev mode (for hot-reloading prompts).
-
-5. Add a `clearPromptCache()` method for tests.
-
-**Done criteria:** Each prompt is read from disk at most once.
+**Outcome:** Prompt bodies are now cached in memory, so each prompt file is read from disk exactly once. `loadPromptDefinitions()` already reads every prompt file at startup to build the registry; that same read now fills `promptBodyCache` (the frontmatter-stripped body, keyed by prompt name). `loadPromptContent()` serves the body from that cache and reads no files — argument substitution still runs on every call.
 
 ---
 
@@ -428,10 +411,10 @@ Deep codebase analysis results. Plans are grouped by priority.
 | 5 | Split tool-handlers | High | High | tool-handlers.ts, new handlers/ dir | Planned |
 | 6 | Replace `any` with types | Medium | Medium | formatters.ts, client.ts, mcp-proxy.ts, types.ts | Planned |
 | 7 | Rate limiting | Medium | Low | server.ts, package.json | Planned |
-| 8 | Prompt caching | Medium | Low | prompts-registry.ts | Planned |
+| 8 | Prompt caching | Medium | Low | prompts-registry.ts | ✅ Done |
 | 9 | Extract shared code | Medium | Medium | index.ts, server.ts, new mcp-setup.ts | Planned |
 | 10 | Structured logging | Low | High | logger.ts, all files | Planned |
 | 11 | Remove dead tools.ts, sync descriptions | Medium | Low | tools.ts (deleted), tool-handlers.ts | ✅ Done |
 | 12 | Version-aware tool availability | High | Medium | client.ts, tool-handlers.ts, constants.ts, index.ts, server.ts | Planned |
 
-**Recommended order:** 1 → 2 → 12 → 4 → 9 → 5 → 8 → 7 → 6 → 3 → 10  (Plan 11 already complete)
+**Recommended order:** 1 → 2 → 12 → 4 → 9 → 5 → 7 → 6 → 3 → 10  (Plans 8, and 11 already complete)

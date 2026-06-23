@@ -1,6 +1,6 @@
 ---
-name: dimension_properties
-description: OpenL dimension properties system for business context versioning and runtime rule selection
+title: Dimension Properties
+description: Explanation of OpenL dimension properties for business versioning (state, country, lob, effectiveDate) vs Git versioning, with runtime selection logic
 ---
 
 ## Summary

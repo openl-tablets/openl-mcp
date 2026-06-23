@@ -6,8 +6,8 @@
  */
 
 import { describe, test, expect } from "@jest/globals";
-import { existsSync, readdirSync, readFileSync } from "fs";
-import { join, dirname } from "path";
+import { readdirSync, readFileSync, writeFileSync } from "fs";
+import { basename, join, dirname } from "path";
 import { fileURLToPath } from "url";
 import YAML from "yaml";
 import {
@@ -15,6 +15,7 @@ import {
   loadPromptContent,
   getPromptDefinition,
   promptExists,
+  buildPromptDefinition,
 } from "../src/prompts-registry.js";
 
 // ES module equivalent of __dirname
@@ -37,7 +38,10 @@ describe("Prompts Registry", () => {
   });
 
   describe("Prompt definitions", () => {
-    test("all expected prompts should be present", () => {
+    // Cross-validates the registry discovered from the prompts/ directory
+    // against an independent hand-maintained list, so adding or removing a
+    // prompt file without updating this list fails the build.
+    test("registry contains exactly the expected prompts", () => {
       const expectedPrompts = [
         "append_table",
         "create_rule",
@@ -55,30 +59,22 @@ describe("Prompts Registry", () => {
         "validate_after_edit",
       ];
 
-      expectedPrompts.forEach((name) => {
-        const prompt = PROMPTS.find((p) => p.name === name);
-        expect(prompt).toBeDefined();
-      });
+      expect(PROMPTS.map((p) => p.name).sort()).toEqual(
+        [...expectedPrompts].sort()
+      );
     });
   });
 
-  describe("Prompt file existence", () => {
+  describe("Discovery from prompts directory", () => {
     const promptsDir = join(__dirname, "..", "prompts");
 
-    test("all registered prompts should have corresponding .md files", () => {
-      PROMPTS.forEach((prompt) => {
-        const filePath = join(promptsDir, `${prompt.name}.md`);
-        expect(existsSync(filePath)).toBe(true);
-      });
-    });
+    test("registry has one entry per .md file, named after the file", () => {
+      const fileNames = readdirSync(promptsDir)
+        .filter((f) => f.endsWith(".md"))
+        .map((f) => basename(f, ".md"))
+        .sort();
 
-    test("no orphaned .md files should exist", () => {
-      const files = readdirSync(promptsDir).filter((f) => f.endsWith(".md"));
-      const registeredNames = PROMPTS.map((p) => `${p.name}.md`);
-
-      files.forEach((file) => {
-        expect(registeredNames).toContain(file);
-      });
+      expect(PROMPTS.map((p) => p.name).sort()).toEqual(fileNames);
     });
   });
 });
@@ -151,10 +147,19 @@ describe("loadPromptContent", () => {
 
 describe("Helper functions", () => {
   describe("getPromptDefinition", () => {
-    test("should return definition for existing prompt", () => {
+    test("surfaces title and description from the file frontmatter", () => {
       const def = getPromptDefinition("create_rule");
-      expect(def).toBeDefined();
       expect(def?.name).toBe("create_rule");
+      expect(def?.title).toBe("Create OpenL Table");
+      expect(def?.description).toContain("Comprehensive guide for creating");
+    });
+
+    test("surfaces declared arguments from the file frontmatter", () => {
+      const def = getPromptDefinition("create_test");
+      expect(def?.arguments?.map((a) => a.name)).toEqual([
+        "tableName",
+        "tableType",
+      ]);
     });
 
     test("should return undefined for non-existent prompt", () => {
@@ -300,14 +305,53 @@ describe("Frontmatter support (Approach 2)", () => {
 
 });
 
-describe("Registry and frontmatter stay in sync", () => {
+describe("buildPromptDefinition", () => {
+  test("resolves the name from the supplied filename, not the frontmatter", () => {
+    const def = buildPromptDefinition("from_file", {
+      title: "Some Title",
+    });
+    expect(def.name).toBe("from_file");
+  });
+
+  test("includes title, description, and arguments when present", () => {
+    const def = buildPromptDefinition("full", {
+      title: "Full Prompt",
+      description: "Does everything",
+      arguments: [{ name: "id", description: "the id", required: false }],
+    });
+    expect(def).toEqual({
+      name: "full",
+      title: "Full Prompt",
+      description: "Does everything",
+      arguments: [{ name: "id", description: "the id", required: false }],
+    });
+  });
+
+  test("omits the title when the frontmatter has none", () => {
+    const def = buildPromptDefinition("untitled", {
+      description: "No title here",
+    });
+    expect(def).toEqual({ name: "untitled", description: "No title here" });
+    expect("title" in def).toBe(false);
+  });
+
+  test("omits arguments when the frontmatter declares an empty list", () => {
+    const def = buildPromptDefinition("no_args", {
+      title: "No Args",
+      arguments: [],
+    });
+    expect("arguments" in def).toBe(false);
+  });
+
+  test("returns a name-only definition when there is no frontmatter", () => {
+    expect(buildPromptDefinition("bare", null)).toEqual({ name: "bare" });
+  });
+});
+
+describe("Frontmatter is the single source of truth", () => {
   const promptsDir = join(__dirname, "..", "prompts");
 
-  function readFrontmatter(name: string): {
-    name: string;
-    description?: string;
-    arguments?: Array<{ name: string; description: string; required?: boolean }>;
-  } {
+  function readFrontmatter(name: string): Record<string, unknown> {
     const raw = readFileSync(join(promptsDir, `${name}.md`), "utf-8");
     const match = raw.match(/^---\n([\s\S]*?)\n---\n/);
     if (!match) {
@@ -316,32 +360,31 @@ describe("Registry and frontmatter stay in sync", () => {
     return YAML.parse(match[1]);
   }
 
-  // Descriptions deliberately differ between the registry (served to MCP
-  // clients) and the file frontmatter, so this only pins the structural
-  // contract: name and argument shape. It survives prompt prose edits.
-  test("frontmatter name matches the registry entry", () => {
+  // The name is derived from the filename, so it must not be duplicated in the
+  // frontmatter where it could silently drift out of sync.
+  test("no prompt frontmatter declares a name key", () => {
     PROMPTS.forEach((prompt) => {
-      expect(readFrontmatter(prompt.name).name).toBe(prompt.name);
+      expect(readFrontmatter(prompt.name)).not.toHaveProperty("name");
     });
   });
+});
 
-  test("registry and frontmatter agree on whether a prompt takes arguments", () => {
-    PROMPTS.forEach((prompt) => {
-      const fm = readFrontmatter(prompt.name);
-      const registryHasArgs = Boolean(prompt.arguments?.length);
-      const frontmatterHasArgs = Boolean(fm.arguments?.length);
-      expect(frontmatterHasArgs).toBe(registryHasArgs);
-    });
-  });
+describe("Prompt content caching", () => {
+  const promptsDir = join(__dirname, "..", "prompts");
 
-  test("registry and frontmatter declare the same argument names and required flags", () => {
-    const normalize = (
-      args: Array<{ name: string; required?: boolean }> = []
-    ) => args.map((a) => ({ name: a.name, required: a.required ?? false }));
-
-    PROMPTS.filter((p) => p.arguments?.length).forEach((prompt) => {
-      const fm = readFrontmatter(prompt.name);
-      expect(normalize(fm.arguments)).toEqual(normalize(prompt.arguments));
-    });
+  test("serves the body cached at startup instead of re-reading the file", () => {
+    // local_projects.md was read and cached when the module loaded. Overwrite
+    // it on disk: loadPromptContent must still return the cached body, proving
+    // the file is not re-read on each call. The original is restored afterward.
+    const file = join(promptsDir, "local_projects.md");
+    const original = readFileSync(file, "utf-8");
+    try {
+      writeFileSync(file, "---\ntitle: Mutated\n---\n# MUTATED ON DISK\n");
+      expect(loadPromptContent("local_projects")).not.toContain(
+        "MUTATED ON DISK"
+      );
+    } finally {
+      writeFileSync(file, original);
+    }
   });
 });

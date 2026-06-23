@@ -1,6 +1,6 @@
 ---
-name: update_test
-description: Guide for modifying existing tests, adding test cases, and updating expected values
+title: Update Test Table
+description: Guide for modifying existing test tables, adding test cases, updating expected values, and handling test failures
 arguments:
   - name: testId
     description: ID of the test table to update

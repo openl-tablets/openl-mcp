@@ -1,12 +1,12 @@
 ---
-name: create_test
-description: Guide for creating OpenL test tables with proper structure and validation
+title: Create Test Table
+description: Step-by-step guide for creating OpenL test tables with proper 3-row structure, test case design, and expected value validation
 arguments:
   - name: tableName
     description: Name of the table being tested
     required: false
   - name: tableType
-    description: Type of table (Rules, SimpleRules, Spreadsheet, etc.)
+    description: Type of table being tested (Rules, SimpleRules, Spreadsheet, etc.)
     required: false
 ---
 

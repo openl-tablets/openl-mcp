@@ -1,6 +1,6 @@
 ---
-name: create_rule_decision_tables
-description: Comprehensive guide for creating decision tables (Rules, SimpleRules, SmartRules, SimpleLookup, SmartLookup) in OpenL Studio
+title: Create Decision Tables
+description: Comprehensive guide for creating decision tables (Rules, SimpleRules, SmartRules, SimpleLookup, SmartLookup) in OpenL Studio with detailed examples and parameter matching strategies
 ---
 
 ## Summary

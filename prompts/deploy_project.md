@@ -1,12 +1,12 @@
 ---
-name: deploy_project
-description: OpenL deployment workflow with validation checks and environment selection
+title: Deploy Project
+description: OpenL deployment workflow with mandatory validation checks, test execution requirements, and environment selection (dev, test, staging, prod)
 arguments:
   - name: projectId
     description: ID of project to deploy
     required: false
   - name: environment
-    description: Target environment (dev, test, staging, prod)
+    description: "Target environment: 'dev', 'test', 'staging', or 'prod'"
     required: false
 ---
 

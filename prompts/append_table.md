@@ -1,12 +1,12 @@
 ---
-name: append_table
-description: Guide for appending new rows/fields to existing tables efficiently
+title: Append to Table
+description: Guide for efficiently appending new rows/fields to existing Datatype and Data tables without replacing the entire structure
 arguments:
   - name: tableId
     description: ID of the table to append data to
     required: false
   - name: tableType
-    description: Type of table being appended to
+    description: Type of table being appended to (Datatype, Data)
     required: false
 ---
 

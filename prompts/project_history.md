@@ -1,9 +1,9 @@
 ---
-name: project_history
-description: OpenL project-level history and version control operations
+title: Project History
+description: Guide for viewing a project's committed Git history with openl_repository_project_revisions and its local workspace changes with openl_list_project_local_changes, and when to use each
 arguments:
   - name: projectId
-    description: ID of the project to view history for
+    description: ID of the project
     required: false
 ---
 

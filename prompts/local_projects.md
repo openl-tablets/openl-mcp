@@ -1,6 +1,6 @@
 ---
-name: local_projects
-description: Working with projects in repository 'local' (no Git)
+title: "Local Projects (repository: local)"
+description: "Working with projects in repository 'local': no open/save/close, no Git; table/rule/test tools work directly without opening"
 ---
 
 ## Summary
