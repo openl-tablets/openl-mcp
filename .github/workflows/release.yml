@@ -1,8 +1,20 @@
 # Release npm package to npmjs.com — single source of truth for releases.
 #
-# Manually triggered via the Actions UI. The workflow is the only intended way
-# to cut a release: it bumps package.json, commits, tags, builds, publishes to
-# npm, and pushes the commit and tag.
+# Manually triggered via the Actions UI from the `main` branch. The workflow
+# is the only intended way to cut a release: it lint+tests+builds, bumps
+# package.json, commits + pushes directly to main, tags, and FINALLY
+# publishes to npm.
+#
+# Order matters: `npm publish` is the LAST step on purpose. The git state
+# on main is fully consistent (commit + tag pushed) before any irreversible
+# npm operation happens. Recovery semantics:
+#   - Commit push fails    → no npm, no tag, no commit. Clean retry.
+#   - Tag push fails       → commit on main, no tag, no npm. Create the
+#                            tag manually, then re-run `npm publish` from
+#                            the tagged commit.
+#   - npm publish fails    → commit + tag on main, version not on npm.
+#                            Re-run `npm publish` manually from the tagged
+#                            checkout. The version number is NOT burned.
 #
 # Docker Hub publishing is decoupled: trigger publish-dockerhub.yml manually
 # after a release (or any time) to ship a Docker image for a given version.
@@ -39,6 +51,12 @@ jobs:
       id-token: write   # required for npm provenance via OIDC
 
     steps:
+      - name: Guard — releases only from main
+        if: github.ref_name != 'main'
+        run: |
+          echo "::error::Releases can only be cut from 'main' (got '${{ github.ref_name }}')."
+          exit 1
+
       - name: Configure git identity
         run: |
           git config --global user.name "OpenL Tablets"
@@ -58,30 +76,39 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Gate the release behind the same quality checks PRs run. A release
+      # MUST NOT be cut if main is red.
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
       - name: Build TypeScript
         run: npm run build
 
       # `npm version <bump>` bumps package.json + creates commit + annotated
       # tag in one shot. `--tag-version-prefix=""` drops the default `v`
       # prefix so tags match the existing X.Y.Z scheme in the repo.
+      # And push the tag BEFORE npm publish.
+      # If anything below fails, git state stays consistent and recoverable.
       - name: Bump package.json version, create commit and tag
-        id: bump
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          npm version "${{ inputs.bump }}" --tag-version-prefix="" --message "Release %s"
-          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+          NEW_VERSION=$(npm version "${{ inputs.bump }}" --tag-version-prefix="" --message "Release %s")
+          git push --atomic origin "HEAD:${REF_NAME}" "refs/tags/${NEW_VERSION}"
 
-      # README swap is done after the commit so the npm-specific README is not
-      # committed to main. It only ends up in the npm tarball.
+      # README swap is done after the push so the npm-specific README is
+      # not committed to main. It only ends up in the npm tarball.
       - name: Use npm-specific README for the package tarball
         run: cp README.npm.md README.md
 
+      # LAST irreversible step. Everything before it is recoverable; this
+      # is not. By the time we get here, git has the consistent state
+      # (commit on main + tag pointing at it). If npm publish fails,
+      # re-run `npm publish` manually from the tagged checkout.
       - name: Publish to npm
         # No NODE_AUTH_TOKEN — authentication is negotiated via OIDC
         # (npm Trusted Publishers). Provenance is attested automatically.
         run: npm publish --access public --provenance
-
-      - name: Push commit and tag
-        # Pushing only after a successful npm publish: if publish fails, no
-        # commit/tag pollutes main. If push fails after publish, recovery is
-        # `git push origin HEAD <tag>` from a workstation.
-        run: git push --atomic origin "HEAD:${{ github.ref_name }}" "refs/tags/${{ steps.bump.outputs.version }}"
