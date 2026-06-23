@@ -13,7 +13,7 @@ import YAML from "yaml";
 /**
  * MCP Prompt definition
  */
-export interface PromptDefinition {
+interface PromptDefinition {
   /** Unique identifier for the prompt */
   name: string;
   /** Human-readable title for display */
@@ -32,7 +32,7 @@ export interface PromptDefinition {
  * Prompt frontmatter metadata
  * Parsed from YAML frontmatter in prompt markdown files
  */
-export interface PromptFrontmatter {
+interface PromptFrontmatter {
   /** Prompt name (should match filename) */
   name: string;
   /** Optional description */

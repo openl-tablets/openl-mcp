@@ -12,7 +12,7 @@
  * Regenerate by zipping each template's Main.xlsx at the archive root.
  */
 
-export type ProjectTemplate = "empty" | "sample";
+type ProjectTemplate = "empty" | "sample";
 
 const TEMPLATE_ZIP_BASE64: Record<ProjectTemplate, string> = {
   empty:

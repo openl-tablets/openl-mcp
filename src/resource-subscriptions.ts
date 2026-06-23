@@ -31,7 +31,7 @@ import { OpenLClient } from "./client.js";
 import { sanitizeError } from "./utils.js";
 
 /** Test seam for `subscribeProjectStatus`. */
-export type SubscribeFn = (opts: SubscribeProjectStatusOpts) => Promise<Subscription>;
+type SubscribeFn = (opts: SubscribeProjectStatusOpts) => Promise<Subscription>;
 
 /**
  * Fire-and-forget doorbell emitter. Provided by the per-session MCP `Server`
@@ -39,7 +39,7 @@ export type SubscribeFn = (opts: SubscribeProjectStatusOpts) => Promise<Subscrip
  * so notification-send failures are non-fatal (we still want to keep the
  * STOMP subscription alive even if one outbound notification fails).
  */
-export type SendUpdatedFn = (uri: string) => Promise<void> | void;
+type SendUpdatedFn = (uri: string) => Promise<void> | void;
 
 /**
  * Default reconnect delay (ms) for resource-level STOMP subscriptions.

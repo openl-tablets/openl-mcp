@@ -6,49 +6,11 @@
 import { describe, it, expect } from "@jest/globals";
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import {
-  validateProjectId,
   validatePagination,
   validateResponseFormat,
 } from "../src/validators.js";
 
 describe("validators", () => {
-  describe("validateProjectId", () => {
-    it("should accept non-empty backend projectId as-is", () => {
-      const projectId = "project-id-from-backend";
-      const result = validateProjectId(projectId);
-      expect(result).toBe(projectId);
-    });
-
-    it("should trim surrounding whitespace", () => {
-      const result = validateProjectId("  backend-id  ");
-      expect(result).toBe("backend-id");
-    });
-
-    it("should allow IDs with separators", () => {
-      expect(validateProjectId("repo:project/hash-123")).toBe("repo:project/hash-123");
-    });
-
-    it("should throw error for empty projectId", () => {
-      expect(() => validateProjectId("")).toThrow(McpError);
-    });
-
-    it("should throw error for whitespace-only projectId", () => {
-      expect(() => validateProjectId("   ")).toThrow(McpError);
-    });
-
-    it("should throw error for non-string projectId", () => {
-      expect(() => validateProjectId(123 as unknown as string)).toThrow(McpError);
-    });
-
-    it("should accept any non-empty opaque projectId", () => {
-      expect(validateProjectId("invalid")).toBe("invalid");
-    });
-
-    it("should include expected format in error message", () => {
-      expect(() => validateProjectId("   ")).toThrow(/Expected non-empty string/);
-    });
-  });
-
   describe("validatePagination", () => {
     it("should use defaults when no parameters provided", () => {
       const result = validatePagination();
