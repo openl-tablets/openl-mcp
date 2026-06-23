@@ -11,7 +11,7 @@ import * as Types from "./types.js";
 /**
  * Pagination metadata
  */
-export interface PaginationMetadata {
+interface PaginationMetadata {
   limit: number;
   offset: number;
   has_more: boolean;
@@ -22,7 +22,7 @@ export interface PaginationMetadata {
 /**
  * Paginated response wrapper
  */
-export interface PaginatedResponse<T> {
+interface PaginatedResponse<T> {
   data: T;
   pagination?: PaginationMetadata;
   truncated?: boolean;
@@ -32,7 +32,7 @@ export interface PaginatedResponse<T> {
 /**
  * Format response options
  */
-export interface FormatOptions {
+interface FormatOptions {
   /** Pagination metadata */
   pagination?: {
     limit: number;

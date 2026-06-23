@@ -3,8 +3,6 @@
  */
 
 import { createHash } from "crypto";
-import { exec } from "child_process";
-import { promisify } from "util";
 import type { ExtractedErrorInfo } from "./types.js";
 
 /**
@@ -482,42 +480,6 @@ export function createProjectId(repository: string, projectName: string): string
   return `${repository}-${projectName}`;
 }
 
-
-/**
- * Open URL in default browser (cross-platform)
- * Works on macOS, Linux, and Windows
- *
- * @param url - URL to open
- * @returns Promise that resolves when browser is opened
- */
-export async function openBrowser(url: string): Promise<void> {
-  const execAsync = promisify(exec);
-
-  const platform = process.platform;
-  let command: string;
-
-  if (platform === "darwin") {
-    // macOS
-    command = `open "${url}"`;
-  } else if (platform === "linux") {
-    // Linux - try xdg-open first, then gnome-open
-    command = `xdg-open "${url}" 2>/dev/null || gnome-open "${url}" 2>/dev/null || echo "Browser not available"`;
-  } else if (platform === "win32") {
-    // Windows
-    command = `start "" "${url}"`;
-  } else {
-    console.error(`[Browser] Platform ${platform} not supported for automatic browser opening`);
-    return;
-  }
-
-  try {
-    await execAsync(command);
-    console.error(`[Browser] ✅ Opened browser with URL: ${url.substring(0, 80)}...`);
-  } catch {
-    // Silently fail - browser opening is optional
-    console.error(`[Browser] ⚠️  Could not automatically open browser. Please open manually: ${url}`);
-  }
-}
 
 /** Escape the XML special characters that matter inside an element's text content. */
 function escapeXmlText(value: string): string {

@@ -230,23 +230,6 @@ class OpenLMCPServer {
   }
 
   /**
-   * Note: Tool execution is now handled by the tool-handlers module.
-   * The handleToolCall method has been removed and replaced with the
-   * registerAllTools/executeTool pattern for better modularity.
-   */
-
-  /**
-   * REMOVED: The entire handleToolCall method with switch statement
-   * has been replaced by the tool-handlers.ts module.
-   * See registerAllTools() and executeTool() functions.
-   */
-
-  /*
-  REMOVED METHOD - The switch statement handleToolCall has been completely removed.
-  All tool handling is now done through tool-handlers.ts
-  */
-
-  /**
    * Start the MCP server
    */
   async start(): Promise<void> {
@@ -313,7 +296,7 @@ export function loadConfigFromQuery(query: Record<string, string | undefined>): 
  * variable. Populated from the binary's command-line arguments (a positional
  * `<url>` and optional auth/timeout flags) in `main()`.
  */
-export interface ServerConfigOverrides {
+interface ServerConfigOverrides {
   baseUrl?: string;
   username?: string;
   password?: string;

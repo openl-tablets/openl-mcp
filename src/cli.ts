@@ -117,7 +117,7 @@ export function classifyError(error: unknown): number {
 /**
  * Options for `runCli`. Stdio and env are injectable for testability.
  */
-export interface RunCliOptions {
+interface RunCliOptions {
   /** Args after `node script.js` (i.e. `process.argv.slice(2)`). */
   argv: string[];
   /** Environment variables. Defaults to `process.env`. */
@@ -133,7 +133,7 @@ export interface RunCliOptions {
 }
 
 /** Parsed shape of CLI arguments. */
-export interface ParsedArgs {
+interface ParsedArgs {
   toolName?: string;
   /**
    * A bareword positional that parses as an `http(s)://` URL. Tool names are

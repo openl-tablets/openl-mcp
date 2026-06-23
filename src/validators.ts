@@ -5,36 +5,6 @@
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 
 /**
- * Validate and parse project ID
- *
- * Project ID is treated as an opaque backend value.
- *
- * @param projectId - Project ID to validate
- * @returns The same projectId if valid
- * @throws McpError if format is invalid
- */
-export function validateProjectId(projectId: string): string {
-  if (typeof projectId !== "string") {
-    throw new McpError(
-      ErrorCode.InvalidParams,
-      `Invalid projectId format. Expected non-empty string, got '${projectId}'. ` +
-      `To find valid project IDs, use: openl_list_projects()`
-    );
-  }
-
-  const trimmed = projectId.trim();
-  if (!trimmed) {
-    throw new McpError(
-      ErrorCode.InvalidParams,
-      `Invalid projectId format. Expected non-empty string, got '${projectId}'. ` +
-      `To find valid project IDs, use: openl_list_projects()`
-    );
-  }
-
-  return trimmed;
-}
-
-/**
  * Validate pagination parameters
  *
  * @param limit - Maximum items per page

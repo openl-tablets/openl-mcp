@@ -9,7 +9,7 @@ import { sanitizeError } from "./utils.js";
 /**
  * Log levels
  */
-export enum LogLevel {
+enum LogLevel {
   ERROR = "ERROR",
   WARN = "WARN",
   INFO = "INFO",
@@ -19,7 +19,7 @@ export enum LogLevel {
 /**
  * Log context type
  */
-export type LogContext = Record<string, unknown>;
+type LogContext = Record<string, unknown>;
 
 /**
  * Structured logger that outputs to stderr only

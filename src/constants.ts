@@ -23,14 +23,6 @@ export const ERROR_LOCAL_REPOSITORY =
   "Use projects from a design repository connected to a remote Git.";
 
 /**
- * API endpoint paths relative to base URL
- */
-export const API_ENDPOINTS = {
-  /** List all design repositories */
-  REPOSITORIES: "/repos",
-} as const;
-
-/**
  * HTTP headers
  */
 export const HEADERS = {

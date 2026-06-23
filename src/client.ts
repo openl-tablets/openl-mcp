@@ -334,36 +334,6 @@ export class OpenLClient {
   }
 
   /**
-   * Map repository ID to repository name
-   * 
-   * @param repositoryId - Repository ID (e.g., "design-repo")
-   * @returns Repository name (e.g., "Design Repository")
-   * @throws Error if repository ID not found
-   */
-  async getRepositoryNameById(repositoryId: string): Promise<string> {
-    const repositories = await this.listRepositories();
-    const repository = repositories.find(r => r.id === repositoryId);
-    
-    if (!repository) {
-      const availableIds = repositories.map(r => r.id).join(", ");
-      throw new Error(
-        `Repository with ID "${repositoryId}" not found. ` +
-        `Available repository IDs: ${availableIds || "none"}. ` +
-        `Use openl_list_repositories() to see all available repositories.`
-      );
-    }
-    
-    return repository.name;
-  }
-
-  /**
-   * Clear repositories cache (useful after repository changes)
-   */
-  clearRepositoriesCache(): void {
-    this.repositoriesCache = null;
-  }
-
-  /**
    * List branches in a repository
    *
    * @param repository - Repository name
@@ -1020,92 +990,6 @@ export class OpenLClient {
   // =============================================================================
 
   /**
-   * Upload an Excel file with rules to a project
-   *
-   * @param projectId - Opaque project ID returned by backend.
-   * @param fileName - Name of the file to upload
-   * @param fileContent - File content as Buffer or string
-   * @param comment - Optional comment
-   * @returns Upload result
-   */
-  async uploadFile(
-    projectId: string,
-    fileName: string,
-    fileContent: Buffer | string,
-    comment?: string
-  ): Promise<Types.FileUploadResult> {
-    const projectPath = this.buildProjectPath(projectId);
-
-    // Validate file extension
-    if (!fileName.match(/\.(xlsx|xls)$/i)) {
-      return {
-        success: false,
-        fileName,
-        message: "Only Excel files (.xlsx, .xls) are supported",
-      };
-    }
-
-    // Convert to Buffer if string
-    const buffer = Buffer.isBuffer(fileContent) ? fileContent : Buffer.from(fileContent);
-
-    try {
-      // Upload file using axios with buffer
-      // IMPORTANT: Use the fileName exactly as provided - can be simple name, subdirectory path, or full path
-      // e.g., "Rules.xlsx", "rules/Premium.xlsx", or "Example 1 - Bank Rating/Bank Rating.xlsx"
-      // Encode each path segment separately to preserve directory structure (like downloadFile)
-      const encodedFileName = fileName.split('/').map(encodeURIComponent).join('/');
-      const response = await this.axiosInstance.post(
-        `${projectPath}/files/${encodedFileName}`,
-        buffer,
-        {
-          headers: {
-            "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          },
-          params: comment ? { comment } : undefined,
-        }
-      );
-
-      // Extract file metadata from response (FileData structure)
-      // Note: The file is uploaded to workspace but NOT committed to Git yet
-      const fileData = response.data || {};
-      const version = fileData.version || fileData.commitHash;
-
-      return {
-        success: true,
-        fileName,
-        commitHash: version,  // Not actually a commit hash yet - file is in workspace
-        version,
-        author: fileData.author ? {
-          name: fileData.author.name || "unknown",
-          email: fileData.author.email || ""
-        } : undefined,
-        timestamp: fileData.modifiedAt || new Date().toISOString(),
-        size: fileData.size || buffer.length,
-        message: `File uploaded successfully to workspace. Use openl_save_project to save changes to Git.`,
-      };
-    } catch (error: any) {
-      // Provide helpful error messages for common upload failures
-      if (error.response && error.response.status === 404) {
-        throw new Error(
-          `Upload failed: Invalid path "${fileName}" in project "${projectId}". ` +
-          `Ensure the project is open and the file path is valid. ` +
-          `Valid formats: simple name ('Rules.xlsx'), subdirectory ('rules/Premium.xlsx'), or full path ('Example 1 - Bank Rating/Bank Rating.xlsx'). ` +
-          `To verify project exists and is open, use: openl_get_project(projectId: "${projectId}")`
-        );
-      }
-      if (error.response && error.response.status === 409) {
-        throw new Error(
-          `Upload failed: Conflict detected for "${fileName}". ` +
-          `The file may be locked by another user or there may be uncommitted changes. ` +
-          `Try opening the project first or resolving any conflicts.`
-        );
-      }
-      // Re-throw other errors with additional context
-      throw new Error(`Upload failed for "${fileName}": ${error.message}`);
-    }
-  }
-
-  /**
    * Download an Excel file from a project
    *
    * @param projectId - Opaque project ID returned by backend.
@@ -1198,7 +1082,7 @@ export class OpenLClient {
   //
   // Thin wrappers over the "Projects: Files (BETA)" REST API
   // (/projects/{projectId}/files/{path}, /file-search, /file-copy, /file-move).
-  // Unlike the legacy uploadFile/downloadFile (Excel-only, path-guessing), these
+  // Unlike the legacy downloadFile (Excel-only, path-guessing), these
   // operate on ANY repo file by exact project-relative path and expose the raw
   // API surface (branch, version, conflictPolicy, glob/content search, copy/move).
 
@@ -2430,7 +2314,6 @@ export class OpenLClient {
   // Testing & Validation
   // =============================================================================
   // Note: runAllTests() and runTest() methods removed - endpoints don't exist in API
-  // Use executeRule() to manually test individual rules instead
 
   /**
    * Validate a project for errors
@@ -2451,202 +2334,6 @@ export class OpenLClient {
     return response.data;
   }
 
-  /**
-   * Get detailed project errors with categorization and fix suggestions
-   *
-   * @param projectId - Opaque project ID returned by backend.
-   * @param includeWarnings - Include warnings in result (default: true)
-   * @returns Detailed validation result with error categorization
-   */
-  async getProjectErrors(
-    projectId: string,
-    includeWarnings: boolean = true
-  ): Promise<Types.DetailedValidationResult> {
-    // Get validation result (handle 404 as validation unavailable)
-    let validation: Types.ValidationResult;
-    try {
-      validation = await this.validateProject(projectId);
-    } catch (error: any) {
-      // If validation endpoint returns 404 (not available), return empty result
-      if (error.response && error.response.status === 404) {
-        return {
-          valid: true,
-          errors: [],
-          warnings: [],
-          errorCount: 0,
-          warningCount: 0,
-          errorsByCategory: {
-            typeErrors: [],
-            syntaxErrors: [],
-            referenceErrors: [],
-            validationErrors: [],
-          },
-          autoFixableCount: 0,
-        };
-      }
-      // Other errors are rethrown
-      throw error;
-    }
-
-    // Categorize errors
-    const typeErrors: Types.ValidationError[] = [];
-    const syntaxErrors: Types.ValidationError[] = [];
-    const referenceErrors: Types.ValidationError[] = [];
-    const validationErrors: Types.ValidationError[] = [];
-
-    validation.errors.forEach((error) => {
-      const message = error.message.toLowerCase();
-      if (message.includes("type") || message.includes("cannot convert")) {
-        typeErrors.push(error);
-      } else if (message.includes("syntax") || message.includes("unexpected")) {
-        syntaxErrors.push(error);
-      } else if (message.includes("not found") || message.includes("reference")) {
-        referenceErrors.push(error);
-      } else {
-        validationErrors.push(error);
-      }
-    });
-
-    // Count auto-fixable errors (type conversions, simple syntax)
-    const autoFixableCount = typeErrors.length + syntaxErrors.filter(
-      (e) => e.message.includes("bracket") || e.message.includes("parenthes")
-    ).length;
-
-    return {
-      valid: validation.valid,
-      errors: validation.errors,
-      warnings: includeWarnings ? validation.warnings : [],
-      errorCount: validation.errors.length,
-      warningCount: validation.warnings.length,
-      errorsByCategory: {
-        typeErrors,
-        syntaxErrors,
-        referenceErrors,
-        validationErrors,
-      },
-      autoFixableCount,
-    };
-  }
-
-  // =============================================================================
-  // Phase 3: Versioning & Execution
-  // =============================================================================
-
-  /**
-   * Execute a rule with input data
-   *
-   * @param request - Execute rule request
-   * @returns Execution result with output data
-   */
-  async executeRule(request: Types.ExecuteRuleRequest): Promise<Types.ExecuteRuleResult> {
-    const projectPath = this.buildProjectPath(request.projectId);
-
-    try {
-      const startTime = Date.now();
-      const response = await this.axiosInstance.post(
-        `${projectPath}/rules/${encodeURIComponent(request.ruleName)}/execute`,
-        request.inputData
-      );
-      const executionTime = Date.now() - startTime;
-
-      return {
-        success: true,
-        output: response.data,
-        executionTime,
-      };
-    } catch (error: unknown) {
-      return {
-        success: false,
-        error: sanitizeError(error),
-      };
-    }
-  }
-
-  /**
-   * Compare two versions of a project
-   *
-   * @param request - Compare versions request
-   * @returns Comparison result with differences
-   */
-  async compareVersions(request: Types.CompareVersionsRequest): Promise<Types.CompareVersionsResult> {
-    const projectPath = this.buildProjectPath(request.projectId);
-
-    const response = await this.axiosInstance.get<Types.CompareVersionsResult>(
-      `${projectPath}/versions/compare`,
-      {
-        params: {
-          base: request.baseCommitHash,
-          target: request.targetCommitHash,
-        },
-      }
-    );
-
-    return response.data;
-  }
-
-  // =============================================================================
-  // Phase 4: Advanced Features
-  // =============================================================================
-
-  /**
-   * Revert project to a previous version
-   * Creates a new version with the content from the target version
-   *
-   * @param request - Revert version request
-   * @returns Revert result with new version info
-   */
-  async revertVersion(request: Types.RevertVersionRequest): Promise<Types.RevertVersionResult> {
-    const projectPath = this.buildProjectPath(request.projectId);
-
-    try {
-      // Step 1: Get the target version content
-      await this.axiosInstance.get(
-        `${projectPath}/versions/${encodeURIComponent(request.targetVersion)}`
-      );
-
-      // Step 2: Validate the project (if validation endpoint is available)
-      try {
-        const validation = await this.validateProject(request.projectId);
-
-        if (!validation.valid) {
-          return {
-            success: false,
-            message: `Project has validation errors. Fix them before reverting.`,
-            validationErrors: validation.errors,
-          };
-        }
-      } catch (error: any) {
-        // If validation endpoint returns 404 (not available), proceed with revert
-        // Other errors are rethrown
-        if (error.response && error.response.status === 404) {
-          // Validation unavailable - proceed as if validation passed
-        } else {
-          throw error;
-        }
-      }
-
-      // Step 3: Create new version with old content (revert)
-      const revertResponse = await this.axiosInstance.post(
-        `${projectPath}/revert`,
-        {
-          targetVersion: request.targetVersion,
-          comment: request.comment || `Revert to version ${request.targetVersion}`,
-        }
-      );
-
-      return {
-        success: true,
-        newVersion: revertResponse.data.version,
-        message: `Successfully reverted to version ${request.targetVersion}. New version: ${revertResponse.data.version}`,
-      };
-    } catch (error: unknown) {
-      return {
-        success: false,
-        message: `Failed to revert: ${sanitizeError(error)}`,
-      };
-    }
-  }
-
   // =============================================================================
   // Phase 2: Git Version History Methods
   // =============================================================================
@@ -2664,49 +2351,6 @@ export class OpenLClient {
     if (comment.includes("Type: ERASE")) return "ERASE";
     if (comment.includes("Type: MERGE")) return "MERGE";
     return "SAVE";
-  }
-
-  /**
-   * Get Git commit history for a specific file
-   *
-   * Note: The REST API does not expose a /files/{path}/history endpoint.
-   * This method will return a 404 error. File history may need to be accessed
-   * through project-level history or external Git tools.
-   *
-   * @param request - File history request
-   * @returns File commit history with pagination
-   * @throws Error if endpoint doesn't exist (404)
-   */
-  async getFileHistory(request: Types.GetFileHistoryRequest): Promise<Types.GetFileHistoryResult> {
-    const projectPath = this.buildProjectPath(request.projectId);
-
-    const response = await this.axiosInstance.get(
-      `${projectPath}/files/${encodeURIComponent(request.filePath)}/history`,
-      {
-        params: {
-          limit: request.limit || 50,
-          offset: request.offset || 0,
-        },
-      }
-    );
-
-    const commits = (response.data.commits && Array.isArray(response.data.commits)) 
-      ? response.data.commits.map((fileData: Types.FileData) => ({
-          commitHash: fileData.version || "",
-          author: fileData.author || { name: "unknown", email: "" },
-          timestamp: fileData.modifiedAt || new Date().toISOString(),
-          comment: fileData.comment || "",
-          commitType: this.parseCommitType(fileData.comment),
-          size: fileData.size,
-        }))
-      : [];
-
-    return {
-      filePath: request.filePath,
-      commits,
-      total: response.data.total || commits.length,
-      hasMore: (request.offset || 0) + commits.length < (response.data.total || commits.length),
-    };
   }
 
   /**

@@ -2,8 +2,6 @@
  * TypeScript types for OpenL Studio REST API
  */
 
-export type AuthMethod = "basic" | "pat";
-
 export interface OpenLConfig {
   baseUrl: string;
   // Basic Authentication
@@ -218,14 +216,6 @@ export interface SummaryTableView {
   pos: string;
 }
 
-export interface TableProperty {
-  name: string;
-  type: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  value?: any;
-  description?: string;
-}
-
 /**
  * Common fields shared by every concrete table view returned from
  * `GET /projects/{id}/tables/{tableId}` (parsed) or sent on
@@ -317,13 +307,6 @@ export interface DatatypeView extends EditableTableView {
   parentType?: string;
 }
 
-export interface SpreadsheetView extends EditableTableView {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  rows?: any[][];
-  columnNames?: string[];
-  columnTypes?: string[];
-}
-
 export interface SimpleRulesView extends EditableTableView {
   rules?: Array<{
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -341,12 +324,6 @@ export interface RepositoryInfo {
   id: string;
   /** Repository name */
   name: string;
-  // type: string;
-  // features?: {
-  //   branches?: boolean;
-  //   mappedFolders?: boolean;
-  //   searchable?: boolean;
-  // };
 }
 
 /** Repository features (from OpenAPI) */
@@ -441,31 +418,10 @@ export interface ProjectInfo {
   tags?: Record<string, string>;
 }
 
-export interface CreateProjectRequest {
-  comment?: string;
-}
-
-export interface UpdateTableRequest {
-  view: EditableTableView;
-  comment?: string;
-}
-
-export interface DeployRequest {
-  projectName: string;
-  repository: string;
-  version?: string;
-  deploymentRepository: string;
-}
-
 /** Branch create request (OpenAPI 3.0.1) */
 export interface BranchCreateRequest {
   branch: string;   // Branch name (required)
   revision?: string;    // Revision to branch from (optional)
-}
-
-export interface ProjectUpdateRequest {
-  status?: ProjectStatus;
-  comment?: string;
 }
 
 /** Project status update model (request body for PATCH /projects/{id}) */
@@ -490,9 +446,6 @@ export type ProjectSummary = ProjectViewModel;
 
 /** Full project details */
 export type Project = ProjectViewModel;
-
-/** Project history entry */
-export type ProjectHistory = ProjectHistoryItem;
 
 /** Table metadata for list operations */
 export type TableMetadata = SummaryTableView;
@@ -531,9 +484,6 @@ export interface RawTableView extends EditableTableView {
   source: RawTableCell[][];
 }
 
-/** Deployment result */
-export type DeploymentResult = DeploymentInfo;
-
 /** Filters for listing projects (OpenAPI 3.0.1) */
 export interface ProjectFilters {
   /** Repository ID */
@@ -555,26 +505,6 @@ export interface ProjectFilters {
 // =============================================================================
 // Testing & Validation Types
 // =============================================================================
-
-/** Test execution result */
-export interface TestResult {
-  testName: string;
-  status: "PASSED" | "FAILED" | "ERROR";
-  message?: string;
-  executionTime?: number;
-  failureDetails?: string;
-}
-
-/** Test suite result */
-export interface TestSuiteResult {
-  projectName: string;
-  totalTests: number;
-  passed: number;
-  failed: number;
-  errors: number;
-  executionTime: number;
-  tests: TestResult[];
-}
 
 /** Test unit execution result (from OpenAPI) */
 export interface TestUnitExecutionResult {
@@ -697,21 +627,6 @@ export interface SaveProjectResult {
   validationErrors?: ValidationError[];
 }
 
-/** File upload result */
-export interface FileUploadResult {
-  success: boolean;
-  fileName: string;
-  commitHash?: string;       // Git commit hash created by upload
-  version?: string;          // Same as commitHash
-  author?: {
-    name: string;
-    email: string;
-  };
-  timestamp?: string;        // ISO timestamp
-  size?: number;
-  message?: string;
-}
-
 /** Rule creation request */
 export interface CreateRuleRequest {
   name: string;
@@ -746,111 +661,17 @@ export interface CreateNewTableRequest {
   table: EditableTableView;
 }
 
-/** Create new project table result */
-export interface CreateProjectTableResult {
-  success: boolean;
-  tableId?: string;
-  tableName?: string;
-  tableType?: TableType;
-  file?: string;
-  message?: string;
-}
-
 // =============================================================================
 // Phase 2: Testing & Validation Types
 // =============================================================================
-
-/** Test execution request with smart selection */
-export interface RunTestRequest {
-  projectId: string;
-  /** Specific test IDs to run (optional) */
-  testIds?: string[];
-  /** Run tests related to specific tables (optional) */
-  tableIds?: string[];
-  /** Run all tests if true */
-  runAll?: boolean;
-}
-
-/** Enhanced validation result with detailed errors */
-export interface DetailedValidationResult extends ValidationResult {
-  /** Total error count */
-  errorCount: number;
-  /** Total warning count */
-  warningCount: number;
-  /** Errors grouped by category */
-  errorsByCategory?: {
-    typeErrors: ValidationError[];
-    syntaxErrors: ValidationError[];
-    referenceErrors: ValidationError[];
-    validationErrors: ValidationError[];
-  };
-  /** Auto-fixable error count */
-  autoFixableCount?: number;
-}
 
 // =============================================================================
 // Phase 3: Versioning & Execution Types
 // =============================================================================
 
-/** Execute rule request */
-export interface ExecuteRuleRequest {
-  projectId: string;
-  ruleName: string;
-  inputData: Record<string, unknown>;
-}
-
-/** Execute rule result */
-export interface ExecuteRuleResult {
-  success: boolean;
-  output?: unknown;
-  executionTime?: number;
-  error?: string;
-}
-
-/** Compare versions request */
-export interface CompareVersionsRequest {
-  projectId: string;
-  baseCommitHash: string;     // Git commit hash to compare from
-  targetCommitHash: string;   // Git commit hash to compare to
-}
-
-/** Version difference */
-export interface VersionDifference {
-  added: string[];
-  modified: string[];
-  removed: string[];
-}
-
-/** Compare versions result */
-export interface CompareVersionsResult {
-  tables: VersionDifference;
-  files: VersionDifference;
-  summary: {
-    totalChanges: number;
-    tablesAdded: number;
-    tablesModified: number;
-    tablesRemoved: number;
-  };
-}
-
 // =============================================================================
 // Phase 4: Advanced Features
 // =============================================================================
-
-/** Revert version request */
-export interface RevertVersionRequest {
-  projectId: string;
-  targetVersion: string;       // Git commit hash to revert to
-  comment?: string;
-}
-
-/** Revert version result */
-export interface RevertVersionResult {
-  success: boolean;
-  newVersion?: string;         // New Git commit hash created by revert
-  message?: string;
-  validationErrors?: ValidationError[];
-}
 
 // =============================================================================
 // Phase 2: Git Version History Types
@@ -858,32 +679,6 @@ export interface RevertVersionResult {
 
 /** Commit type from OpenL operations */
 export type CommitType = "SAVE" | "ARCHIVE" | "RESTORE" | "ERASE" | "MERGE";
-
-/** Get file history request */
-export interface GetFileHistoryRequest {
-  projectId: string;
-  filePath: string;
-  limit?: number;        // Max commits to return (default: 50)
-  offset?: number;       // Skip first N commits (for pagination)
-}
-
-/** File history commit entry */
-export interface FileHistoryCommit {
-  commitHash: string;
-  author: { name: string; email: string };
-  timestamp: string;
-  comment: string;
-  commitType: CommitType;
-  size?: number;
-}
-
-/** Get file history result */
-export interface GetFileHistoryResult {
-  filePath: string;
-  commits: FileHistoryCommit[];
-  total: number;         // Total commits available
-  hasMore: boolean;      // More commits available
-}
 
 /** Get project history request */
 export interface GetProjectHistoryRequest {
@@ -1100,24 +895,6 @@ export interface ApiFieldError {
   field?: string;
   message?: string;
   rejectedValue?: unknown;
-}
-
-/** API error response structure for 400 Bad Request */
-export interface ApiErrorResponse400 {
-  code?: string;
-  errors?: ApiErrorDetail[];
-  fields?: ApiFieldError[];
-  message?: string;
-  // Allow for additional fields that might be present
-  [key: string]: unknown;
-}
-
-/** API error response structure for 403-500 status codes */
-export interface ApiErrorResponse403_500 {
-  code?: string;
-  message?: string;
-  // Allow for additional fields that might be present
-  [key: string]: unknown;
 }
 
 /** Extracted error information from API response */

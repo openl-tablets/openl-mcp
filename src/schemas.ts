@@ -250,22 +250,6 @@ export const saveProjectSchema = z.object({
   response_format: ResponseFormat.optional(),
 }).strict();
 
-export const uploadFileSchema = z.object({
-  projectId: projectIdSchema,
-  fileName: z.string().describe("Path where the file should be uploaded in the project (.xlsx or .xls). Can be a simple filename (e.g., 'Rules.xlsx'), subdirectory path (e.g., 'rules/Premium.xlsx'), or full path (e.g., 'Example 1 - Bank Rating/Bank Rating.xlsx'). To replace an existing file, use the exact 'file' field value from list_tables()."),
-  localFilePath: z.string().describe("Absolute or workspace-relative path to local binary file to upload (.xlsx or .xls)."),
-  comment: z.string().optional().describe("Optional comment for when the file is eventually saved/committed to Git (e.g., 'Updated CA premium rates'). The upload itself does NOT create a commit - use openl_save_project to save changes."),
-  response_format: ResponseFormat.optional(),
-}).strict();
-
-export const downloadFileSchema = z.object({
-  projectId: projectIdSchema,
-  fileName: z.string().describe("Name of the Excel file to download. MUST use the exact 'file' field value from list_tables() response (e.g., 'Rules.xlsx', 'rules/Insurance.xlsx'). Do NOT construct paths manually or guess file names - always get the path from list_tables() first."),
-  version: z.string().optional().describe("Git commit hash to download specific version (e.g., '7a3f2b1c...'). Omit for latest version (HEAD)"),
-  outputFilePath: z.string().describe("Absolute or workspace-relative path where downloaded binary file should be written."),
-  response_format: ResponseFormat.optional(),
-}).strict();
-
 // -----------------------------------------------------------------------------
 // EditableTableView — discriminated union on the CASE-SENSITIVE `tableType`.
 //
@@ -483,17 +467,6 @@ export const EDITABLE_TABLE_TYPES: readonly string[] = discriminatorValues(
 );
 
 // =============================================================================
-// Phase 3: Versioning & Execution Schemas
-// =============================================================================
-
-export const executeRuleSchema = z.object({
-  projectId: projectIdSchema,
-  ruleName: z.string().describe("Name of the rule/method to execute (e.g., 'calculatePremium', 'validatePolicy'). Must match exact table name."),
-  inputData: z.record(z.string(), z.any()).describe("Input data for rule execution as JSON object with parameter names as keys (e.g., { \"driverType\": \"SAFE\", \"age\": 30, \"vehicleValue\": 25000 })"),
-  response_format: ResponseFormat.optional(),
-}).strict();
-
-// =============================================================================
 // Trace API Schemas (BETA)
 // =============================================================================
 
@@ -551,34 +524,6 @@ export const exportTraceSchema = z.object({
   ...traceWaitParams,
   response_format: ResponseFormat.optional(),
 }).strict();
-
-// =============================================================================
-// Phase 4: Advanced Features
-// =============================================================================
-
-export const revertVersionSchema = z.object({
-  projectId: projectIdSchema,
-  targetVersion: z.string().describe("Git commit hash to revert to (e.g., '7a3f2b1c...')"),
-  comment: commentSchema,
-  confirm: z.boolean().describe("Must be true to proceed with this destructive operation"),
-  response_format: ResponseFormat.optional(),
-}).strict();
-
-// =============================================================================
-// Phase 2: Git Version History Schemas
-// =============================================================================
-
-export const getFileHistorySchema = z.object({
-  projectId: projectIdSchema,
-  filePath: z.string().min(1).describe("File path within project (e.g., 'rules/Insurance.xlsx')"),
-  response_format: ResponseFormat.optional(),
-}).merge(PaginationParams).strict();
-
-export const getProjectHistorySchema = z.object({
-  projectId: projectIdSchema,
-  branch: z.string().optional().describe("Git branch name (default: current branch)"),
-  response_format: ResponseFormat.optional(),
-}).merge(PaginationParams).strict();
 
 // =============================================================================
 // Repository Features & Revisions Schemas

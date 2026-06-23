@@ -301,7 +301,7 @@ export function buildTraceStatusDestination(projectId: string, tableId: string):
  *   path), which works for single-user mode but breaks STOMP-side
  *   authorization in multi-user mode.
  */
-export function deriveWsUrl(httpBaseUrl: string): string {
+function deriveWsUrl(httpBaseUrl: string): string {
   const url = new URL(httpBaseUrl);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   // Append `/ws` to the existing path. `OpenLClient.normalizeOpenLBaseUrl`
