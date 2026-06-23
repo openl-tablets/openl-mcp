@@ -38,7 +38,7 @@ const encodeProjectPath = (id: string): string => encodeURIComponent(id);
 /**
  * Register the production resource handlers on a real MCP `Server` and return
  * the exact handler closures so tests can invoke them. The `setRequestHandler`
- * calls here are byte-for-byte what `setupSessionHandlers` in src/server.ts
+ * calls here are byte-for-byte what `registerMcpHandlers` in src/mcp-core.ts
  * registers — this is the real wiring, not a re-implementation.
  */
 function registerResourceHandlers(server: Server, client: OpenLClient) {

@@ -19,36 +19,14 @@
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
-  CallToolRequestSchema,
-  CompleteRequestSchema,
-  ListResourcesRequestSchema,
-  ListResourceTemplatesRequestSchema,
-  ListToolsRequestSchema,
-  ReadResourceRequestSchema,
-  ListPromptsRequestSchema,
-  GetPromptRequestSchema,
-  SubscribeRequestSchema,
-  UnsubscribeRequestSchema,
-  ErrorCode,
-  McpError,
-} from "@modelcontextprotocol/sdk/types.js";
 
 // Import our modular components
 import { OpenLClient } from "./client.js";
-import { SERVER_INFO, mcpToolName, stripToolPrefix } from "./constants.js";
-import { PROMPTS, loadPromptContent, getPromptDefinition } from "./prompts-registry.js";
-import { registerAllTools, getAllTools, executeTool } from "./tool-handlers.js";
-import {
-  STATIC_RESOURCES,
-  RESOURCE_TEMPLATES,
-  handleCompleteRequest,
-  handleResourceRead,
-} from "./resources-catalog.js";
-import { ResourceSubscriptionManager } from "./resource-subscriptions.js";
+import { createConfiguredServer } from "./mcp-core.js";
 import { sanitizeError } from "./utils.js";
+import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import type { ResourceSubscriptionManager } from "./resource-subscriptions.js";
 import type * as Types from "./types.js";
 
 /**
@@ -58,7 +36,6 @@ import type * as Types from "./types.js";
  */
 class OpenLMCPServer {
   private server: Server;
-  private client: OpenLClient;
   private subscriptions: ResourceSubscriptionManager;
 
   /**
@@ -67,42 +44,13 @@ class OpenLMCPServer {
    * @param config - OpenL Studio configuration
    */
   constructor(config: Types.OpenLConfig) {
-    // Initialize OpenL API client
-    this.client = new OpenLClient(config);
+    // stdio is single-session, so one configured server + subscription manager
+    // is enough; the Server's `sendResourceUpdated` is bound to the single
+    // connected stdio transport.
+    const { server, subscriptions } = createConfiguredServer(new OpenLClient(config));
+    this.server = server;
+    this.subscriptions = subscriptions;
 
-    // Initialize MCP server
-    this.server = new Server(
-      {
-        name: SERVER_INFO.NAME,
-        version: SERVER_INFO.VERSION,
-      },
-      {
-        capabilities: {
-          tools: {},
-          // Declare `subscribe: true` so clients see the resource-subscription
-          // capability and start sending resources/subscribe + receiving
-          // notifications/resources/updated for `openl://status/...` URIs.
-          resources: { subscribe: true },
-          prompts: {},
-          // Advertise `completion/complete` so clients offer inline
-          // suggestions for {projectId}/{branch} in resource templates.
-          completions: {},
-        },
-      }
-    );
-
-    // Initialize all tool handlers
-    registerAllTools(this.server, this.client);
-
-    // Per-process subscription manager — stdio is single-session, so one
-    // manager is enough. The Server's `sendResourceUpdated` is bound to the
-    // single connected stdio transport.
-    this.subscriptions = new ResourceSubscriptionManager(
-      this.client,
-      (uri) => this.server.sendResourceUpdated({ uri }),
-    );
-
-    this.setupHandlers();
     this.setupShutdownHooks();
   }
 
@@ -117,118 +65,6 @@ class OpenLMCPServer {
     };
     process.once("SIGINT", () => shutdown("SIGINT"));
     process.once("SIGTERM", () => shutdown("SIGTERM"));
-  }
-
-  /**
-   * Setup MCP request handlers
-   */
-  private setupHandlers(): void {
-    // List available tools. The registry holds bare names; the `openl_`
-    // namespace prefix is a protocol concern applied only here, on the wire.
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: getAllTools().map(({ name, title, description, inputSchema, annotations }) => ({
-        name: mcpToolName(name),
-        title,
-        description,
-        inputSchema,
-        ...(annotations && { annotations }),
-      })),
-    }));
-
-    // Handle tool execution. `extra` carries the SDK request context (progressToken,
-    // per-session sendNotification, AbortSignal) that long-running tools need.
-    // Strip the wire prefix back to the bare registry name before dispatching.
-    this.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
-      const result = await executeTool(stripToolPrefix(request.params.name), request.params.arguments, this.client, extra);
-      return result as any; // Type cast needed due to MCP SDK generic return type
-    });
-
-    // List available resources — concrete (non-parameterized) URIs only.
-    // Parameterized URIs live in `resources/templates/list` per the MCP spec
-    // (see resources-catalog.ts).
-    this.server.setRequestHandler(ListResourcesRequestSchema, async () => ({
-      resources: STATIC_RESOURCES,
-    }));
-
-    // List available resource templates — URIs with `{var}` placeholders. The
-    // client fills the variables (often with help from `completion/complete`)
-    // before issuing the resulting concrete URI to read/subscribe.
-    this.server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
-      resourceTemplates: RESOURCE_TEMPLATES,
-    }));
-
-    // Argument autocomplete for resource templates — answers "which projectIds
-    // exist?" / "which branches does this project have?" by hitting the OpenL
-    // backend. Backend errors are swallowed into the empty result so a slow
-    // studio doesn't surface as a red error in the picker.
-    this.server.setRequestHandler(CompleteRequestSchema, async (request) =>
-      handleCompleteRequest(this.client, request.params)
-    );
-
-    // Handle resource reads (shared routing lives in resources-catalog.ts)
-    this.server.setRequestHandler(ReadResourceRequestSchema, async (request) =>
-      handleResourceRead(request.params.uri, this.client)
-    );
-
-    // resources/subscribe — wire status URIs to STOMP-backed notifications.
-    // Other URIs are rejected by `ResourceSubscriptionManager.subscribe`.
-    this.server.setRequestHandler(SubscribeRequestSchema, async (request) => {
-      try {
-        await this.subscriptions.subscribe(request.params.uri);
-      } catch (err) {
-        throw new McpError(
-          ErrorCode.InvalidRequest,
-          `Failed to subscribe to ${request.params.uri}: ${sanitizeError(err)}`,
-        );
-      }
-      return {};
-    });
-
-    // resources/unsubscribe — idempotent per spec; missing URIs succeed silently.
-    this.server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
-      await this.subscriptions.unsubscribe(request.params.uri);
-      return {};
-    });
-
-    // List available prompts
-    this.server.setRequestHandler(ListPromptsRequestSchema, async () => ({
-      prompts: PROMPTS,
-    }));
-
-    // Get specific prompt with optional arguments
-    this.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-      const { name, arguments: args } = request.params;
-
-      const prompt = getPromptDefinition(name);
-      if (!prompt) {
-        throw new McpError(
-          ErrorCode.InvalidRequest,
-          `Prompt not found: ${name}`
-        );
-      }
-
-      try {
-        const content = loadPromptContent(name, args);
-
-        return {
-          description: prompt.description,
-          messages: [
-            {
-              role: "user" as const,
-              content: {
-                type: "text" as const,
-                text: content,
-              },
-            },
-          ],
-        };
-      } catch (error) {
-        throw new McpError(
-          ErrorCode.InternalError,
-          `Failed to load prompt: ${error instanceof Error ? error.message : String(error)}`
-        );
-      }
-    });
   }
 
   /**

@@ -12,38 +12,14 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { randomUUID } from 'node:crypto';
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { OpenLClient } from './client.js';
-import { ResourceSubscriptionManager } from './resource-subscriptions.js';
-import { getAllTools, executeTool, registerAllTools } from './tool-handlers.js';
-import { mcpToolName, stripToolPrefix } from './constants.js';
+import { createConfiguredServer } from './mcp-core.js';
 import { sanitizeError } from './utils.js';
 import { logger } from './logger.js';
-import type * as Types from './types.js';
 import { SERVER_INFO } from './constants.js';
-import { PROMPTS, loadPromptContent, getPromptDefinition } from './prompts-registry.js';
-import {
-  CallToolRequestSchema,
-  CompleteRequestSchema,
-  ListResourcesRequestSchema,
-  ListResourceTemplatesRequestSchema,
-  ListToolsRequestSchema,
-  ReadResourceRequestSchema,
-  ListPromptsRequestSchema,
-  GetPromptRequestSchema,
-  SubscribeRequestSchema,
-  UnsubscribeRequestSchema,
-  ErrorCode,
-  McpError,
-} from "@modelcontextprotocol/sdk/types.js";
-import {
-  STATIC_RESOURCES,
-  RESOURCE_TEMPLATES,
-  handleCompleteRequest,
-  handleResourceRead,
-} from './resources-catalog.js';
+import type * as Types from './types.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -150,137 +126,6 @@ function getClientForSession(sessionId: string, query?: Record<string, string | 
 const streamableHttpTransports: Record<string, StreamableHTTPServerTransport> = {};
 
 /**
- * Setup MCP server handlers for a session
- *
- * @param server - MCP server instance
- * @param client - OpenL client for this session
- */
-function setupSessionHandlers(
-  server: Server,
-  client: OpenLClient,
-  subscriptions: ResourceSubscriptionManager,
-): void {
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: getAllTools().map(({ name, title, description, inputSchema, annotations }) => ({
-      name: mcpToolName(name),
-      title,
-      description,
-      inputSchema,
-      ...(annotations && { annotations }),
-    })),
-  }));
-
-  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
-    const result = await executeTool(stripToolPrefix(request.params.name), request.params.arguments, client, extra);
-    return result as any;
-  });
-
-  server.setRequestHandler(ListResourcesRequestSchema, async () => ({
-    resources: STATIC_RESOURCES,
-  }));
-
-  server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
-    resourceTemplates: RESOURCE_TEMPLATES,
-  }));
-
-  server.setRequestHandler(CompleteRequestSchema, async (request) =>
-    handleCompleteRequest(client, request.params)
-  );
-
-  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-    return handleResourceRead(request.params.uri, client);
-  });
-
-  // resources/subscribe — for `openl://status/...` URIs, opens a STOMP
-  // subscription against the studio's status topic and routes inbound frames
-  // to notifications/resources/updated on this session's transport.
-  server.setRequestHandler(SubscribeRequestSchema, async (request) => {
-    try {
-      await subscriptions.subscribe(request.params.uri);
-    } catch (err) {
-      throw new McpError(
-        ErrorCode.InvalidRequest,
-        `Failed to subscribe to ${request.params.uri}: ${sanitizeError(err)}`,
-      );
-    }
-    return {};
-  });
-
-  // resources/unsubscribe — idempotent per spec.
-  server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
-    await subscriptions.unsubscribe(request.params.uri);
-    return {};
-  });
-
-  server.setRequestHandler(ListPromptsRequestSchema, async () => ({
-    prompts: PROMPTS,
-  }));
-
-  server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
-    const prompt = getPromptDefinition(name);
-    if (!prompt) {
-      throw new Error(`Prompt not found: ${name}`);
-    }
-    const content = loadPromptContent(name, args);
-    return {
-      description: prompt.description,
-      messages: [
-        {
-          role: "user" as const,
-          content: {
-            type: "text" as const,
-            text: content,
-          },
-        },
-      ],
-    };
-  });
-}
-
-/**
- * Create a new MCP server instance for a session
- *
- * @param client - OpenL client for this session
- * @returns Configured MCP server instance
- */
-function createSessionServer(client: OpenLClient): {
-  server: Server;
-  subscriptions: ResourceSubscriptionManager;
-} {
-  const sessionServer = new Server(
-    {
-      name: SERVER_INFO.NAME,
-      version: SERVER_INFO.VERSION,
-    },
-    {
-      capabilities: {
-        tools: {},
-        // `subscribe: true` enables resources/subscribe + notifications/resources/updated.
-        resources: { subscribe: true },
-        prompts: {},
-        // Per-session completion handler — backed by this session's OpenL client.
-        completions: {},
-      },
-    }
-  );
-
-  // Per-session subscription manager — owns the session's STOMP connections
-  // and dispatches doorbell notifications via this session's `Server` instance
-  // so they target only the originating transport.
-  const subscriptions = new ResourceSubscriptionManager(
-    client,
-    (uri) => sessionServer.sendResourceUpdated({ uri }),
-  );
-
-  // Register tools and setup handlers
-  registerAllTools(sessionServer, client);
-  setupSessionHandlers(sessionServer, client, subscriptions);
-
-  return { server: sessionServer, subscriptions };
-}
-
-/**
  * Parse an HTTP `Authorization` header into OpenL client config fields.
  *
  * Supports the three schemes the OpenL REST API accepts:
@@ -384,7 +229,7 @@ const handleMcpPost = async (req: Request, res: Response): Promise<Response | vo
 
       const newSessionId = randomUUID();
       const client = getClientForSession(newSessionId, configParams);
-      const { server: sessionServer, subscriptions } = createSessionServer(client);
+      const { server: sessionServer, subscriptions } = createConfiguredServer(client);
 
       transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => newSessionId,

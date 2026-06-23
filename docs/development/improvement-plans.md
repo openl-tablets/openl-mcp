@@ -80,7 +80,7 @@ Deep codebase analysis results. Plans are grouped by priority.
 
 ## Plan 3. Mutex for getClientForSession [LOW]
 
-**Problem:** Today, `getClientForSession()` in `server.ts` (line 103) is fully synchronous and runs to completion without `await`, so Node's event loop will not interleave two calls mid-function and duplicate clients for the same `sessionId` cannot be created within a single process. However, if `getClientForSession()` is later refactored to perform async work (e.g., network I/O, disk access) or is invoked across multiple workers/processes, two concurrent calls with the same `sessionId` could race, creating multiple clients and causing one to be dropped or leaked. We should future-proof this by explicitly deduplicating in-flight client creation.
+**Problem:** Today, `getClientForSession()` in `server.ts` (line 89) is fully synchronous and runs to completion without `await`, so Node's event loop will not interleave two calls mid-function and duplicate clients for the same `sessionId` cannot be created within a single process. However, if `getClientForSession()` is later refactored to perform async work (e.g., network I/O, disk access) or is invoked across multiple workers/processes, two concurrent calls with the same `sessionId` could race, creating multiple clients and causing one to be dropped or leaked. We should future-proof this by explicitly deduplicating in-flight client creation.
 
 **Affected files:**
 - `src/server.ts`
@@ -153,7 +153,7 @@ Deep codebase analysis results. Plans are grouped by priority.
 
 4. `src/handlers/index.ts` calls all `register*` functions.
 
-5. Update imports in `index.ts` and `server.ts`.
+5. Update imports in `mcp-core.ts` (which registers the tool handlers for both transports).
 
 6. Ensure all existing tests pass without changes.
 
@@ -237,37 +237,9 @@ Deep codebase analysis results. Plans are grouped by priority.
 
 ---
 
-## Plan 9. Extract Shared Code from index.ts and server.ts [MEDIUM]
+## Plan 9. Extract Shared Code from index.ts and http-server.ts [MEDIUM] — ✅ DONE
 
-**Problem:** `index.ts` and `server.ts` contain duplicated logic: MCP server initialization, tool registration, resource handling, and prompt handlers. Changes must be made in both files.
-
-**Affected files:**
-- `src/index.ts`
-- `src/server.ts`
-- New file `src/mcp-setup.ts`
-
-**Implementation steps:**
-
-1. Create `src/mcp-setup.ts` with a shared function:
-   ```typescript
-   export function setupMCPHandlers(server: Server, client: OpenLClient): void {
-     // Register tool handlers
-     // Register resource handlers
-     // Register prompt handlers
-   }
-   ```
-
-2. Extract shared functions:
-   - `loadConfigFromEnv()` — load configuration from environment
-   - `setupToolHandlers()` — register tools
-   - `setupResourceHandlers()` — register resources
-   - `setupPromptHandlers()` — register prompts
-
-3. In `index.ts` and `server.ts`, call `setupMCPHandlers()`.
-
-4. Ensure all tests pass.
-
-**Done criteria:** Shared logic lives in one place, changes are made once.
+**Outcome:** The duplicated MCP wiring was extracted into `src/mcp-core.ts`. `createConfiguredServer(client)` builds a fully-configured `Server` — capabilities declared, tools registered, and every request handler wired via `registerMcpHandlers()` — and returns it together with its `ResourceSubscriptionManager`. Both entry points now build their server from it: `index.ts` attaches a stdio transport, and `server.ts` attaches a Streamable HTTP transport per session, so the MCP surface (tools, resources, prompts, completion, subscriptions) is defined once and the two transports can't drift. (The shared module landed as `mcp-core.ts` rather than the originally-proposed `mcp-setup.ts`; `loadConfigFromEnv()` stayed in `index.ts` since it is specific to the stdio launch.)
 
 ---
 
@@ -320,7 +292,7 @@ Deep codebase analysis results. Plans are grouped by priority.
 - `src/client.ts` — new method to fetch Studio version
 - `src/tool-handlers.ts` — add `minStudioVersion` to ToolDefinition, filter logic
 - `src/constants.ts` — version constants
-- `src/index.ts`, `src/server.ts` — pass version to tool listing
+- `src/mcp-core.ts` — pass version to the shared `tools/list` handler
 
 **Implementation steps:**
 
@@ -412,9 +384,9 @@ Deep codebase analysis results. Plans are grouped by priority.
 | 6 | Replace `any` with types | Medium | Medium | formatters.ts, client.ts, mcp-proxy.ts, types.ts | Planned |
 | 7 | Rate limiting | Medium | Low | server.ts, package.json | Planned |
 | 8 | Prompt caching | Medium | Low | prompts-registry.ts | ✅ Done |
-| 9 | Extract shared code | Medium | Medium | index.ts, server.ts, new mcp-setup.ts | Planned |
+| 9 | Extract shared code | Medium | Medium | mcp-core.ts | ✅ Done |
 | 10 | Structured logging | Low | High | logger.ts, all files | Planned |
 | 11 | Remove dead tools.ts, sync descriptions | Medium | Low | tools.ts (deleted), tool-handlers.ts | ✅ Done |
-| 12 | Version-aware tool availability | High | Medium | client.ts, tool-handlers.ts, constants.ts, index.ts, server.ts | Planned |
+| 12 | Version-aware tool availability | High | Medium | client.ts, tool-handlers.ts, constants.ts, mcp-core.ts | Planned |
 
-**Recommended order:** 1 → 2 → 12 → 4 → 9 → 5 → 7 → 6 → 3 → 10  (Plans 8, and 11 already complete)
+**Recommended order:** 1 → 2 → 12 → 4 → 5 → 7 → 6 → 3 → 10  (Plans 8, 9, and 11 already complete)
