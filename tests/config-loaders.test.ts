@@ -32,16 +32,23 @@ describe("loadConfigFromQuery (HTTP SSE transport)", () => {
     ).toThrow(/Invalid OPENL_TIMEOUT/);
   });
 
-  it("throws when no authentication method is provided", () => {
-    expect(() => loadConfigFromQuery({ OPENL_BASE_URL: "http://localhost:8080" })).toThrow(
-      /authentication method/i,
-    );
+  it("returns an unauthenticated config when no auth method is provided (single-user mode)", () => {
+    const cfg = loadConfigFromQuery({ OPENL_BASE_URL: "http://localhost:8080" });
+    expect(cfg).toMatchObject({ baseUrl: "http://localhost:8080" });
+    expect(cfg?.username).toBeUndefined();
+    expect(cfg?.password).toBeUndefined();
+    expect(cfg?.personalAccessToken).toBeUndefined();
   });
 
-  it("throws when username is given without password (incomplete Basic Auth)", () => {
-    expect(() =>
-      loadConfigFromQuery({ OPENL_BASE_URL: "http://localhost:8080", OPENL_USERNAME: "u" }),
-    ).toThrow(/authentication method/i);
+  it("returns a config and warns when only one half of Basic Auth is set", () => {
+    const errSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const cfg = loadConfigFromQuery({ OPENL_BASE_URL: "http://localhost:8080", OPENL_USERNAME: "u" });
+      expect(cfg).toMatchObject({ baseUrl: "http://localhost:8080", username: "u" });
+      expect(errSpy).toHaveBeenCalledWith(expect.stringMatching(/Incomplete Basic Auth/i));
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 
   it("accepts a Personal Access Token", () => {
@@ -118,9 +125,22 @@ describe("loadConfigFromEnv (stdio MCP transport)", () => {
     await expect(loadConfigFromEnv()).rejects.toThrow(/Invalid OPENL_TIMEOUT/);
   });
 
-  it("throws when no authentication method is configured", async () => {
+  it("resolves with no auth (single-user mode)", async () => {
     process.env.OPENL_BASE_URL = "http://localhost:8080";
-    await expect(loadConfigFromEnv()).rejects.toThrow(/authentication method/i);
+    const cfg = await loadConfigFromEnv();
+    expect(cfg).toMatchObject({ baseUrl: "http://localhost:8080" });
+    expect(cfg.username).toBeUndefined();
+    expect(cfg.password).toBeUndefined();
+    expect(cfg.personalAccessToken).toBeUndefined();
+    expect(errSpy).toHaveBeenCalledWith(expect.stringMatching(/No authentication configured/i));
+  });
+
+  it("resolves and warns when only one half of Basic Auth is set", async () => {
+    process.env.OPENL_BASE_URL = "http://localhost:8080";
+    process.env.OPENL_USERNAME = "u";
+    const cfg = await loadConfigFromEnv();
+    expect(cfg).toMatchObject({ baseUrl: "http://localhost:8080", username: "u" });
+    expect(errSpy).toHaveBeenCalledWith(expect.stringMatching(/Incomplete Basic Auth/i));
   });
 
   it("resolves with a PAT", async () => {

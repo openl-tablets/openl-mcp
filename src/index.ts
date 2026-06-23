@@ -290,12 +290,14 @@ export function loadConfigFromQuery(query: Record<string, string | undefined>): 
     timeout,
   };
 
-  // Validate at least one authentication method is configured
-  // Require either both username and password (Basic Auth) or Personal Access Token
-  if (!((config.username && config.password) || config.personalAccessToken)) {
-    throw new Error(
-      "At least one authentication method must be configured " +
-        "(both username and password for Basic Auth, or Personal Access Token)"
+  // Authentication is optional: OpenL Studio in single-user mode accepts
+  // unauthenticated requests. Warn when partial Basic Auth is given (username
+  // without password, or vice versa) — that is almost certainly a misconfig.
+  const hasPat = !!config.personalAccessToken;
+  const hasBasic = !!(config.username && config.password);
+  if (!hasPat && !hasBasic && (config.username || config.password)) {
+    console.error(
+      "[Config] ⚠️  Incomplete Basic Auth (only one of OPENL_USERNAME/OPENL_PASSWORD set) — sending no Authorization header"
     );
   }
 
@@ -345,24 +347,20 @@ export async function loadConfigFromEnv(): Promise<Types.OpenLConfig> {
     timeout,
   };
 
-  // Log authentication configuration (without sensitive data)
+  // Authentication is optional: OpenL Studio in single-user mode accepts
+  // unauthenticated requests. Report what was found; warn (don't fail) on
+  // partial Basic Auth so a typo in OPENL_USERNAME/OPENL_PASSWORD is visible.
+  const hasPat = !!config.personalAccessToken;
+  const hasBasic = !!(config.username && config.password);
   console.error(`[Config] Authentication methods:`);
-  console.error(`[Config]   - Personal Access Token: ${!!config.personalAccessToken ? 'configured (hidden)' : 'not configured'}`);
-  console.error(`[Config]   - Basic Auth: ${!!config.username && !!config.password ? `configured (username: ${config.username}, password: hidden)` : 'not configured'}`);
-  if (!config.username) {
-    console.error(`[Config]   ⚠️  OPENL_USERNAME is not set`);
-  }
-  if (!config.password) {
-    console.error(`[Config]   ⚠️  OPENL_PASSWORD is not set`);
-  }
-
-  // Validate at least one authentication method is configured
-  // Require either both username and password (Basic Auth) or Personal Access Token
-  if (!((config.username && config.password) || config.personalAccessToken)) {
-    throw new Error(
-      "At least one authentication method must be configured " +
-        "(both username and password for Basic Auth, or Personal Access Token)"
-    );
+  console.error(`[Config]   - Personal Access Token: ${hasPat ? 'configured (hidden)' : 'not configured'}`);
+  console.error(`[Config]   - Basic Auth: ${hasBasic ? `configured (username: ${config.username}, password: hidden)` : 'not configured'}`);
+  if (!hasPat && !hasBasic) {
+    if (config.username || config.password) {
+      console.error(`[Config]   ⚠️  Incomplete Basic Auth — sending no Authorization header (set both OPENL_USERNAME and OPENL_PASSWORD, or use OPENL_PERSONAL_ACCESS_TOKEN)`);
+    } else {
+      console.error(`[Config]   ℹ️  No authentication configured — requests will be sent without an Authorization header (OpenL Studio single-user mode)`);
+    }
   }
 
   return config;
