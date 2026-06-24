@@ -60,7 +60,7 @@ function makeFakeStomp(): FakeStomp {
 function makeClient(overrides: Partial<{ cookie: string | null; auth: string | undefined }> = {}): OpenLClient {
   return {
     getSessionCookie: () => (overrides.cookie === undefined ? "abc123" : overrides.cookie),
-    getAuthorizationHeader: () => (overrides.auth === undefined ? "Basic dXNlcjpwd2Q=" : overrides.auth),
+    getAuthorizationHeader: () => (overrides.auth === undefined ? "Token openl_pat_test" : overrides.auth),
     getBaseUrl: () => "http://localhost:8080/rest",
   } as unknown as OpenLClient;
 }

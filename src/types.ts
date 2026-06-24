@@ -4,9 +4,6 @@
 
 export interface OpenLConfig {
   baseUrl: string;
-  // Basic Authentication
-  username?: string;
-  password?: string;
   // Personal Access Token Authentication
   personalAccessToken?: string;
   // Request timeout in milliseconds

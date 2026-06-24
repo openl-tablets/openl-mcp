@@ -24,8 +24,7 @@ describe("Tool Handler Integration Tests", () => {
   beforeAll(() => {
     const config: OpenLConfig = {
       baseUrl: "http://localhost:8080",
-      username: "admin",
-      password: "admin",
+      personalAccessToken: "openl_pat_test",
     };
 
     client = new OpenLClient(config);
@@ -2102,8 +2101,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
   beforeAll(() => {
     const config: OpenLConfig = {
       baseUrl: "http://localhost:8080",
-      username: "admin",
-      password: "admin",
+      personalAccessToken: "openl_pat_test",
     };
 
     client = new OpenLClient(config);

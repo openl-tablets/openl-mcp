@@ -232,7 +232,7 @@ DELETE /mcp   — terminate a session
 
 All requests except `initialize` must carry the `mcp-session-id` header returned
 by the `initialize` response. Authentication is supplied per session via the
-`Authorization` header (`Token`/`Bearer <PAT>` or `Basic <base64 user:pass>`);
+`Authorization` header (`Token`/`Bearer <PAT>`);
 the base URL always comes from the server's `OPENL_BASE_URL`.
 
 A minimal handshake with `curl`:

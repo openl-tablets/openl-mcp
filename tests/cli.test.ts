@@ -53,8 +53,7 @@ function createHarness(stdinText = "") {
 function createMockClient(): { client: OpenLClient; mock: MockAdapter } {
   const config: OpenLConfig = {
     baseUrl: "http://localhost:8080",
-    username: "admin",
-    password: "admin",
+    personalAccessToken: "openl_pat_test",
   };
   const client = new OpenLClient(config);
   // @ts-ignore Access private axios instance for mocking, mirrors tests/integration/tool-handlers.test.ts
@@ -64,8 +63,7 @@ function createMockClient(): { client: OpenLClient; mock: MockAdapter } {
 
 const ENV_OK = {
   OPENL_BASE_URL: "http://localhost:8080",
-  OPENL_USERNAME: "admin",
-  OPENL_PASSWORD: "admin",
+  OPENL_PERSONAL_ACCESS_TOKEN: "openl_pat_test",
 };
 
 describe("CLI", () => {
@@ -237,10 +235,8 @@ describe("CLI", () => {
           "list_repositories",
           "--base-url",
           "http://localhost:8080",
-          "--user",
-          "admin",
-          "--password",
-          "admin",
+          "--token",
+          "openl_pat_test",
         ],
         env: {}, // no env config — overrides should fill in
         stdin: h.stdin,
@@ -727,7 +723,7 @@ describe("CLI", () => {
       const h = createHarness();
       const code = await runCli({
         argv: ["list_repositories", "{}", "--base-url", "not-a-url"],
-        env: { OPENL_USERNAME: "admin", OPENL_PASSWORD: "admin" },
+        env: { OPENL_PERSONAL_ACCESS_TOKEN: "openl_pat_test" },
         stdin: h.stdin,
         stdout: h.stdout,
         stderr: h.stderr,
@@ -1015,7 +1011,7 @@ describe("CLI", () => {
       expect(isCliInvocation(parseArgs([]))).toBe(false);
       expect(isCliInvocation(parseArgs(["http://localhost:8080"]))).toBe(false);
       // URL + server flags, still no tool → server launch
-      expect(isCliInvocation(parseArgs(["http://localhost:8080", "--user", "u", "--password", "p"]))).toBe(false);
+      expect(isCliInvocation(parseArgs(["http://localhost:8080", "--token", "t"]))).toBe(false);
       // anything tool-ish → CLI
       expect(isCliInvocation(parseArgs(["list_repositories"]))).toBe(true);
       expect(isCliInvocation(parseArgs(["http://localhost:8080", "list_repositories"]))).toBe(true);

@@ -23,8 +23,7 @@ import {
  * ```typescript
  * const client = new OpenLClient({
  *   baseUrl: "http://localhost:8080",
- *   username: "admin",
- *   password: "admin"
+ *   personalAccessToken: "openl_pat_…"
  * });
  *
  * const projects = await client.listProjects();

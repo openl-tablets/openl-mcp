@@ -44,8 +44,7 @@ cd <path-to-project>
 
 # Set environment variables
 export OPENL_BASE_URL="http://localhost:8080"
-export OPENL_USERNAME="admin"
-export OPENL_PASSWORD="admin"
+export OPENL_PERSONAL_ACCESS_TOKEN="openl_pat_your-token"  # optional
 # Run the server
 node dist/index.js
 ```
@@ -128,8 +127,7 @@ If OpenL is running, you'll get JSON with repositories.
 cd <path-to-project>
 
 # Auth is optional; set it from your configuration if your server requires it
-export OPENL_USERNAME="admin"
-export OPENL_PASSWORD="admin"
+export OPENL_PERSONAL_ACCESS_TOKEN="openl_pat_your-token"
 # Run the server — base URL as a positional argument
 node dist/index.js http://localhost:8080
 # (or set OPENL_BASE_URL instead of passing it positionally)
@@ -139,9 +137,8 @@ You should see initialization logs:
 ```
 [Config] Resolving configuration (positional <url> / flags / environment)...
 [Config] NOTE: This is for stdio transport. Auth credentials may come from MCP client config or CLI flags.
-[Config] Authentication methods:
-[Config]   - Personal Access Token: not configured
-[Config]   - Basic Auth: configured (username: admin, password: hidden)
+[Config] Authentication:
+[Config]   - Personal Access Token: configured (hidden)
 ```
 
 If the server starts without errors, everything is working correctly.
@@ -221,8 +218,8 @@ Then open `debug.log` to view all errors.
 ### Issue: "Authentication failed"
 
 **Solution:**
-1. Check credentials (`OPENL_USERNAME`, `OPENL_PASSWORD`)
-2. Try logging into OpenL via browser with the same credentials
+1. Check the token (`OPENL_PERSONAL_ACCESS_TOKEN`) is correct and not expired
+2. Confirm the token starts with `openl_pat_`
 3. Ensure user has necessary permissions
 
 ### Issue: Tools don't work in chat
@@ -399,7 +396,7 @@ If you still see timeouts, check:
 1. Check configuration file for your AI client
 2. Ensure all required variables are set:
    - `OPENL_BASE_URL` (required)
-   - At least one authentication method (username/password, API key, or OAuth2)
+   - `OPENL_PERSONAL_ACCESS_TOKEN` (optional — omit for single-user mode)
 3. Restart your AI client after changing configuration
 
 ---

@@ -24,7 +24,7 @@ This document outlines all the best practices implemented in the OpenL MCP Serve
 - `http-server.ts` - HTTP server (Streamable HTTP transport at `/mcp`)
 - `mcp-core.ts` - Shared MCP server core (capabilities, tool/resource/prompt handlers) built once for both transports
 - `client.ts` - OpenL Studio API client
-- `auth.ts` - Authentication (Basic Auth, PAT)
+- `auth.ts` - Authentication (Personal Access Token)
 - `tool-handlers.ts` - Tool definitions, schemas, and execution handlers
 - `schemas.ts` - Input validation schemas
 - `types.ts` - Type definitions
@@ -114,8 +114,8 @@ All tools have Zod schemas with:
 - Safe defaults on invalid input
 
 **Configuration validation**:
-- At least one auth method required (Basic Auth or PAT)
-- Complete authentication config enforced
+- Personal Access Token is optional (single-user mode sends no Authorization header)
+- The CLI requires a token unless `--anonymous` is passed
 
 ### Circular Reference Protection ✓
 
@@ -187,7 +187,7 @@ npm run test:coverage # With coverage
 
 **Usage Guides:**
 - **[Usage Examples](../guides/examples.md)** - Real-world usage examples
-- **[Authentication Guide](../guides/authentication.md)** - Authentication setup (Basic Auth, PAT)
+- **[Authentication Guide](../guides/authentication.md)** - Authentication setup (Personal Access Token)
 - **[Troubleshooting Guide](../guides/troubleshooting.md)** - Common issues and solutions
 - **[Debug PAT Guide](../guides/debug-pat.md)** - Personal Access Token debugging
 

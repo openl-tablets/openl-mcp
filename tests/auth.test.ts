@@ -23,29 +23,11 @@ describe("AuthenticationManager", () => {
     mockAxios.restore();
   });
 
-  describe("Basic Authentication", () => {
-    it("should add Basic auth header when username/password provided", async () => {
+  describe("Personal Access Token", () => {
+    it("should send the PAT verbatim in the `Token` scheme (not Bearer, not Base64)", async () => {
       const config: OpenLConfig = {
         baseUrl: "http://localhost:8080",
-        username: "admin",
-        password: "admin",
-      };
-
-      const auth = new AuthenticationManager(config);
-      auth.setupInterceptors(axiosInstance);
-
-      mockAxios.onGet("/test").reply(200, { success: true });
-
-      const response = await axiosInstance.get("/test");
-
-      expect(response.config.headers?.Authorization).toMatch(/^Basic /);
-    });
-
-    it("should encode credentials correctly", async () => {
-      const config: OpenLConfig = {
-        baseUrl: "http://localhost:8080",
-        username: "testuser",
-        password: "testpass123",
+        personalAccessToken: "openl_pat_public.secret",
       };
 
       const auth = new AuthenticationManager(config);
@@ -53,28 +35,7 @@ describe("AuthenticationManager", () => {
 
       mockAxios.onGet("/test").reply((config) => {
         const authHeader = config.headers?.Authorization as string;
-        const expectedToken = Buffer.from("testuser:testpass123").toString("base64");
-        expect(authHeader).toBe(`Basic ${expectedToken}`);
-        return [200, {}];
-      });
-
-      await axiosInstance.get("/test");
-    });
-
-    it("should handle special characters in password", async () => {
-      const config: OpenLConfig = {
-        baseUrl: "http://localhost:8080",
-        username: "admin",
-        password: "p@ssw0rd!#$%",
-      };
-
-      const auth = new AuthenticationManager(config);
-      auth.setupInterceptors(axiosInstance);
-
-      mockAxios.onGet("/test").reply((config) => {
-        const authHeader = config.headers?.Authorization as string;
-        expect(authHeader).toMatch(/^Basic /);
-        expect(authHeader.length).toBeGreaterThan(10);
+        expect(authHeader).toBe("Token openl_pat_public.secret");
         return [200, {}];
       });
 
@@ -87,8 +48,7 @@ describe("AuthenticationManager", () => {
     it("should handle network errors", async () => {
       const config: OpenLConfig = {
         baseUrl: "http://localhost:8080",
-        username: "admin",
-        password: "admin",
+        personalAccessToken: "openl_pat_public.secret",
       };
 
       const auth = new AuthenticationManager(config);
@@ -120,18 +80,16 @@ describe("AuthenticationManager", () => {
   });
 
   describe("Edge Cases", () => {
-    it("should handle empty username/password", async () => {
+    it("should treat an empty PAT as no auth (falsy → no Authorization header)", async () => {
       const config: OpenLConfig = {
         baseUrl: "http://localhost:8080",
-        username: "",
-        password: "",
+        personalAccessToken: "",
       };
 
       const auth = new AuthenticationManager(config);
       auth.setupInterceptors(axiosInstance);
 
-      // Empty strings are falsy, so Basic Auth won't be added
-      // This is expected behavior - empty credentials are treated as no auth
+      // An empty string is falsy, so no Authorization header is added.
       mockAxios.onGet("/test").reply((config) => {
         const authHeader = config.headers?.Authorization;
         expect(authHeader).toBeUndefined();

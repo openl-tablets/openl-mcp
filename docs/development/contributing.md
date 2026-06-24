@@ -37,7 +37,7 @@ src/
 ├── http-server.ts       # HTTP server (Streamable HTTP transport at /mcp)
 ├── mcp-core.ts          # Shared MCP core (handlers) for both transports
 ├── client.ts            # OpenL Studio API client
-├── auth.ts              # Authentication (Basic Auth, PAT)
+├── auth.ts              # Authentication (Personal Access Token)
 ├── tool-handlers.ts     # Tool registration and handlers
 ├── tools.ts             # Tool metadata definitions
 ├── schemas.ts           # Zod validation schemas

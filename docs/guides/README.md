@@ -5,7 +5,7 @@ Practical guides for using the OpenL MCP Server.
 ## Available Guides
 
 - **[Usage Examples](examples.md)** - Practical examples of using MCP tools
-- **[Authentication Guide](authentication.md)** - All authentication methods (Basic Auth, Personal Access Token)
+- **[Authentication Guide](authentication.md)** - Personal Access Token authentication
 - **[Troubleshooting Guide](troubleshooting.md)** - Common issues, debugging, and solutions
 - **[Debug PAT](debug-pat.md)** - Debugging Personal Access Token issues
 

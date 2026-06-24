@@ -80,7 +80,7 @@ function makeClient(
     }),
     getBaseUrl: () => "http://localhost:8080/rest",
     getSessionCookie: () => cookie,
-    getAuthorizationHeader: () => "Basic YWRtaW46YWRtaW4=",
+    getAuthorizationHeader: () => "Token openl_pat_test",
   } as unknown as OpenLClient;
 }
 

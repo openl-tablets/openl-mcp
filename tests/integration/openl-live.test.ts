@@ -6,8 +6,7 @@
  *
  * Configuration via environment variables:
  * - OPENL_BASE_URL: OpenL Studio API base URL (default: http://localhost:8080)
- * - OPENL_USERNAME: Username (default: admin)
- * - OPENL_PASSWORD: Password (default: admin)
+ * - OPENL_PERSONAL_ACCESS_TOKEN: Personal Access Token (optional; omit for single-user mode)
  * - SKIP_LIVE_TESTS: Set to 'true' to skip these tests (default in CI)
  */
 
@@ -28,8 +27,7 @@ describeIntegration('OpenL Studio 6.0.0 Live Integration Tests', () => {
   beforeAll(() => {
     const config: Types.OpenLConfig = {
       baseUrl: process.env.OPENL_BASE_URL || 'http://localhost:8080',
-      username: process.env.OPENL_USERNAME || 'admin',
-      password: process.env.OPENL_PASSWORD || 'admin',
+      personalAccessToken: process.env.OPENL_PERSONAL_ACCESS_TOKEN,
       timeout: 30000,
     };
 

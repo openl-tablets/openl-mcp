@@ -151,9 +151,7 @@ The CLI reads configuration from environment variables. Every variable has a mat
 | Env var | Flag | Required | Default | Notes |
 |---|---|---|---|---|
 | `OPENL_BASE_URL` | positional `<url>` or `--base-url <url>` | yes | — | OpenL Studio root URL, e.g. `http://localhost:8080` |
-| `OPENL_PERSONAL_ACCESS_TOKEN` | `--token <pat>` | one of two auth modes | — | PAT starting with `openl_pat_` |
-| `OPENL_USERNAME` | `--user <name>` | with `--password` | — | Basic auth username |
-| `OPENL_PASSWORD` | `--password <pwd>` | with `--user` | — | Basic auth password |
+| `OPENL_PERSONAL_ACCESS_TOKEN` | `--token <pat>` | unless `--anonymous` | — | PAT starting with `openl_pat_` |
 | `OPENL_TIMEOUT` | `--timeout <ms>` | no | `30000` | Per-request HTTP timeout |
 | `OPENL_CLIENT_DOCUMENT_ID` | `--client-document-id <id>` | no | — | Request tracking header (audit) |
 | — | `--cookie-jar <path>` | no | — | Persist JSESSIONID between calls (trace) |
@@ -165,9 +163,9 @@ Precedence: **CLI flag > environment variable > default**. The base URL is speci
 
 ## Authentication
 
-The OpenL Studio API supports two methods; the CLI accepts either.
+The CLI authenticates with a Personal Access Token.
 
-### Personal Access Token (recommended)
+### Personal Access Token
 
 ```bash
 # Via env
@@ -180,18 +178,7 @@ npx -y openl-mcp-server list_repositories --token <your-token>
 
 Generate a PAT in OpenL Studio under **User Settings → Personal Access Tokens**.
 
-### Basic Auth
-
-```bash
-# Via env
-OPENL_USERNAME=<your-username> OPENL_PASSWORD=<your-password> \
-  npx -y openl-mcp-server list_repositories
-
-# Via flag
-npx -y openl-mcp-server list_repositories --user <your-username> --password <your-password>
-```
-
-> **Security note.** When you pass `--password` or `--token` on the command line, the value is visible in process listings (`ps aux`). Prefer env vars for shared/multi-user hosts.
+> **Security note.** When you pass `--token` on the command line, the value is visible in process listings (`ps aux`). Prefer env vars for shared/multi-user hosts.
 
 ### Anonymous access (`--anonymous`)
 
@@ -209,12 +196,11 @@ OPENL_BASE_URL=https://studio.example.com \
 
 ### Validation
 
-If no auth method is configured (and `--anonymous` is not passed), the CLI fails fast with a clear message before making any HTTP request:
+If no token is configured (and `--anonymous` is not passed), the CLI fails fast with a clear message before making any HTTP request:
 
 ```text
-Error: Authentication required: set OPENL_PERSONAL_ACCESS_TOKEN (or --token),
-or both OPENL_USERNAME/OPENL_PASSWORD (or --user/--password). Pass --anonymous
-if the server allows unauthenticated access.
+Error: Authentication required: set OPENL_PERSONAL_ACCESS_TOKEN (or --token).
+Pass --anonymous if the server allows unauthenticated access.
 ```
 
 ---
@@ -512,7 +498,7 @@ The `--stdin` flag is the most portable option for piping payloads.
 
 ## Security
 
-- **Credentials in process listings.** Avoid `--password` / `--token` on the CLI on shared hosts where other users can run `ps aux`. Prefer env vars or env files.
+- **Credentials in process listings.** Avoid `--token` on the CLI on shared hosts where other users can run `ps aux`. Prefer env vars or env files.
 - **Cookie jar is sensitive.** It contains a server session identifier; `0600` perms are applied automatically but don't share the file or commit it.
 - **Logs.** The CLI writes only sanitized errors to stderr — credentials and PATs are redacted by [`sanitizeError`](src/utils.ts). The chatty `[Auth]` informational lines from MCP mode are suppressed in CLI mode via `OPENL_CLI_QUIET=1` (set automatically; you don't need to touch it).
 - **CI/CD.** Use your platform's secret store (GitHub Actions secrets, GitLab variables, etc.) and inject as env vars at job runtime. Don't commit `.env` files.
@@ -527,7 +513,7 @@ Set the env var or pass `--base-url`. `--help` and `--list-tools` don't require 
 
 ### `Error: Authentication required …`
 
-Set either `OPENL_PERSONAL_ACCESS_TOKEN` (or `--token`) or both `OPENL_USERNAME`/`OPENL_PASSWORD` (or `--user`/`--password`). If your server permits unauthenticated access, pass `--anonymous` to skip the credential requirement — see [Anonymous access](#anonymous-access---anonymous).
+Set `OPENL_PERSONAL_ACCESS_TOKEN` (or `--token`). If your server permits unauthenticated access, pass `--anonymous` to skip the credential requirement — see [Anonymous access](#anonymous-access---anonymous).
 
 ### `Error: Failed to parse tool arguments as JSON: …`
 

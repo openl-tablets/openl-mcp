@@ -65,8 +65,7 @@ describe("Resource layer integration", () => {
   beforeAll(() => {
     const config: OpenLConfig = {
       baseUrl: "http://localhost:8080",
-      username: "admin",
-      password: "admin",
+      personalAccessToken: "openl_pat_test",
     };
 
     client = new OpenLClient(config);

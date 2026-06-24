@@ -47,7 +47,7 @@ export interface SubscribeProjectStatusOpts {
   cookieHeader: string;
   /**
    * Optional `Authorization` header value to attach to the WS upgrade
-   * request (e.g. `"Basic YWRtaW46YWRtaW4="` or `"Token openl_pat_…"`).
+   * request (e.g. `"Token openl_pat_…"`).
    * When present, the studio's REST filter chain authenticates the upgrade
    * the same way it authenticates every `/rest/*` request — the resulting
    * principal propagates to the WS session via Spring's

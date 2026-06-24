@@ -32,9 +32,9 @@ Tracks items identified in the `EPBDS-16027` CLI audit (May 2026) that were **no
 
 ---
 
-## 🟡 P1.7 — `--token-stdin` / `--password-stdin` for secret-safer input
+## 🟡 P1.7 — `--token-stdin` for secret-safer input
 
-**Problem.** Passing secrets through `--token <pat>` or `--password <pwd>` exposes them in the OS process listing (`ps aux`, `/proc/<pid>/cmdline`), shell history, and process accounting logs. Documented in [README.cli.md → Security](../../README.cli.md#security), but documentation alone is a weak mitigation — the secure path doesn't exist yet.
+**Problem.** Passing the secret through `--token <pat>` exposes it in the OS process listing (`ps aux`, `/proc/<pid>/cmdline`), shell history, and process accounting logs. Documented in [README.cli.md → Security](../../README.cli.md#security), but documentation alone is a weak mitigation — the secure path doesn't exist yet.
 
 **Best practice.** Industry convention (`docker login --password-stdin`, `gh auth login --with-token`) is to accept the secret via a dedicated stdin flag, which sidesteps the argv leak.
 
@@ -43,9 +43,9 @@ Tracks items identified in the `EPBDS-16027` CLI audit (May 2026) that were **no
 - [`docker login --password-stdin` docs](https://docs.docker.com/engine/reference/commandline/login/#provide-a-password-using-stdin)
 
 **Sketch.**
-- Add flags `--token-stdin`, `--password-stdin` (mutually exclusive with the value-bearing form and with each other and with `--stdin` for tool args; *but* compatible with `--stdin` if we route tool args through `@file.json`).
+- Add flag `--token-stdin` (mutually exclusive with the value-bearing `--token <pat>` form and with `--stdin` for tool args; *but* compatible with `--stdin` if we route tool args through `@file.json`).
 - Read one line from `process.stdin` until newline/EOF, trim, set as the override.
-- Update README to mark `--token` / `--password` as "OK for env-driven hosts; for shared/multi-user systems prefer `--token-stdin`."
+- Update README to mark `--token` as "OK for env-driven hosts; for shared/multi-user systems prefer `--token-stdin`."
 
 **Estimate.** ~40 lines + 3 tests (incl. EOF without newline). **~1.5 hours.**
 
@@ -86,7 +86,7 @@ Tracks items identified in the `EPBDS-16027` CLI audit (May 2026) that were **no
 **Sketch.**
 - New `--config <path>` flag.
 - Default lookup: `$XDG_CONFIG_HOME/openl-mcp/config.json`, fallback `~/.config/openl-mcp/config.json` on Linux, `~/Library/Preferences/openl-mcp/config.json` on macOS, `%APPDATA%/openl-mcp/config.json` on Windows (`env-paths` handles this).
-- Schema: `{ baseUrl, token, username, password, timeout, clientDocumentId }` — same keys as overrides.
+- Schema: `{ baseUrl, token, timeout, clientDocumentId }` — same keys as overrides.
 - Precedence: CLI flag > env > config file > defaults.
 
 **Estimate.** ~80 lines + tests + README update + 1 dependency (`env-paths`). **~3 hours.**

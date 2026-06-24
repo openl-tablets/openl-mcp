@@ -16,8 +16,7 @@ describe("OpenLClient", () => {
   beforeEach(() => {
     const config: OpenLConfig = {
       baseUrl: "http://localhost:8080",
-      username: "admin",
-      password: "admin",
+      personalAccessToken: "openl_pat_test",
     };
     client = new OpenLClient(config);
     // @ts-ignore - Access private axiosInstance for mocking
@@ -38,14 +37,13 @@ describe("OpenLClient", () => {
       expect(testClient.getBaseUrl()).toMatch(/\/rest$/);
     });
 
-    it("should set auth method when using basic auth", () => {
+    it("should report the Personal Access Token auth method when a PAT is configured", () => {
       const config: OpenLConfig = {
         baseUrl: "http://localhost:8080",
-        username: "admin",
-        password: "admin",
+        personalAccessToken: "openl_pat_test",
       };
       const testClient = new OpenLClient(config);
-      expect(testClient.getAuthMethod()).toContain("Basic");
+      expect(testClient.getAuthMethod()).toContain("Personal Access Token");
     });
 
     it("should auto-append /rest when missing in baseUrl", () => {
@@ -1750,8 +1748,7 @@ describe("OpenLClient — additional method coverage", () => {
   beforeEach(() => {
     const config: OpenLConfig = {
       baseUrl: "http://localhost:8080",
-      username: "admin",
-      password: "admin",
+      personalAccessToken: "openl_pat_test",
     };
     client = new OpenLClient(config);
     // @ts-ignore - Access private axiosInstance for mocking
@@ -2199,7 +2196,7 @@ describe("OpenLClient — additional method coverage", () => {
         expect(health.status).toBe("healthy");
         expect(health.serverReachable).toBe(true);
         expect(health.baseUrl).toMatch(/\/rest$/);
-        expect(health.authMethod).toContain("Basic");
+        expect(health.authMethod).toContain("Personal Access Token");
         expect(health.error).toBeUndefined();
       });
 
@@ -2236,10 +2233,9 @@ describe("OpenLClient — additional method coverage", () => {
       expect(client.getSessionCookie()).toBeNull();
     });
 
-    it("getAuthorizationHeader exposes the Basic header for non-axios consumers (STOMP/WS handshake)", () => {
+    it("getAuthorizationHeader exposes the Token header for non-axios consumers (STOMP/WS handshake)", () => {
       const header = client.getAuthorizationHeader();
-      const expected = `Basic ${Buffer.from("admin:admin").toString("base64")}`;
-      expect(header).toBe(expected);
+      expect(header).toBe("Token openl_pat_test");
     });
   });
 

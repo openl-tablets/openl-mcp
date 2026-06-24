@@ -51,7 +51,7 @@ For a fast setup, use [Method 1 (Docker Compose, recommended) in the Quick Start
 
 ### Guides
 - [Usage Examples](docs/guides/examples.md) - Practical examples of using MCP tools
-- [Authentication Guide](docs/guides/authentication.md) - All authentication methods (Basic Auth, Personal Access Token)
+- [Authentication Guide](docs/guides/authentication.md) - Personal Access Token authentication
 - [Troubleshooting Guide](docs/guides/troubleshooting.md) - Common issues, debugging, and solutions
 
 ### Development
@@ -114,11 +114,7 @@ The positional URL takes precedence over `OPENL_BASE_URL` if both are set.
 OPENL_BASE_URL=<your-base-url>
 
 # Auth is optional (single-user mode accepts unauthenticated requests).
-# Method 1: Basic Auth
-OPENL_USERNAME=<your-username>
-OPENL_PASSWORD=<your-password>
-
-# Method 2: Personal Access Token
+# Personal Access Token
 OPENL_PERSONAL_ACCESS_TOKEN=<your-token>
 
 # Optional
@@ -134,7 +130,7 @@ See [MCP Connection Guide](docs/setup/mcp-connection-guide.md) for client-specif
 ## Key Features
 
 - **Type-Safe**: Zod schemas with strict validation and TypeScript inference
-- **Multiple Auth Methods**: Basic Auth and Personal Access Token (PAT)
+- **Personal Access Token Auth**: PAT-based authentication (or none, for single-user mode)
 - **4 Response Formats**: json, markdown, markdown_concise, markdown_detailed
 - **Pagination Support**: Metadata for all list operations
 - **AI Prompts**: 14 expert guidance templates

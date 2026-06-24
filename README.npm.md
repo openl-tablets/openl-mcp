@@ -35,13 +35,10 @@ npx -y openl-mcp-server http://localhost:8080
 OPENL_BASE_URL=http://localhost:8080 npx -y openl-mcp-server
 ```
 
-Authentication is **optional** — OpenL Studio single-user mode accepts unauthenticated requests. To authenticate, pick one method (env var or matching CLI flag):
+Authentication is **optional** — OpenL Studio single-user mode accepts unauthenticated requests. To authenticate, set a Personal Access Token (env var or matching CLI flag):
 
 ```bash
-# Basic Auth
-OPENL_USERNAME=<your-username>   # or --user
-OPENL_PASSWORD=<your-password>   # or --password
-# …or Personal Access Token
+# Personal Access Token
 OPENL_PERSONAL_ACCESS_TOKEN=<your-token>   # or --token
 
 # Optional
@@ -93,7 +90,7 @@ OPENL_BASE_URL=<host> OPENL_PERSONAL_ACCESS_TOKEN=<pat> \
 npx -y openl-mcp-server <host> list_repositories '{"response_format":"json"}' --token <pat> | jq
 ```
 
-**See [`README.cli.md`](https://github.com/openl-tablets/openl-mcp/blob/main/README.cli.md)** for the full CLI guide: configuration, all flags (`--base-url`, `--token`, `--user`, `--password`, `--timeout`, `--client-document-id`, `--cookie-jar`), argument-passing modes (`@file.json`, `--stdin`), session handling for trace flows, recipes, exit codes, Windows notes, and troubleshooting.
+**See [`README.cli.md`](https://github.com/openl-tablets/openl-mcp/blob/main/README.cli.md)** for the full CLI guide: configuration, all flags (`--base-url`, `--token`, `--timeout`, `--client-document-id`, `--cookie-jar`), argument-passing modes (`@file.json`, `--stdin`), session handling for trace flows, recipes, exit codes, Windows notes, and troubleshooting.
 
 Run with just a `<url>` (and no tool name) — or with no arguments at all (falling back to `OPENL_BASE_URL`) — to start the MCP server on stdio.
 

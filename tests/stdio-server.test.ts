@@ -13,8 +13,6 @@ import { loadConfigFromEnv } from "../src/stdio-server.js";
 describe("loadConfigFromEnv (stdio MCP transport)", () => {
   const OPENL_KEYS = [
     "OPENL_BASE_URL",
-    "OPENL_USERNAME",
-    "OPENL_PASSWORD",
     "OPENL_PERSONAL_ACCESS_TOKEN",
     "OPENL_TIMEOUT",
   ] as const;
@@ -63,19 +61,17 @@ describe("loadConfigFromEnv (stdio MCP transport)", () => {
     await expect(loadConfigFromEnv({ baseUrl: "not-a-url" })).rejects.toThrow(/Invalid OpenL base URL/);
   });
 
-  it("applies cred/timeout overrides (server-launch flags) over the environment", async () => {
+  it("applies token/timeout overrides (server-launch flags) over the environment", async () => {
     process.env.OPENL_BASE_URL = "http://env-host:9999";
-    process.env.OPENL_USERNAME = "envuser";
+    process.env.OPENL_PERSONAL_ACCESS_TOKEN = "openl_pat_env";
     const cfg = await loadConfigFromEnv({
       baseUrl: "http://localhost:8080",
-      username: "flaguser",
-      password: "flagpass",
+      personalAccessToken: "openl_pat_flag",
       timeout: 12345,
     });
     expect(cfg).toMatchObject({
       baseUrl: "http://localhost:8080",
-      username: "flaguser",
-      password: "flagpass",
+      personalAccessToken: "openl_pat_flag",
       timeout: 12345,
     });
   });
@@ -91,18 +87,8 @@ describe("loadConfigFromEnv (stdio MCP transport)", () => {
     process.env.OPENL_BASE_URL = "http://localhost:8080";
     const cfg = await loadConfigFromEnv();
     expect(cfg).toMatchObject({ baseUrl: "http://localhost:8080" });
-    expect(cfg.username).toBeUndefined();
-    expect(cfg.password).toBeUndefined();
     expect(cfg.personalAccessToken).toBeUndefined();
     expect(errSpy).toHaveBeenCalledWith(expect.stringMatching(/No authentication configured/i));
-  });
-
-  it("resolves and warns when only one half of Basic Auth is set", async () => {
-    process.env.OPENL_BASE_URL = "http://localhost:8080";
-    process.env.OPENL_USERNAME = "u";
-    const cfg = await loadConfigFromEnv();
-    expect(cfg).toMatchObject({ baseUrl: "http://localhost:8080", username: "u" });
-    expect(errSpy).toHaveBeenCalledWith(expect.stringMatching(/Incomplete Basic Auth/i));
   });
 
   it("resolves with a PAT", async () => {
@@ -114,15 +100,13 @@ describe("loadConfigFromEnv (stdio MCP transport)", () => {
     });
   });
 
-  it("resolves with Basic Auth and a parsed timeout", async () => {
+  it("parses a valid OPENL_TIMEOUT from the environment", async () => {
     process.env.OPENL_BASE_URL = "http://localhost:8080";
-    process.env.OPENL_USERNAME = "admin";
-    process.env.OPENL_PASSWORD = "admin";
+    process.env.OPENL_PERSONAL_ACCESS_TOKEN = "openl_pat_x";
     process.env.OPENL_TIMEOUT = "45000";
     await expect(loadConfigFromEnv()).resolves.toMatchObject({
       baseUrl: "http://localhost:8080",
-      username: "admin",
-      password: "admin",
+      personalAccessToken: "openl_pat_x",
       timeout: 45000,
     });
   });

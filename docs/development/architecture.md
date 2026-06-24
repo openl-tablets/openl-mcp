@@ -108,18 +108,11 @@ cd DEMO && ./start
 
 ## Authentication
 
-MCP Server uses one of two methods:
+MCP Server authenticates with a **Personal Access Token** (optional — omit for OpenL Studio single-user mode):
 
-1. **Basic Auth** (default)
-   ```env
-   OPENL_USERNAME=<your-username>
-   OPENL_PASSWORD=<your-password>
-   ```
-
-2. **Personal Access Token**
-   ```env
-   OPENL_PERSONAL_ACCESS_TOKEN=<your-token>
-   ```
+```env
+OPENL_PERSONAL_ACCESS_TOKEN=<your-token>
+```
 
 ## Health Check
 
@@ -151,8 +144,8 @@ In Claude: "List repositories in OpenL Studio"
 **Solution:** Start `docker compose up` or `DEMO/start`
 
 ### Issue: "Authentication failed"
-**Cause:** Incorrect credentials
-**Solution:** Check `OPENL_USERNAME` and `OPENL_PASSWORD` in configuration
+**Cause:** Incorrect or expired token
+**Solution:** Check `OPENL_PERSONAL_ACCESS_TOKEN` in configuration
 
 ## Useful Commands
 

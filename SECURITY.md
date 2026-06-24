@@ -53,7 +53,7 @@ After you submit a vulnerability report:
 
 ### For Users
 
-1. **Use Personal Access Tokens (PAT)** instead of Basic Auth in production
+1. **Use Personal Access Tokens (PAT)** to authenticate
 2. **Always use HTTPS/TLS** when connecting to OpenL Studio in production
 3. **Never commit credentials** to version control
 4. **Rotate tokens regularly** and revoke unused tokens immediately
@@ -73,8 +73,7 @@ After you submit a vulnerability report:
 
 ### Authentication
 
-- **Basic Auth**: Credentials are Base64-encoded (not encrypted). Always use HTTPS in production.
-- **Personal Access Token (PAT)**: Recommended for production. Tokens should be treated as passwords.
+- **Personal Access Token (PAT)**: The supported credential. Sent as `Authorization: Token <PAT>`; always use HTTPS in production. Tokens should be treated as passwords.
 - **Token Storage**: Never hardcode tokens in source code. Use environment variables or secure vaults.
 
 ### MCP Transport Security

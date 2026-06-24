@@ -96,8 +96,8 @@ the full MCP server:
   - List production repositories
 
 - **Authentication**
-  - Basic auth (username/password)
-  - API key auth
+  - Personal Access Token (PAT)
+  - Single-user mode (no Authorization header)
   - Unauthorized access handling
 
 ### Integration Tests (`tests/integration/`)
@@ -198,15 +198,14 @@ See `.github/workflows/ci.yml` for CI configuration.
 ### Testing Authentication
 
 ```typescript
-it('should authenticate with basic auth', async () => {
-  nock(BASE_URL)
+it('should authenticate with a Personal Access Token', async () => {
+  nock(BASE_URL, { reqheaders: { authorization: 'Token openl_pat_test' } })
     .get(`${API_PATH}/repos`)
-    .basicAuth({ user: 'admin', pass: 'admin' })
     .reply(200, mockRepositories);
 
   const axios = (await import('axios')).default;
   const response = await axios.get(`${BASE_URL}${API_PATH}/repos`, {
-    auth: { username: 'admin', password: 'admin' }
+    headers: { Authorization: 'Token openl_pat_test' }
   });
 
   expect(response.status).toBe(200);

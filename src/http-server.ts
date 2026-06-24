@@ -95,9 +95,9 @@ function getClientForSession(sessionId: string, auth?: Record<string, string | u
   // Base URL must come from server configuration
   const baseClient = getDefaultClientOrThrow();
 
-  // If the Authorization header carried credentials, create a session client
-  // with the server's base URL and those credentials.
-  if (auth && (auth.OPENL_PERSONAL_ACCESS_TOKEN || auth.OPENL_USERNAME)) {
+  // If the Authorization header carried a token, create a session client
+  // with the server's base URL and that token.
+  if (auth && auth.OPENL_PERSONAL_ACCESS_TOKEN) {
     try {
       // Get base URL from default client (server configuration)
       const baseUrl = baseClient.getBaseUrl();
@@ -105,8 +105,6 @@ function getClientForSession(sessionId: string, auth?: Record<string, string | u
       // Build config with server's base URL and the client's authentication
       const config: Types.OpenLConfig = {
         baseUrl,
-        username: auth.OPENL_USERNAME,
-        password: auth.OPENL_PASSWORD,
         personalAccessToken: auth.OPENL_PERSONAL_ACCESS_TOKEN,
       };
 
@@ -132,10 +130,9 @@ const streamableHttpTransports: Record<string, StreamableHTTPServerTransport> = 
 /**
  * Parse an HTTP `Authorization` header into OpenL client config fields.
  *
- * Supports the three schemes the OpenL REST API accepts:
+ * Supports the token schemes the OpenL REST API accepts:
  * - `Token <PAT>`  → personal access token
  * - `Bearer <PAT>` → personal access token (MCP clients commonly send Bearer)
- * - `Basic <base64(user:pass)>` → username/password
  *
  * Returns an empty object when no usable credential is present. Mirrors the
  * scheme priority of {@link AuthenticationManager.addAuthHeaders}.
@@ -153,13 +150,6 @@ function authConfigFromHeader(
   } else if (authHeader.startsWith("Bearer ")) {
     const token = authHeader.substring(7);
     if (token) config.OPENL_PERSONAL_ACCESS_TOKEN = token;
-  } else if (authHeader.startsWith("Basic ")) {
-    const decoded = Buffer.from(authHeader.substring(6), "base64").toString("utf-8");
-    const sep = decoded.indexOf(":");
-    if (sep > 0) {
-      config.OPENL_USERNAME = decoded.substring(0, sep);
-      config.OPENL_PASSWORD = decoded.substring(sep + 1);
-    }
   }
   return config;
 }
@@ -181,8 +171,7 @@ function jsonRpcError(code: number, message: string): Record<string, unknown> {
  *
  * Base URL is always configured on the server (OPENL_BASE_URL). Only the
  * authentication token is supplied per request, via the HTTP Authorization
- * header: "Authorization: Token <PAT>", "Authorization: Bearer <PAT>", or
- * "Authorization: Basic <base64 user:pass>".
+ * header: "Authorization: Token <PAT>" or "Authorization: Bearer <PAT>".
  */
 const handleMcpPost = async (req: Request, res: Response): Promise<Response | void> => {
   try {
@@ -193,7 +182,7 @@ const handleMcpPost = async (req: Request, res: Response): Promise<Response | vo
       // Existing session — route to its transport.
       transport = streamableHttpTransports[sessionId];
     } else if (!sessionId && isInitializeRequest(req.body)) {
-      // New session. Extract auth from the Authorization header (Token/Bearer/Basic);
+      // New session. Extract auth from the Authorization header (Token/Bearer);
       // the base URL always comes from server config.
       const auth = authConfigFromHeader(req.headers.authorization);
 

@@ -28,7 +28,7 @@ This MCP server enables AI agents to:
 │  MCP Server     │  ← This Agent (Node.js/TypeScript)
 │  (openl-mcp)    │
 └────────┬────────┘
-         │ HTTP API (JSON, Basic Auth / PAT)
+         │ HTTP API (JSON, PAT)
          │ + WebSocket/STOMP (waits for async studio work:
          │   compile status & trace status topics)
          ▼
@@ -202,19 +202,13 @@ MCP resources provide read-only access to OpenL data:
 - `openl://docs/{project}/AGENTS.md` - The project's applicable **AGENTS.md** guidance as one aggregated markdown document (root-first, later sections win); mirrors `openl_get_project_agents_md`
 - `openl://deployments` - All deployments
 
-## Authentication Methods
+## Authentication
 
-The agent supports two authentication methods:
+The agent authenticates with a Personal Access Token (PAT). Authentication is
+optional — an OpenL Studio in single-user mode accepts unauthenticated requests.
 
-### 1. Basic Authentication
 ```env
-OPENL_USERNAME=admin
-OPENL_PASSWORD=admin
-```
-
-### 2. Personal Access Token (PAT)
-```env
-OPENL_PERSONAL_ACCESS_TOKEN=your-token
+OPENL_PERSONAL_ACCESS_TOKEN=openl_pat_your-token
 ```
 
 ## Configuration
@@ -224,8 +218,7 @@ OPENL_PERSONAL_ACCESS_TOKEN=your-token
 **Required:**
 - `OPENL_BASE_URL` - OpenL API base URL (e.g., `http://localhost:8080`)
 
-**Authentication (one required):**
-- `OPENL_USERNAME` + `OPENL_PASSWORD` (Basic Auth)
+**Authentication (optional — omit for single-user mode):**
 - `OPENL_PERSONAL_ACCESS_TOKEN` (PAT)
 
 **Optional:**
@@ -270,7 +263,7 @@ When writing code, configuration files, or examples as an AI agent:
 
 **✅ ALWAYS DO THIS:**
 - Use environment variables: `process.env.VARIABLE_NAME`
-- Use placeholders in examples: `<your-token>`, `<your-password>`
+- Use placeholders in examples: `<your-token>`
 - Create `.env.example` files with placeholders
 - Add `.env` to `.gitignore`
 
@@ -279,13 +272,11 @@ When writing code, configuration files, or examples as an AI agent:
 **Wrong:**
 ```typescript
 const token = "openl_pat_abc123.xyz789"; // ❌ Real token in code
-const password = "mySecretPassword123"; // ❌ Real password in code
 ```
 
 **Correct:**
 ```typescript
 const token = process.env.OPENL_PERSONAL_ACCESS_TOKEN; // ✅ From environment
-const password = process.env.OPENL_PASSWORD; // ✅ From environment
 
 if (!token) {
   throw new Error("OPENL_PERSONAL_ACCESS_TOKEN is required");
@@ -298,9 +289,7 @@ Always use placeholders:
 ```json
 {
   "OPENL_BASE_URL": "http://localhost:8080",
-  "OPENL_PERSONAL_ACCESS_TOKEN": "<your-token>",
-  "OPENL_USERNAME": "<your-username>",
-  "OPENL_PASSWORD": "<your-password>"
+  "OPENL_PERSONAL_ACCESS_TOKEN": "<your-token>"
 }
 ```
 
@@ -452,8 +441,7 @@ npm run watch
 ```bash
 docker build -t openl-mcp-server .
 docker run -e OPENL_BASE_URL=http://openl:8080 \
-           -e OPENL_USERNAME=admin \
-           -e OPENL_PASSWORD=admin \
+           -e OPENL_PERSONAL_ACCESS_TOKEN=openl_pat_your-token \
            openl-mcp-server
 ```
 

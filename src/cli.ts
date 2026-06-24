@@ -14,7 +14,6 @@
  * Config (env vars, can be overridden by CLI flags):
  *   OPENL_BASE_URL                (required)  → --base-url <url>
  *   OPENL_PERSONAL_ACCESS_TOKEN   (auth)      → --token <pat>
- *   OPENL_USERNAME / OPENL_PASSWORD (auth)    → --user <u> / --password <p>
  *   OPENL_TIMEOUT                 (optional)  → --timeout <ms>
  */
 
@@ -154,8 +153,6 @@ export interface ParsedArgs {
   overrides: {
     baseUrl?: string;
     token?: string;
-    username?: string;
-    password?: string;
     timeout?: number;
     clientDocumentId?: string;
   };
@@ -228,15 +225,6 @@ export function parseArgs(argv: string[]): ParsedArgs {
         break;
       case "--token":
         result.overrides.token = takeValue(i, arg);
-        i++;
-        break;
-      case "--user":
-      case "--username":
-        result.overrides.username = takeValue(i, arg);
-        i++;
-        break;
-      case "--password":
-        result.overrides.password = takeValue(i, arg);
         i++;
         break;
       case "--timeout": {
@@ -392,20 +380,17 @@ function buildConfig(
     throw new Error(`Invalid base URL: ${baseUrl}`);
   }
 
-  const username = overrides.username ?? env.OPENL_USERNAME;
-  const password = overrides.password ?? env.OPENL_PASSWORD;
   const personalAccessToken = overrides.token ?? env.OPENL_PERSONAL_ACCESS_TOKEN;
 
   // By default a CLI invocation represents one principal who must authenticate,
-  // so we fail fast on missing credentials (this catches the common "forgot to
-  // set creds" mistake with a clear message instead of a later 401). The
+  // so we fail fast on a missing token (this catches the common "forgot to set
+  // creds" mistake with a clear message instead of a later 401). The
   // `--anonymous` flag opts out for servers that permit unauthenticated access:
-  // the gate is skipped and, if no creds are supplied, the client sends no
-  // Authorization header. Any creds that *are* present are still used.
-  if (!allowAnonymous && !personalAccessToken && !(username && password)) {
+  // the gate is skipped and, if no token is supplied, the client sends no
+  // Authorization header. A token that *is* present is still used.
+  if (!allowAnonymous && !personalAccessToken) {
     throw new Error(
-      "Authentication required: set OPENL_PERSONAL_ACCESS_TOKEN (or --token), " +
-        "or both OPENL_USERNAME/OPENL_PASSWORD (or --user/--password). " +
+      "Authentication required: set OPENL_PERSONAL_ACCESS_TOKEN (or --token). " +
         "Pass --anonymous if the server allows unauthenticated access.",
     );
   }
@@ -419,7 +404,7 @@ function buildConfig(
     timeout = parsed;
   }
 
-  return { baseUrl, username, password, personalAccessToken, timeout };
+  return { baseUrl, personalAccessToken, timeout };
 }
 
 /**
@@ -567,10 +552,9 @@ function applyDefaultResponseFormat(args: unknown): unknown {
 
 /**
  * Suppress informational stderr logs from the OpenL client / auth manager
- * (e.g. `[Auth] 🔐 Basic Auth: username=...`) while the CLI is running.
+ * (e.g. `[Auth] 🔐 PAT Authentication ...`) while the CLI is running.
  *
- * These are useful in MCP-stdio mode but pollute shell pipelines — and
- * leak the username when it was passed via `--user`. We flip
+ * These are useful in MCP-stdio mode but pollute shell pipelines. We flip
  * `OPENL_CLI_QUIET=1` on `process.env` (which the auth manager reads
  * directly via `parseBoolEnv`); the returned closure restores the prior
  * value so callers can clean up after themselves. Genuine error logs are
@@ -726,8 +710,6 @@ function renderHelp(): string {
     `Config flags (override the matching env vars):`,
     `  --base-url <url>            OPENL_BASE_URL`,
     `  --token <pat>               OPENL_PERSONAL_ACCESS_TOKEN`,
-    `  --user <name>               OPENL_USERNAME`,
-    `  --password <pwd>            OPENL_PASSWORD`,
     `  --timeout <ms>              OPENL_TIMEOUT (default 30000)`,
     `  --client-document-id <id>   OPENL_CLIENT_DOCUMENT_ID (audit/tracking)`,
     `  --cookie-jar <path>         persist JSESSIONID between calls (needed`,
@@ -808,7 +790,7 @@ export async function runCli(options: RunCliOptions): Promise<number> {
   // is needed beyond a stub client to satisfy the registry signature.
   if (parsed.showHelp || parsed.listTools) {
     ensureToolsRegistered(
-      new OpenLClient({ baseUrl: "http://localhost", username: "_", password: "_" }),
+      new OpenLClient({ baseUrl: "http://localhost" }),
     );
     if (parsed.showHelp) {
       // Tool-specific help: `<tool> --help` renders schema for that tool
@@ -845,7 +827,7 @@ export async function runCli(options: RunCliOptions): Promise<number> {
   // error would mask the typo). A stub client satisfies the registry
   // signature; the real client is wired in below for execution.
   ensureToolsRegistered(
-    new OpenLClient({ baseUrl: "http://localhost", username: "_", password: "_" }),
+    new OpenLClient({ baseUrl: "http://localhost" }),
   );
 
   if (!parsed.toolName) {

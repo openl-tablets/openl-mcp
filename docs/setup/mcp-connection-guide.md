@@ -388,6 +388,6 @@ npm config get prefix
 
 - [Quick Start](../getting-started/quick-start.md) — Get started with Docker Compose
 - [Docker Setup](docker.md) — Docker configuration details
-- [Authentication Guide](../guides/authentication.md) — Authentication methods (Basic Auth, PAT)
+- [Authentication Guide](../guides/authentication.md) — Personal Access Token authentication
 - [Troubleshooting Guide](../guides/troubleshooting.md) — More common issues and solutions
 - [VS Code MCP docs](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) — Official VS Code MCP documentation

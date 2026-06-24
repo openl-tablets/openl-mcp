@@ -1,27 +1,21 @@
 # Authentication Guide
 
-This guide covers the authentication methods supported by the OpenL MCP Server: Personal Access Token (PAT) and Basic Authentication.
+This guide covers authentication for the OpenL MCP Server. The server authenticates with a **Personal Access Token (PAT)**. Authentication is optional — an OpenL Studio in single-user mode accepts unauthenticated requests.
 
 ## Table of Contents
-- [Authentication Methods](#authentication-methods)
+- [Authentication Method](#authentication-method)
 - [Setup](#setup)
-- [Basic Authentication](#basic-authentication)
 - [Personal Access Token Authentication](#personal-access-token-authentication)
 - [Security Best Practices](#security-best-practices)
 - [Troubleshooting](#troubleshooting)
 
-## Authentication Methods
+## Authentication Method
 
-The MCP server supports two authentication methods:
-
-1. **Basic Authentication** - Username and password
-2. **Personal Access Token (PAT)** - User-generated tokens for programmatic access
-
-Choose the method that best fits your security requirements and infrastructure.
+The MCP server authenticates with a Personal Access Token (PAT) — a user-generated token created in the OpenL Studio UI. When no token is configured, requests are sent without an `Authorization` header (OpenL Studio single-user mode).
 
 ## Setup
 
-**IMPORTANT**: Authentication variables (tokens, passwords) **MUST NOT** be set in Docker configuration or server environment variables. They should be configured **only** in the MCP client configuration when connecting through Cursor or Claude Desktop.
+**IMPORTANT**: Authentication tokens **MUST NOT** be set in Docker configuration or server environment variables for the HTTP transport. They should be provided **only** in the MCP client configuration (Cursor / Claude Desktop) or via the HTTP `Authorization` header.
 
 ### How It Works
 
@@ -64,7 +58,7 @@ Configure authentication in the MCP client configuration file:
 }
 ```
 
-> The base URL is passed as the positional argument (`args: [..., "http://localhost:8080"]`). You can instead keep it in `env` as `OPENL_BASE_URL`; the positional takes precedence if both are set. The `env` block here carries only the (optional) auth credentials.
+> The base URL is passed as the positional argument (`args: [..., "http://localhost:8080"]`). You can instead keep it in `env` as `OPENL_BASE_URL`; the positional takes precedence if both are set. The `env` block here carries only the (optional) auth token.
 
 ### For HTTP Transport (Docker)
 
@@ -79,7 +73,7 @@ Authorization: Token <your-token>
 ```
 
 The `Bearer <your-token>` scheme is also accepted and automatically converted to `Token`
-for the OpenL API. For basic auth, use `Authorization: Basic <base64(username:password)>`.
+for the OpenL API.
 
 ### Docker Configuration
 
@@ -93,57 +87,17 @@ environment:
   # Authentication is NOT set here!
 ```
 
-⚠️ **Security**: Never set tokens, passwords, or other secrets in:
+⚠️ **Security**: Never set tokens or other secrets in:
 - Docker compose files
 - Host environment variables (for Docker)
 - Git repository
 - Logs
 
-✅ **Correct**: Set secrets only in:
+✅ **Correct**: Set the token only in:
 - MCP client configuration files (Cursor/Claude Desktop)
 - The `Authorization` header when connecting via HTTP
 
 For complete configuration examples, see [MCP Connection Guide](../setup/mcp-connection-guide.md).
-
-## Basic Authentication
-
-Basic Authentication uses HTTP Basic Auth with username and password.
-
-### Configuration
-
-**Environment Variables:**
-```bash
-OPENL_BASE_URL=http://localhost:8080
-OPENL_USERNAME=admin
-OPENL_PASSWORD=admin
-```
-
-**Claude Desktop Config:**
-```json
-{
-  "mcpServers": {
-    "openl-studio": {
-      "command": "node",
-      "args": ["/path/to/dist/index.js", "http://localhost:8080"],
-      "env": {
-        "OPENL_USERNAME": "admin",
-        "OPENL_PASSWORD": "admin"
-      }
-    }
-  }
-}
-```
-
-### Use Cases
-- Development and testing environments
-- Internal networks with network-level security
-- Quick setup and prototyping
-
-### Security Considerations
-- ❌ Credentials sent with every request
-- ❌ Password stored in configuration
-- ✅ Use HTTPS in production
-- ✅ Rotate passwords regularly
 
 ## Personal Access Token Authentication
 
@@ -209,10 +163,9 @@ OPENL_PERSONAL_ACCESS_TOKEN=<your-pat-token>
 
 ### Security Considerations
 
-- ✅ **More Secure Than Passwords** - Tokens can be revoked without password changes
+- ✅ **Revocable** - Tokens can be revoked from the UI without changing your password
 - ✅ **Expiration Support** - Optional expiration dates
 - ✅ **User-Scoped** - Tokens are tied to the user who created them
-- ✅ **Revocable** - Can be deleted from UI at any time
 - ⚠️ **Token Storage** - Store tokens securely (environment variables, secret managers)
 - ⚠️ **Token Exposure** - Never commit tokens to version control
 - ✅ **Use HTTPS Always** - Required for production
@@ -230,10 +183,10 @@ OPENL_PERSONAL_ACCESS_TOKEN=<your-pat-token>
 
 ### General
 
-1. **Always Use HTTPS** - Never send credentials over HTTP
-2. **Rotate Credentials** - Regularly rotate passwords, API keys, and client secrets
+1. **Always Use HTTPS** - Never send a token over HTTP
+2. **Rotate Tokens** - Regularly rotate tokens and revoke unused ones
 3. **Least Privilege** - Use minimum required scopes/permissions
-4. **Separate Environments** - Different credentials for dev/staging/production
+4. **Separate Environments** - Different tokens for dev/staging/production
 5. **Monitor Access** - Log and monitor authentication attempts
 
 ### Configuration Management
@@ -261,9 +214,7 @@ OPENL_PERSONAL_ACCESS_TOKEN=<your-pat-token>
 
 ## Troubleshooting
 
-### Basic Auth Issues
-
-#### Authentication Failed
+### Authentication Failed
 
 **Symptoms:**
 ```
@@ -271,14 +222,12 @@ OpenL Studio API error (401): Authentication required
 ```
 
 **Solutions:**
-1. Verify username and password are correct
-2. Check user account is not locked
-3. Ensure user has required permissions
-4. Verify OpenL Studio is configured for basic auth
+1. Verify the PAT is correct and has not expired
+2. Confirm the token starts with `openl_pat_`
+3. Ensure your user has the required permissions
+4. Verify OpenL Studio is configured for OAuth2 or SAML (PATs are available only in those modes)
 
-### General Issues
-
-#### Connection Timeout
+### Connection Timeout
 
 **Symptoms:**
 ```
@@ -291,7 +240,7 @@ Error: timeout of 30000ms exceeded
 3. Verify OpenL Studio is running
 4. Check firewall rules
 
-#### SSL/TLS Errors
+### SSL/TLS Errors
 
 **Symptoms:**
 ```
@@ -312,12 +261,6 @@ OPENL_BASE_URL    # OpenL Studio API base URL
 OPENL_TIMEOUT     # Request timeout in milliseconds
 ```
 
-### Basic Auth
-```bash
-OPENL_USERNAME          # Username for basic authentication
-OPENL_PASSWORD          # Password for basic authentication
-```
-
 ### Personal Access Token
 ```bash
 OPENL_PERSONAL_ACCESS_TOKEN  # Personal Access Token (format: openl_pat_<publicId>.<secret>)
@@ -325,11 +268,9 @@ OPENL_PERSONAL_ACCESS_TOKEN  # Personal Access Token (format: openl_pat_<publicI
 
 ## Examples
 
-### Local Development with Basic Auth
+### Local Development (single-user mode, no token)
 ```bash
 export OPENL_BASE_URL=http://localhost:8080
-export OPENL_USERNAME=admin
-export OPENL_PASSWORD=admin
 npm start
 ```
 

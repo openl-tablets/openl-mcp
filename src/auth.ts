@@ -1,9 +1,9 @@
 /**
  * Authentication module for OpenL MCP Server
  *
- * Supports multiple authentication methods:
- * - Basic Authentication (username/password)
- * - Personal Access Token (PAT)
+ * Authenticates with a Personal Access Token (PAT). When no token is
+ * configured, requests are sent without an Authorization header (OpenL Studio
+ * single-user mode).
  */
 
 import { AxiosInstance, InternalAxiosRequestConfig } from "axios";
@@ -128,24 +128,22 @@ export class AuthenticationManager {
     const authHeaderAlreadySet = config.headers[HEADERS.AUTHORIZATION];
 
     // Create a unique key for this auth config to prevent duplicate logging
-    const authConfigKey = `${this.config.baseUrl || ''}:${this.config.personalAccessToken ? 'PAT' : this.config.username ? 'Basic' : 'None'}`;
+    const authConfigKey = `${this.config.baseUrl || ''}:${this.config.personalAccessToken ? 'PAT' : 'None'}`;
     // In CLI mode, suppress informational [Auth] lines so they don't pollute
-    // shell pipelines (and don't leak username when passed via --user).
-    // Set by src/cli.ts via OPENL_CLI_QUIET; accepts any truthy value
+    // shell pipelines. Set by src/cli.ts via OPENL_CLI_QUIET; accepts any truthy value
     // (1/true/yes/on). Genuine error logs (e.g. 401) are NOT gated and
     // continue to surface.
     const quietMode = parseBoolEnv(process.env.OPENL_CLI_QUIET);
     const shouldLogAuth = !authHeaderAlreadySet && !loggedAuthConfigs.has(authConfigKey) && !quietMode;
 
-    // Add authentication based on method priority:
-    // 1. Personal Access Token
-    // 2. Basic Auth
+    // Add authentication when a Personal Access Token is configured; otherwise
+    // send no Authorization header (OpenL Studio single-user mode).
     if (this.config.personalAccessToken) {
       // Build authorization header
       const pat = this.config.personalAccessToken;
       const authHeaderValue = `Token ${pat}`;
       config.headers[HEADERS.AUTHORIZATION] = authHeaderValue;
-      
+
       // Log only once per unique config (to avoid duplicate logging)
       if (shouldLogAuth) {
         loggedAuthConfigs.add(authConfigKey);
@@ -155,17 +153,6 @@ export class AuthenticationManager {
         if (!isValidFormat) {
           console.error(`[Auth]   ⚠️  WARNING: PAT should start with 'openl_pat_'`);
         }
-      }
-    } else if (this.config.username && this.config.password) {
-      // Never log password, only username
-      const auth = Buffer.from(
-        `${this.config.username}:${this.config.password}`
-      ).toString("base64");
-      config.headers[HEADERS.AUTHORIZATION] = `Basic ${auth}`;
-      // Single log message (only once per unique config)
-      if (shouldLogAuth) {
-        loggedAuthConfigs.add(authConfigKey);
-        console.error(`[Auth] 🔐 Basic Auth: username=${this.config.username}`);
       }
     } else {
       // Log only once per unique config
@@ -187,17 +174,11 @@ export class AuthenticationManager {
    * non-axios consumers (e.g. the STOMP WebSocket handshake) that need to
    * send the same authentication scheme as REST.
    *
-   * Priority matches `addAuthHeaders`: PAT > Basic > none.
+   * Matches `addAuthHeaders`: PAT when configured, otherwise none.
    */
   public getAuthorizationHeader(): string | undefined {
     if (this.config.personalAccessToken) {
       return `Token ${this.config.personalAccessToken}`;
-    }
-    if (this.config.username && this.config.password) {
-      const encoded = Buffer.from(
-        `${this.config.username}:${this.config.password}`,
-      ).toString("base64");
-      return `Basic ${encoded}`;
     }
     return undefined;
   }
@@ -210,10 +191,6 @@ export class AuthenticationManager {
   public getAuthMethod(): string {
     if (this.config.personalAccessToken) {
       return "Personal Access Token";
-    } else if (this.config.username && this.config.password) {
-      return "Basic Auth";
-    } else if (this.config.username || this.config.password) {
-      return "Incomplete Basic Auth";
     } else {
       return "No Auth";
     }

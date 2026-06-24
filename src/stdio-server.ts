@@ -77,8 +77,6 @@ class OpenLMCPServer {
  */
 interface ServerConfigOverrides {
   baseUrl?: string;
-  username?: string;
-  password?: string;
   personalAccessToken?: string;
   timeout?: number;
 }
@@ -129,26 +127,17 @@ export async function loadConfigFromEnv(
 
   const config: Types.OpenLConfig = {
     baseUrl,
-    username: overrides.username ?? process.env.OPENL_USERNAME,
-    password: overrides.password ?? process.env.OPENL_PASSWORD,
     personalAccessToken: overrides.personalAccessToken ?? process.env.OPENL_PERSONAL_ACCESS_TOKEN,
     timeout,
   };
 
   // Authentication is optional: OpenL Studio in single-user mode accepts
-  // unauthenticated requests. Report what was found; warn (don't fail) on
-  // partial Basic Auth so a typo in OPENL_USERNAME/OPENL_PASSWORD is visible.
+  // unauthenticated requests. Report what was found.
   const hasPat = !!config.personalAccessToken;
-  const hasBasic = !!(config.username && config.password);
-  console.error(`[Config] Authentication methods:`);
+  console.error(`[Config] Authentication:`);
   console.error(`[Config]   - Personal Access Token: ${hasPat ? 'configured (hidden)' : 'not configured'}`);
-  console.error(`[Config]   - Basic Auth: ${hasBasic ? `configured (username: ${config.username}, password: hidden)` : 'not configured'}`);
-  if (!hasPat && !hasBasic) {
-    if (config.username || config.password) {
-      console.error(`[Config]   ⚠️  Incomplete Basic Auth — sending no Authorization header (set both OPENL_USERNAME and OPENL_PASSWORD, or use OPENL_PERSONAL_ACCESS_TOKEN)`);
-    } else {
-      console.error(`[Config]   ℹ️  No authentication configured — requests will be sent without an Authorization header (OpenL Studio single-user mode)`);
-    }
+  if (!hasPat) {
+    console.error(`[Config]   ℹ️  No authentication configured — requests will be sent without an Authorization header (OpenL Studio single-user mode)`);
   }
 
   return config;
@@ -185,8 +174,6 @@ export async function startStdioServer(parsed: ParsedArgs): Promise<void> {
   try {
     config = await loadConfigFromEnv({
       baseUrl: parsed.baseUrlPositional ?? parsed.overrides.baseUrl,
-      username: parsed.overrides.username,
-      password: parsed.overrides.password,
       personalAccessToken: parsed.overrides.token,
       timeout: parsed.overrides.timeout,
     });
