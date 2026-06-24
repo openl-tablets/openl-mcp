@@ -23,7 +23,7 @@ command your client runs:
 ```bash
 # Auth is optional — set it only if your Studio requires it
 export OPENL_PERSONAL_ACCESS_TOKEN="openl_pat_your-token"
-npx -y openl-mcp-server http://localhost:8080
+npx -y openl-mcp http://localhost:8080
 ```
 
 Press `Ctrl+C` to stop. For more detail set `DEBUG=1` (also `DEBUG_AUTH=true` for auth —
@@ -48,13 +48,13 @@ tail -f ~/Library/Logs/Claude/*.log | grep -E "\[Error\]|\[Auth\]|\[Config\]"
 
 ```bash
 # 1. The package runs (downloads + prints the tool catalog)
-npx -y openl-mcp-server --help
+npx -y openl-mcp --help
 
 # 2. OpenL Studio is reachable
 curl http://localhost:8080
 
 # 3. The server connects to it — watch the startup logs
-npx -y openl-mcp-server http://localhost:8080
+npx -y openl-mcp http://localhost:8080
 ```
 
 A healthy start logs:
@@ -71,7 +71,7 @@ A healthy start logs:
 
 1. Validate the config JSON — no trailing commas, right file
    (see the [Connection Guide](../setup/mcp-connection-guide.md)).
-2. Confirm the package name is `openl-mcp-server` and the URL is correct.
+2. Confirm the package name is `openl-mcp` and the URL is correct.
 3. Using `npx`? Make sure Node.js is installed (`node -v`) — or switch to the
    [Docker option](../setup/mcp-connection-guide.md#running-without-nodejs-docker).
 4. Fully restart the client after editing the config.
@@ -130,7 +130,7 @@ issues of a remote transport:
   "mcpServers": {
     "openl": {
       "command": "npx",
-      "args": ["-y", "openl-mcp-server", "https://openl.example.com"],
+      "args": ["-y", "openl-mcp", "https://openl.example.com"],
       "env": { "OPENL_PERSONAL_ACCESS_TOKEN": "<your-pat-token>" }
     }
   }

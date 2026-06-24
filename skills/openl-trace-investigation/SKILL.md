@@ -5,7 +5,7 @@ description: >
   null, rejected claim, or incorrect decision. Trigger when the user asks why
   OpenL returned X, pastes a JSON payload for explanation, references a rule
   execution issue, or asks to fix a dispatch table or rule row.
-compatibility: "Requires the openl-mcp-server MCP tool to be running and connected"
+compatibility: "Requires the openl-mcp MCP tool to be running and connected"
 ---
 
 # OpenL Trace Investigation Skill

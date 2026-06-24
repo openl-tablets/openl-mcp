@@ -1,7 +1,7 @@
 # Running with Docker (no Node.js required)
 
 There is **no custom MCP image**. The server is the npm package
-[`openl-mcp-server`](https://www.npmjs.com/package/openl-mcp-server), and Docker is
+[`openl-mcp`](https://www.npmjs.com/package/openl-mcp), and Docker is
 just a way to run it when you don't want to install Node.js: the official
 `node:lts-alpine` image runs `npx`, and the container is thrown away on exit.
 
@@ -18,7 +18,7 @@ Three ways to use it:
 This is what an MCP client launches per session when Node.js isn't installed:
 
 ```bash
-docker run --rm -i node:lts-alpine npx -y openl-mcp-server http://host.docker.internal:8080
+docker run --rm -i node:lts-alpine npx -y openl-mcp http://host.docker.internal:8080
 ```
 
 You don't normally run this by hand — you put it in your client's config. See the
@@ -65,7 +65,7 @@ with `--http` and publish the port:
 
 ```bash
 docker run --rm -it -p 3000:3000 node:lts-alpine \
-  npx -y openl-mcp-server http://host.docker.internal:8080 --http
+  npx -y openl-mcp http://host.docker.internal:8080 --http
 ```
 
 | Part | Meaning |
@@ -74,7 +74,7 @@ docker run --rm -it -p 3000:3000 node:lts-alpine \
 | `-it` | Interactive terminal (so you can see logs / `Ctrl+C` to stop) |
 | `-p 3000:3000` | Publish the server's port to the host (omit and it's unreachable) |
 | `node:lts-alpine` | Official Node image — no custom build |
-| `npx -y openl-mcp-server` | Fetch and run the package |
+| `npx -y openl-mcp` | Fetch and run the package |
 | `http://host.docker.internal:8080` | OpenL Studio URL (positional argument) |
 | `--http` | Serve MCP over HTTP at `/mcp` instead of stdio |
 

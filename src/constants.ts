@@ -81,7 +81,7 @@ export type ToolCategory = (typeof TOOL_CATEGORIES)[number];
  * Server information
  */
 export const SERVER_INFO = {
-  NAME: "openl-mcp-server",
+  NAME: "openl-mcp",
   VERSION: "1.0.0",
   DESCRIPTION: "Model Context Protocol server for OpenL Studio",
 } as const;

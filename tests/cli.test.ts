@@ -744,7 +744,7 @@ describe("CLI", () => {
         stderr: h.stderr,
       });
       expect(code).toBe(EXIT_CODES.OK);
-      expect(h.getStdout()).toMatch(/openl-mcp-server \d+\.\d+\.\d+/);
+      expect(h.getStdout()).toMatch(/openl-mcp \d+\.\d+\.\d+/);
       expect(h.getStderr()).toBe("");
     });
 
@@ -758,7 +758,7 @@ describe("CLI", () => {
         stderr: h.stderr,
       });
       expect(code).toBe(EXIT_CODES.OK);
-      expect(h.getStdout()).toMatch(/openl-mcp-server \d+\.\d+\.\d+/);
+      expect(h.getStdout()).toMatch(/openl-mcp \d+\.\d+\.\d+/);
     });
   });
 

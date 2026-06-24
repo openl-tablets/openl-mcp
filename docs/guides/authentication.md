@@ -33,7 +33,7 @@ Put the token in the `env` block that launches `npx` (or Docker). Example for Cu
   "mcpServers": {
     "openl": {
       "command": "npx",
-      "args": ["-y", "openl-mcp-server", "http://localhost:8080"],
+      "args": ["-y", "openl-mcp", "http://localhost:8080"],
       "env": {
         "OPENL_PERSONAL_ACCESS_TOKEN": "<your-pat-token>"
       }
@@ -113,7 +113,7 @@ OPENL_PERSONAL_ACCESS_TOKEN=<your-pat-token>
   "mcpServers": {
     "openl": {
       "command": "npx",
-      "args": ["-y", "openl-mcp-server", "https://openl.example.com"],
+      "args": ["-y", "openl-mcp", "https://openl.example.com"],
       "env": {
         "OPENL_PERSONAL_ACCESS_TOKEN": "<your-pat-token>"
       }
@@ -239,14 +239,14 @@ OPENL_PERSONAL_ACCESS_TOKEN  # Personal Access Token (format: openl_pat_<publicI
 
 ### Single-user mode (no token)
 ```bash
-npx -y openl-mcp-server http://localhost:8080
+npx -y openl-mcp http://localhost:8080
 ```
 
 ### Production with a Personal Access Token
 ```bash
 export OPENL_PERSONAL_ACCESS_TOKEN=$(vault read -field=token secret/openl/prod/pat)
 export OPENL_TIMEOUT=60000
-npx -y openl-mcp-server https://openl-prod.example.com
+npx -y openl-mcp https://openl-prod.example.com
 ```
 
 ## Related Documentation

@@ -21,7 +21,7 @@ services:
 
   openl-mcp:
     image: node:lts-alpine
-    command: npx -y -p https://github.com/openl-tablets/openl-mcp/releases/download/x/openl-mcp.tgz openl-mcp-server http://studio:8080 --http
+    command: npx -y -p https://github.com/openl-tablets/openl-mcp/releases/download/x/openl-mcp.tgz openl-mcp http://studio:8080 --http
     container_name: openl-mcp
     restart: unless-stopped
     ports:

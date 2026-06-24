@@ -1,14 +1,14 @@
 # MCP Server Connection Guide
 
 Connect your AI client to the OpenL MCP server. The server is the npm package
-[`openl-mcp-server`](https://www.npmjs.com/package/openl-mcp-server); your client
+[`openl-mcp`](https://www.npmjs.com/package/openl-mcp); your client
 launches it on demand over stdio — nothing to install or build first.
 
 There are two ways to launch it:
 
-- **With Node.js** — `npx -y openl-mcp-server <openl-studio-url>`
+- **With Node.js** — `npx -y openl-mcp <openl-studio-url>`
 - **Without Node.js** — run that same command inside the official Node image:
-  `docker run --rm -i node:lts-alpine npx -y openl-mcp-server <openl-studio-url>`
+  `docker run --rm -i node:lts-alpine npx -y openl-mcp <openl-studio-url>`
 
 Pick one and drop it into your client's config below.
 
@@ -43,10 +43,10 @@ The token goes in the `env` block of each config below as
 ```bash
 # With a token:
 claude mcp add openl --env OPENL_PERSONAL_ACCESS_TOKEN=<your-token> \
-  -- npx -y openl-mcp-server http://localhost:8080
+  -- npx -y openl-mcp http://localhost:8080
 
 # Single-user OpenL Studio (no token):
-claude mcp add openl -- npx -y openl-mcp-server http://localhost:8080
+claude mcp add openl -- npx -y openl-mcp http://localhost:8080
 ```
 
 Run `claude mcp list` to confirm `openl` shows as connected.
@@ -66,7 +66,7 @@ Edit `claude_desktop_config.json`:
   "mcpServers": {
     "openl": {
       "command": "npx",
-      "args": ["-y", "openl-mcp-server", "http://localhost:8080"],
+      "args": ["-y", "openl-mcp", "http://localhost:8080"],
       "env": { "OPENL_PERSONAL_ACCESS_TOKEN": "<your-token>" }
     }
   }
@@ -84,7 +84,7 @@ Edit `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (per project):
   "mcpServers": {
     "openl": {
       "command": "npx",
-      "args": ["-y", "openl-mcp-server", "http://localhost:8080"],
+      "args": ["-y", "openl-mcp", "http://localhost:8080"],
       "env": { "OPENL_PERSONAL_ACCESS_TOKEN": "<your-token>" }
     }
   }
@@ -104,7 +104,7 @@ workspace (or run **MCP: Open User Configuration** for a global one):
     "openl": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "openl-mcp-server", "http://localhost:8080"],
+      "args": ["-y", "openl-mcp", "http://localhost:8080"],
       "env": { "OPENL_PERSONAL_ACCESS_TOKEN": "<your-token>" }
     }
   }
@@ -129,7 +129,7 @@ In **any** config above, replace the `command`/`args` with:
   "run", "--rm", "-i",
   "-e", "OPENL_PERSONAL_ACCESS_TOKEN",
   "node:lts-alpine",
-  "npx", "-y", "openl-mcp-server", "http://host.docker.internal:8080"
+  "npx", "-y", "openl-mcp", "http://host.docker.internal:8080"
 ]
 ```
 
@@ -142,7 +142,7 @@ Two differences from the npx form:
   (and the `env` block). Otherwise keep both — `-e` forwards the token into the
   container.
 
-For Claude Code: `claude mcp add openl -- docker run --rm -i node:lts-alpine npx -y openl-mcp-server http://host.docker.internal:8080`.
+For Claude Code: `claude mcp add openl -- docker run --rm -i node:lts-alpine npx -y openl-mcp http://host.docker.internal:8080`.
 
 ## Verify the connection
 

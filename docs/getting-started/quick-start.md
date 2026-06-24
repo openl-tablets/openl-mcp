@@ -32,7 +32,7 @@ covers all four clients (and the Docker option if you don't have Node.js).
 **Claude Code:**
 
 ```bash
-claude mcp add openl -- npx -y openl-mcp-server http://localhost:8080
+claude mcp add openl -- npx -y openl-mcp http://localhost:8080
 ```
 
 **Cursor** — add to `~/.cursor/mcp.json`:
@@ -42,7 +42,7 @@ claude mcp add openl -- npx -y openl-mcp-server http://localhost:8080
   "mcpServers": {
     "openl": {
       "command": "npx",
-      "args": ["-y", "openl-mcp-server", "http://localhost:8080"]
+      "args": ["-y", "openl-mcp", "http://localhost:8080"]
     }
   }
 }

@@ -16,9 +16,9 @@ Built with MCP SDK v1.29+ featuring type-safe validation (Zod) and comprehensive
 
 ## npm Distribution
 
-The MCP server is published as an npm package: [`openl-mcp-server`](https://www.npmjs.com/package/openl-mcp-server) — stdio transport via `npx` for Claude Code / Claude Desktop / Cursor / VS Code. No Node.js? Run it on the official Docker image instead — see the [Connection Guide](docs/setup/mcp-connection-guide.md#running-without-nodejs-docker).
+The MCP server is published as an npm package: [`openl-mcp`](https://www.npmjs.com/package/openl-mcp) — stdio transport via `npx` for Claude Code / Claude Desktop / Cursor / VS Code. No Node.js? Run it on the official Docker image instead — see the [Connection Guide](docs/setup/mcp-connection-guide.md#running-without-nodejs-docker).
 
-The same binary also doubles as a **CLI** for direct API calls without an MCP client (`npx -y openl-mcp-server <tool> '<json-args>'`) — see [README.cli.md](README.cli.md) for the full CLI guide.
+The same binary also doubles as a **CLI** for direct API calls without an MCP client (`npx -y openl-mcp <tool> '<json-args>'`) — see [README.cli.md](README.cli.md) for the full CLI guide.
 
 For npm package details see [README.npm.md](README.npm.md).
 
@@ -29,7 +29,7 @@ Point your AI client at OpenL Studio — it launches the server over stdio via
 
 ```bash
 # Claude Code
-claude mcp add openl -- npx -y openl-mcp-server http://localhost:8080
+claude mcp add openl -- npx -y openl-mcp http://localhost:8080
 ```
 
 For Claude Desktop, Cursor, and VS Code (and the no-Node.js Docker option), see the
@@ -103,7 +103,7 @@ Pass the OpenL Studio base URL as a **positional argument** (preferred), or set 
 ```bash
 # Positional argument (preferred) — starts the stdio MCP server
 openl-mcp http://localhost:8080
-npx -y openl-mcp-server http://localhost:8080
+npx -y openl-mcp http://localhost:8080
 
 # …or via the environment variable
 OPENL_BASE_URL=http://localhost:8080 openl-mcp

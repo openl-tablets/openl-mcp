@@ -72,7 +72,7 @@ describe("built binary (dist/index.js)", () => {
     it("--version prints version and exits 0", async () => {
       const { code, stdout } = await run(["--version"], envWithoutOpenl());
       expect(code).toBe(0);
-      expect(stdout).toMatch(/openl-mcp-server \d+\.\d+\.\d+/);
+      expect(stdout).toMatch(/openl-mcp \d+\.\d+\.\d+/);
     });
 
     it("--help prints usage and exits 0 (no config needed)", async () => {
@@ -187,13 +187,13 @@ describe("built binary (dist/index.js)", () => {
 
   describe("bin-symlink launch (global install / npm .bin shim)", () => {
     it("runs main() when invoked through a symlink whose name is not index.js", async () => {
-      // npm exposes the binary as a symlink named `openl-mcp` / `openl-mcp-server`
+      // npm exposes the binary as a symlink named `openl-mcp`
       // (e.g. node_modules/.bin or the global bin dir). When launched that way,
       // process.argv[1] is the unresolved symlink path — NOT ".../index.js" —
       // so the entry-point check must resolve realpaths or main() never runs.
       const dir = mkdtempSync(join(tmpdir(), "openl-binlink-"));
       try {
-        const link = join(dir, "openl-mcp-server"); // name deliberately != index.js
+        const link = join(dir, "openl-mcp"); // name deliberately != index.js
         symlinkSync(distEntry, link);
         // Invoke `node <symlink> --version`: argv[1] is the symlink path.
         const { code, stdout } = await new Promise<{ code: number; stdout: string }>((resolve) => {
@@ -202,7 +202,7 @@ describe("built binary (dist/index.js)", () => {
           });
         });
         expect(code).toBe(0);
-        expect(stdout).toMatch(/openl-mcp-server \d+\.\d+\.\d+/);
+        expect(stdout).toMatch(/openl-mcp \d+\.\d+\.\d+/);
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }

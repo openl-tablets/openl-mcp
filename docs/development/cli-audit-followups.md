@@ -140,7 +140,7 @@ Tracks items identified in the `EPBDS-16027` CLI audit (May 2026) that were **no
 **Sketch.**
 - New `completion <shell>` subcommand.
 - Generate static script that knows: 31 tool names, ~12 flags, file paths for `--cookie-jar` / `@file` args.
-- Document installation: `npx openl-mcp-server completion zsh > ~/.zsh/completions/_openl-mcp`.
+- Document installation: `npx openl-mcp completion zsh > ~/.zsh/completions/_openl-mcp`.
 
 **Estimate.** ~150 lines (script templates per shell) or ~30 lines + `tabtab` dep. **~3 hours.**
 
@@ -166,7 +166,7 @@ Tracks items identified in the `EPBDS-16027` CLI audit (May 2026) that were **no
 
 ## 🟢 P2.14 — Stdin size limit
 
-**Problem.** `readStream` reads stdin fully into memory. An accidental `cat huge.bin | npx -y openl-mcp-server openl_… --stdin` could OOM the Node process.
+**Problem.** `readStream` reads stdin fully into memory. An accidental `cat huge.bin | npx -y openl-mcp openl_… --stdin` could OOM the Node process.
 
 **Sketch.**
 - Hard cap at 10 MB (way more than any tool arg will ever be).

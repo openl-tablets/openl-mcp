@@ -857,7 +857,7 @@ dist/
 **package.json**:
 ```json
 {
-  "name": "openl-mcp-server",
+  "name": "openl-mcp",
   "version": "1.0.0",
   "type": "module",  // ES Modules
   "main": "dist/index.js",
@@ -880,12 +880,12 @@ dist/
 
 **1. npm package (with Node.js)**:
 ```bash
-npx -y openl-mcp-server http://localhost:8080
+npx -y openl-mcp http://localhost:8080
 ```
 
 **2. Docker (no Node.js)** — run the package on the official Node image:
 ```bash
-docker run --rm -i node:lts-alpine npx -y openl-mcp-server http://host.docker.internal:8080
+docker run --rm -i node:lts-alpine npx -y openl-mcp http://host.docker.internal:8080
 ```
 
 **3. Claude Desktop integration**:
@@ -894,7 +894,7 @@ docker run --rm -i node:lts-alpine npx -y openl-mcp-server http://host.docker.in
   "mcpServers": {
     "openl": {
       "command": "npx",
-      "args": ["-y", "openl-mcp-server", "http://localhost:8080"],
+      "args": ["-y", "openl-mcp", "http://localhost:8080"],
       "env": {
         "OPENL_PERSONAL_ACCESS_TOKEN": "<your-token>"
       }
@@ -906,7 +906,7 @@ docker run --rm -i node:lts-alpine npx -y openl-mcp-server http://host.docker.in
 **4. Shared HTTP server / full stack**:
 ```bash
 # One shared server over HTTP at /mcp
-npx -y openl-mcp-server http://localhost:8080 --http
+npx -y openl-mcp http://localhost:8080 --http
 
 # OpenL Studio + MCP together
 docker compose up -d

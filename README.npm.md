@@ -1,4 +1,4 @@
-# openl-mcp-server
+# openl-mcp
 
 [Model Context Protocol](https://modelcontextprotocol.io/) server for [OpenL Studio](https://github.com/openl-tablets/openl-tablets) — the open-source Business Rules Management System.
 
@@ -9,13 +9,13 @@ Exposes OpenL Studio repositories, projects, rules tables, tests, and deployment
 Run ad-hoc with `npx` (recommended for MCP clients) — pass your OpenL Studio URL as the argument:
 
 ```bash
-npx -y openl-mcp-server http://localhost:8080
+npx -y openl-mcp http://localhost:8080
 ```
 
 Or install globally:
 
 ```bash
-npm install -g openl-mcp-server
+npm install -g openl-mcp
 openl-mcp http://localhost:8080
 ```
 
@@ -29,10 +29,10 @@ Point the server at your OpenL Studio instance with a **positional URL** (prefer
 
 ```bash
 # Base URL as the positional argument (preferred)
-npx -y openl-mcp-server http://localhost:8080
+npx -y openl-mcp http://localhost:8080
 
 # …or via the environment variable
-OPENL_BASE_URL=http://localhost:8080 npx -y openl-mcp-server
+OPENL_BASE_URL=http://localhost:8080 npx -y openl-mcp
 ```
 
 Authentication is **optional** — OpenL Studio single-user mode accepts unauthenticated requests. To authenticate, set a Personal Access Token (env var or matching CLI flag):
@@ -56,7 +56,7 @@ Add to `claude_desktop_config.json`:
   "mcpServers": {
     "openl": {
       "command": "npx",
-      "args": ["-y", "openl-mcp-server", "<your-openl-studio-host>"],
+      "args": ["-y", "openl-mcp", "<your-openl-studio-host>"],
       "env": {
         "OPENL_PERSONAL_ACCESS_TOKEN": "<your-token>"
       }
@@ -67,7 +67,7 @@ Add to `claude_desktop_config.json`:
 
 The base URL is passed as the positional argument. Alternatively, drop it from `args` and set `OPENL_BASE_URL` in `env`. The `env` block holds auth and is optional — omit it for single-user servers that don't require credentials.
 
-For Claude Code (`claude mcp add openl -- npx -y openl-mcp-server <url>`), Cursor, and VS Code, see the [MCP Connection Guide](https://github.com/openl-tablets/openl-mcp/blob/main/docs/setup/mcp-connection-guide.md).
+For Claude Code (`claude mcp add openl -- npx -y openl-mcp <url>`), Cursor, and VS Code, see the [MCP Connection Guide](https://github.com/openl-tablets/openl-mcp/blob/main/docs/setup/mcp-connection-guide.md).
 
 ## Use as a CLI (direct API calls, no MCP client)
 
@@ -75,19 +75,19 @@ The same binary can invoke any `openl_*` tool directly from the shell — useful
 
 ```bash
 # Quick discovery (no config needed)
-npx -y openl-mcp-server --help          # human catalog (tool titles)
-npx -y openl-mcp-server --list-tools    # machine-readable JSON (name/title/schema)
+npx -y openl-mcp --help          # human catalog (tool titles)
+npx -y openl-mcp --list-tools    # machine-readable JSON (name/title/schema)
 
 # Single call — base URL as a positional argument (markdown by default).
 # Tool names drop the openl_ prefix on the CLI (use list_repositories, not openl_list_repositories).
-npx -y openl-mcp-server <host> list_repositories --token <pat>
+npx -y openl-mcp <host> list_repositories --token <pat>
 
 # …or via env vars
 OPENL_BASE_URL=<host> OPENL_PERSONAL_ACCESS_TOKEN=<pat> \
-  npx -y openl-mcp-server list_repositories
+  npx -y openl-mcp list_repositories
 
 # JSON for jq pipelines
-npx -y openl-mcp-server <host> list_repositories '{"response_format":"json"}' --token <pat> | jq
+npx -y openl-mcp <host> list_repositories '{"response_format":"json"}' --token <pat> | jq
 ```
 
 **See [`README.cli.md`](https://github.com/openl-tablets/openl-mcp/blob/main/README.cli.md)** for the full CLI guide: configuration, all flags (`--base-url`, `--token`, `--timeout`, `--client-document-id`, `--cookie-jar`), argument-passing modes (`@file.json`, `--stdin`), session handling for trace flows, recipes, exit codes, Windows notes, and troubleshooting.
@@ -109,7 +109,7 @@ There's no custom image — run the package on the official Node image, with not
 installed but Docker:
 
 ```bash
-docker run --rm -i node:lts-alpine npx -y openl-mcp-server http://host.docker.internal:8080
+docker run --rm -i node:lts-alpine npx -y openl-mcp http://host.docker.internal:8080
 ```
 
 Use this as the `command`/`args` in your MCP client config (use `host.docker.internal`

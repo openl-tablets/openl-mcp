@@ -408,7 +408,7 @@
 
 #### T-000: Complete MCP Server Refactoring
 - [x] Phase 1: Foundation
-  - [x] Rename server to openl-mcp-server
+  - [x] Rename server to openl-mcp
   - [x] Create utility files (formatters, validators, logger)
   - [x] Add .strict() to all schemas
   - [x] Add response_format and pagination parameters

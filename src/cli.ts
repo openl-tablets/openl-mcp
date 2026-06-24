@@ -7,9 +7,9 @@
  * with the same input schemas, validation, and response formatting.
  *
  * Usage:
- *   npx -y openl-mcp-server <tool-name> [<json-args> | @file.json | --stdin] [flags]
- *   npx -y openl-mcp-server --help
- *   npx -y openl-mcp-server --list-tools
+ *   npx -y openl-mcp <tool-name> [<json-args> | @file.json | --stdin] [flags]
+ *   npx -y openl-mcp --help
+ *   npx -y openl-mcp --list-tools
  *
  * Config (env vars, can be overridden by CLI flags):
  *   OPENL_BASE_URL                (required)  → --base-url <url>
@@ -30,7 +30,7 @@ import type * as Types from "./types.js";
  * Package version read from the npm package's `package.json` at module load.
  * `SERVER_INFO.VERSION` advertises the MCP protocol/server capability version
  * (semantically distinct from the npm release number), so `--version` reads
- * the package.json value to match what `npm view openl-mcp-server version`
+ * the package.json value to match what `npm view openl-mcp version`
  * and the installed tarball will report.
  *
  * Falls back to `SERVER_INFO.VERSION` if package.json can't be resolved
@@ -636,11 +636,11 @@ function renderToolHelp(toolName: string): string | null {
     propLines.length > 0 ? propLines.join("\n") : "  (none)",
     "",
     "Example:",
-    `  npx -y openl-mcp-server ${tool.name} '{}'`,
-    `  npx -y openl-mcp-server ${tool.name} @args.json`,
-    `  echo '{...}' | npx -y openl-mcp-server ${tool.name} --stdin`,
+    `  npx -y openl-mcp ${tool.name} '{}'`,
+    `  npx -y openl-mcp ${tool.name} @args.json`,
+    `  echo '{...}' | npx -y openl-mcp ${tool.name} --stdin`,
     "",
-    `Full JSON Schema: npx -y openl-mcp-server --list-tools | jq '.[] | select(.name=="${tool.name}")'`,
+    `Full JSON Schema: npx -y openl-mcp --list-tools | jq '.[] | select(.name=="${tool.name}")'`,
     "",
   ].filter((line) => line !== "").join("\n") + "\n";
 }
@@ -721,7 +721,7 @@ function renderHelp(): string {
     ``,
     `Output: defaults to markdown (agent-friendly, same as the MCP server).`,
     `For machine-parseable output, pass "response_format":"json" in args:`,
-    `  npx -y openl-mcp-server list_repositories '{"response_format":"json"}' | jq`,
+    `  npx -y openl-mcp list_repositories '{"response_format":"json"}' | jq`,
     ``,
     `Discovery:`,
     `  --help                      human-readable: this catalog of tool titles`,
@@ -729,9 +729,9 @@ function renderHelp(): string {
     `  --list-tools                machine-readable: JSON (bare name/title/description/schema)`,
     ``,
     `Examples:`,
-    `  npx -y openl-mcp-server list_repositories`,
+    `  npx -y openl-mcp list_repositories`,
     `  echo '{"projectId":"p","comment":"fix CA rates"}' | \\`,
-    `    npx -y openl-mcp-server save_project --stdin`,
+    `    npx -y openl-mcp save_project --stdin`,
     ``,
     `Available tools (${getAllTools().length}, grouped by category):`,
     tools,

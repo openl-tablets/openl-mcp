@@ -10,7 +10,7 @@ authentication.
 **Directly (npx or Docker):**
 
 ```bash
-DEBUG_AUTH=true npx -y openl-mcp-server http://localhost:8080
+DEBUG_AUTH=true npx -y openl-mcp http://localhost:8080
 ```
 
 **In a client config** — add it to the `env` block that launches the server:

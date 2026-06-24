@@ -1,5 +1,5 @@
 {
-  "name": "openl-mcp-server",
+  "name": "openl-mcp",
   "version": "0.0.0",
   "description": "MCP Server for OpenL Studio Rules Management System",
   "type": "module",

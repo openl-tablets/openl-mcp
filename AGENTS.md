@@ -433,18 +433,18 @@ npm run watch
 
 ## Deployment
 
-The server ships only as the npm package `openl-mcp-server`. There is no custom
+The server ships only as the npm package `openl-mcp`. There is no custom
 Docker image — run it with Node.js via `npx`, or on the official Node image when
 Node.js isn't available.
 
 ### With Node.js (stdio)
 ```bash
-npx -y openl-mcp-server http://localhost:8080
+npx -y openl-mcp http://localhost:8080
 ```
 
 ### Without Node.js (Docker)
 ```bash
-docker run --rm -i node:lts-alpine npx -y openl-mcp-server http://host.docker.internal:8080
+docker run --rm -i node:lts-alpine npx -y openl-mcp http://host.docker.internal:8080
 ```
 
 ### Shared HTTP server / full stack
