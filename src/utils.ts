@@ -206,6 +206,26 @@ export function isAxiosError(error: unknown): error is import("axios").AxiosErro
 }
 
 /**
+ * Type guard for an Axios HTTP 404 (Not Found) response.
+ *
+ * @param error - Error to check
+ * @returns True if error is an Axios error whose response status is 404
+ */
+export function isNotFoundError(error: unknown): boolean {
+  return isAxiosError(error) && error.response?.status === 404;
+}
+
+/**
+ * Type guard for a plain (non-null, non-array) object.
+ *
+ * @param value - Value to check
+ * @returns True if value is a plain object usable as a string-keyed record
+ */
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
  * Parse an environment variable string as a boolean using common truthy
  * conventions. Accepts (case-insensitive, with surrounding whitespace
  * trimmed): "1", "true", "yes", "on", "y". Anything else — including

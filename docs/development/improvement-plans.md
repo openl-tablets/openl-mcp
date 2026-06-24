@@ -124,53 +124,26 @@ Deep codebase analysis results. Plans are grouped by priority.
 
 ---
 
-## Plan 5. Split tool-handlers.ts into Modules [HIGH]
+## Plan 5. Split tool-handlers.ts into Modules [HIGH] — ✅ DONE
 
-**Problem:** `tool-handlers.ts` is now the single tool registry and contains 3,744 lines — all 40 handlers in one file. Hard to navigate, test, and review.
+**Outcome:** The 3,744-line `tool-handlers.ts` was split into per-category modules under `src/handlers/`. The registry core (`registerTool` / `getAllTools` / `executeTool`) and the shared error handling now live in `src/handlers/common.ts`; the generic `isNotFoundError` / `isPlainObject` guards moved to `utils.ts`. Each category exposes a `registerXxxHandlers()` function and owns its own private helpers and module-level state (the trace active-table registry, the table-id alias registry, the structured-payload argument validation). `src/handlers/index.ts` is the sole registry entry point — it defines `registerAllTools()` (which calls every `register*`) and re-exports `getAllTools` / `executeTool`. `tool-handlers.ts` is gone.
 
-**Affected files:**
-- `src/tool-handlers.ts` — to be split
-- New files in `src/handlers/`
+Two design refinements landed with the move: the central name-keyed `TOOL_VALIDATION` map was replaced by an optional `validateArgs` callback carried on each tool (so validation travels with the tool), and `registerAllTools()` lost its unused server/client parameters — registration needs neither, since tools receive their client at call time via `executeTool` (this also removed a throwaway `Server` and two stub clients from the CLI).
 
-**Implementation steps:**
-
-1. Create `src/handlers/` directory with modules by category:
-   ```
-   src/handlers/
-   ├── index.ts              — re-exports and registerAllTools()
-   ├── repository-handlers.ts — list_repositories, list_branches, list_repository_features, etc.
-   ├── project-handlers.ts    — list/get/open/save/close projects, project_status, revisions, local changes
-   ├── file-handlers.ts       — read/write/copy/move/delete/search project files
-   ├── table-handlers.ts      — list/get/update/append/create tables
-   ├── testing-handlers.ts    — start_project_tests, get_test_results / _summary / _by_table
-   ├── deployment-handlers.ts — list_deployments, deploy/redeploy, list_deploy_repositories
-   └── trace-handlers.ts      — trace tools (beta)
-   ```
-
-2. Extract shared helpers (registry pattern, error handling) into `src/handlers/common.ts`.
-
-3. Each module exports a `registerXxxHandlers(registry)` function.
-
-4. `src/handlers/index.ts` calls all `register*` functions.
-
-5. Update imports in `mcp-core.ts` (which registers the tool handlers for both transports).
-
-6. Ensure all existing tests pass without changes.
-
-**Done criteria:** Each handler file < 400 lines, all tests pass.
+Modules (with the registry core): `common.ts`, `repository-handlers.ts`, `project-handlers.ts`, `local-change-handlers.ts`, `testing-handlers.ts`, `file-handlers.ts`, `table-handlers.ts`, `trace-handlers.ts`, `deployment-handlers.ts`. The largest three (table, project, file) exceed the original <400-line target — that's verbose per-tool description text, not logic, and the categories were kept cohesive rather than split mid-category.
 
 ---
 
 ## Plan 6. Replace `any` with Strict Types [MEDIUM]
 
-**Problem:** 33 usages of `: any` across 5 files (formatters.ts — 15, client.ts — 7, mcp-proxy.ts — 6, types.ts — 4, tool-handlers.ts — 1). Plus 9 `eslint-disable no-explicit-any` comments. Reduces type safety.
+**Problem:** 33 usages of `: any` across 5 files (formatters.ts — 15, client.ts — 7, mcp-proxy.ts — 6, types.ts — 4, `handlers/` — 1). Plus 9 `eslint-disable no-explicit-any` comments. Reduces type safety.
 
 **Affected files:**
 - `src/formatters.ts` — highest count (15)
 - `src/client.ts` — 7
 - `src/mcp-proxy.ts` — 6
 - `src/types.ts` — 4
-- `src/tool-handlers.ts` — 1
+- `src/handlers/` — 1
 
 **Implementation steps:**
 
@@ -266,7 +239,7 @@ Deep codebase analysis results. Plans are grouped by priority.
    ```
    Alternative: use `AsyncLocalStorage` for propagation through nested calls without passing context explicitly.
 
-3. Pass `correlationId` through context to client and tool-handlers.
+3. Pass `correlationId` through context to client and the tool handlers.
 
 4. Replace all `console.error()` calls with `logger.info()`, `logger.error()`, etc.
 
@@ -290,7 +263,7 @@ Deep codebase analysis results. Plans are grouped by priority.
 
 **Affected files:**
 - `src/client.ts` — new method to fetch Studio version
-- `src/tool-handlers.ts` — add `minStudioVersion` to ToolDefinition, filter logic
+- `src/handlers/common.ts` — add `minStudioVersion` to ToolDefinition, filter logic
 - `src/constants.ts` — version constants
 - `src/mcp-core.ts` — pass version to the shared `tools/list` handler
 
@@ -380,13 +353,13 @@ Deep codebase analysis results. Plans are grouped by priority.
 | 2 | TTL/LRU for client caches | Critical | Low | client.ts | Planned |
 | 3 | Mutex for getClientForSession | Low | Low | http-server.ts | Planned |
 | 4 | File download size validation | High | Low | client.ts, constants.ts | Planned |
-| 5 | Split tool-handlers | High | High | tool-handlers.ts, new handlers/ dir | Planned |
+| 5 | Split tool-handlers | High | High | handlers/ (split by category) | ✅ Done |
 | 6 | Replace `any` with types | Medium | Medium | formatters.ts, client.ts, mcp-proxy.ts, types.ts | Planned |
 | 7 | Rate limiting | Medium | Low | http-server.ts, package.json | Planned |
 | 8 | Prompt caching | Medium | Low | prompts-registry.ts | ✅ Done |
 | 9 | Extract shared code | Medium | Medium | mcp-core.ts | ✅ Done |
 | 10 | Structured logging | Low | High | logger.ts, all files | Planned |
 | 11 | Remove dead tools.ts, sync descriptions | Medium | Low | tools.ts (deleted), tool-handlers.ts | ✅ Done |
-| 12 | Version-aware tool availability | High | Medium | client.ts, tool-handlers.ts, constants.ts, mcp-core.ts | Planned |
+| 12 | Version-aware tool availability | High | Medium | client.ts, handlers/common.ts, constants.ts, mcp-core.ts | Planned |
 
-**Recommended order:** 1 → 2 → 12 → 4 → 5 → 7 → 6 → 3 → 10  (Plans 8, 9, and 11 already complete)
+**Recommended order:** 1 → 2 → 12 → 4 → 7 → 6 → 3 → 10  (Plans 5, 8, 9, and 11 already complete)

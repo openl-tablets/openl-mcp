@@ -56,7 +56,7 @@ function createMockClient(): { client: OpenLClient; mock: MockAdapter } {
     personalAccessToken: "openl_pat_test",
   };
   const client = new OpenLClient(config);
-  // @ts-ignore Access private axios instance for mocking, mirrors tests/integration/tool-handlers.test.ts
+  // @ts-ignore Access private axios instance for mocking, mirrors tests/integration/handlers.test.ts
   const mock = new MockAdapter(client.axiosInstance);
   return { client, mock };
 }

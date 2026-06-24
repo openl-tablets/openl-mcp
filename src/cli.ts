@@ -3,7 +3,7 @@
  *
  * Lets users invoke any registered `openl_*` tool directly from the shell
  * without an MCP client. Reuses the existing `executeTool` registry from
- * `tool-handlers.ts`, so every tool the MCP server exposes is available here
+ * `src/handlers/`, so every tool the MCP server exposes is available here
  * with the same input schemas, validation, and response formatting.
  *
  * Usage:
@@ -20,11 +20,9 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-
 import { OpenLClient } from "./client.js";
 import { SERVER_INFO, TOOL_CATEGORIES } from "./constants.js";
-import { executeTool, getAllTools, registerAllTools } from "./tool-handlers.js";
+import { executeTool, getAllTools, registerAllTools } from "./handlers/index.js";
 import { hashFingerprint, sanitizeError } from "./utils.js";
 import type * as Types from "./types.js";
 
@@ -746,15 +744,9 @@ function renderHelp(): string {
  * `registerAllTools` overwrites entries in its module-level map.
  */
 let registered = false;
-function ensureToolsRegistered(client: OpenLClient): void {
+function ensureToolsRegistered(): void {
   if (registered) return;
-  // Server arg is unused by registerAllTools (see tool-handlers.ts), but the
-  // signature still requires a Server instance — pass a throwaway one.
-  const server = new Server(
-    { name: SERVER_INFO.NAME, version: SERVER_INFO.VERSION },
-    { capabilities: {} },
-  );
-  registerAllTools(server, client);
+  registerAllTools();
   registered = true;
 }
 
@@ -786,12 +778,9 @@ export async function runCli(options: RunCliOptions): Promise<number> {
     return EXIT_CODES.OK;
   }
 
-  // Pure discovery commands — no config, no network, no tool registration
-  // is needed beyond a stub client to satisfy the registry signature.
+  // Pure discovery commands — no config or network needed to list/describe tools.
   if (parsed.showHelp || parsed.listTools) {
-    ensureToolsRegistered(
-      new OpenLClient({ baseUrl: "http://localhost" }),
-    );
+    ensureToolsRegistered();
     if (parsed.showHelp) {
       // Tool-specific help: `<tool> --help` renders schema for that tool
       // instead of the global help. If the tool name is unknown, fall
@@ -824,11 +813,8 @@ export async function runCli(options: RunCliOptions): Promise<number> {
   // Tool-name validation is a USAGE concern and needs neither config nor the
   // network — run it *before* buildConfig so a typo'd tool returns EX_USAGE
   // even when OPENL_BASE_URL/auth are also missing (otherwise the config
-  // error would mask the typo). A stub client satisfies the registry
-  // signature; the real client is wired in below for execution.
-  ensureToolsRegistered(
-    new OpenLClient({ baseUrl: "http://localhost" }),
-  );
+  // error would mask the typo). The real client is wired in below for execution.
+  ensureToolsRegistered();
 
   if (!parsed.toolName) {
     stderr.write(`Error: tool name is required\n\nRun with --help for usage.\n`);

@@ -5,9 +5,8 @@
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "@jest/globals";
 import MockAdapter from "axios-mock-adapter";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { OpenLClient } from "../../src/client.js";
-import { executeTool, getAllTools, registerAllTools } from "../../src/tool-handlers.js";
+import { executeTool, getAllTools, registerAllTools } from "../../src/handlers/index.js";
 import type { OpenLConfig, ProjectStatusView, ProjectViewModel, RepositoryInfo, SummaryTableView, TestsExecutionSummary } from "../../src/types.js";
 import * as Types from "../../src/types.js";
 import { mockRepositories, mockDecisionTable, mockDeployments } from "../mocks/openl-api-mocks.js";
@@ -19,7 +18,6 @@ const encodeProjectPath = (id: string): string => encodeURIComponent(id);
 describe("Tool Handler Integration Tests", () => {
   let client: OpenLClient;
   let mockAxios: MockAdapter;
-  let server: Server;
 
   beforeAll(() => {
     const config: OpenLConfig = {
@@ -31,19 +29,8 @@ describe("Tool Handler Integration Tests", () => {
     // @ts-ignore - Access private axiosInstance for mocking
     mockAxios = new MockAdapter(client.axiosInstance);
 
-    // Create a mock server instance for tool registration
-    server = new Server(
-      {
-        name: "test-server",
-        version: "1.0.0",
-      },
-      {
-        capabilities: {},
-      }
-    );
-
     // Register all tools before running tests
-    registerAllTools(server, client);
+    registerAllTools();
   });
 
   afterEach(() => {
@@ -2096,7 +2083,6 @@ describe("Tool Handler Integration Tests", () => {
 describe("Tool Handler Integration Tests — status, edits, creation & trace", () => {
   let client: OpenLClient;
   let mockAxios: MockAdapter;
-  let server: Server;
 
   beforeAll(() => {
     const config: OpenLConfig = {
@@ -2108,8 +2094,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
     // @ts-ignore Access private axios instance for mocking in integration tests
     mockAxios = new MockAdapter(client.axiosInstance);
 
-    server = new Server({ name: "test-server", version: "1.0.0" }, { capabilities: {} });
-    registerAllTools(server, client);
+    registerAllTools();
   });
 
   beforeEach(() => {

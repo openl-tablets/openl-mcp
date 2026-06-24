@@ -38,7 +38,7 @@ src/
 ├── mcp-core.ts          # Shared MCP core (handlers) for both transports
 ├── client.ts            # OpenL Studio API client
 ├── auth.ts              # Authentication (Personal Access Token)
-├── tool-handlers.ts     # Tool registration and handlers
+├── handlers/            # Per-category tool registry (registerTool, executeTool, register*Handlers)
 ├── tools.ts             # Tool metadata definitions
 ├── schemas.ts           # Zod validation schemas
 ├── formatters.ts        # Response formatting
@@ -64,7 +64,7 @@ export const myToolSchema = z.object({
 }).strict(); // Always use .strict()
 ```
 
-### 2. Register the Tool in `tool-handlers.ts`
+### 2. Register the Tool in its category module under `src/handlers/`
 
 ```typescript
 registerTool({

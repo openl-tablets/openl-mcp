@@ -12,7 +12,7 @@ tests/
 │                                   #   (auth, client, constants, formatters,
 │                                   #    schemas, validators, prompts, …)
 └── integration/                    # Integration tests (excluded from test:unit)
-    ├── tool-handlers.test.ts       # MCP tools via executeTool() + mocked HTTP
+    ├── handlers.test.ts            # MCP tools via executeTool() + mocked HTTP
     ├── resources.test.ts           # MCP resource read/list/template handlers
     └── openl-live.test.ts          # Live tests against a real OpenL Studio
 ```
@@ -104,7 +104,7 @@ the full MCP server:
 
 Exercise the MCP surface end-to-end with the OpenL client's HTTP layer mocked:
 
-- **MCP Tools** (`tool-handlers.test.ts`)
+- **MCP Tools** (`handlers.test.ts`)
   - Every registered tool via `executeTool()` (list_repositories, list_projects, etc.)
   - Tool input validation
   - Tool output formatting

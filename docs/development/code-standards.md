@@ -25,7 +25,7 @@ This document outlines all the best practices implemented in the OpenL MCP Serve
 - `mcp-core.ts` - Shared MCP server core (capabilities, tool/resource/prompt handlers) built once for both transports
 - `client.ts` - OpenL Studio API client
 - `auth.ts` - Authentication (Personal Access Token)
-- `tool-handlers.ts` - Tool definitions, schemas, and execution handlers
+- `handlers/` - Per-category tool registry (registerTool/getAllTools/executeTool in common.ts)
 - `schemas.ts` - Input validation schemas
 - `types.ts` - Type definitions
 - `formatters.ts` - Response formatting
@@ -226,7 +226,7 @@ http-server.ts      Moderate
 mcp-core.ts         Low
 client.ts           Low
 auth.ts             Moderate
-tool-handlers.ts    Moderate
+handlers/           Moderate
 schemas.ts          Low
 types.ts            Low
 formatters.ts       Low
@@ -268,7 +268,7 @@ constants.ts        Low
 **Easy to add new tools**:
 1. Define Zod schema in `schemas.ts`
 2. Add client method in `client.ts` (if needed)
-3. Register the tool (definition + handler) in `tool-handlers.ts`
+3. Register the tool (definition + handler) in its category module under `src/handlers/`
 5. Add tests in `tests/`
 
 **Well-documented extension points**:
@@ -334,7 +334,7 @@ All dependencies actively maintained and secure:
   - `idempotentHint`: Identifies idempotent operations
   - `openWorldHint`: Indicates operations that may access external data
 
-**Tool Definition fields** (top-level on each `registerTool` call in `tool-handlers.ts`):
+**Tool Definition fields** (top-level on each `registerTool` call in the `src/handlers/` modules):
 - **version**: Semantic version of the tool
 - **category**: Display category for CLI `--help` grouping — one of `TOOL_CATEGORIES` (`src/constants.ts`)
 

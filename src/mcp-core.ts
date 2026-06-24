@@ -29,7 +29,7 @@ import {
 
 import { SERVER_INFO, mcpToolName, stripToolPrefix } from "./constants.js";
 import { PROMPTS, loadPromptContent, getPromptDefinition } from "./prompts-registry.js";
-import { registerAllTools, getAllTools, executeTool } from "./tool-handlers.js";
+import { registerAllTools, getAllTools, executeTool } from "./handlers/index.js";
 import {
   STATIC_RESOURCES,
   RESOURCE_TEMPLATES,
@@ -195,7 +195,7 @@ export function createConfiguredServer(client: OpenLClient): {
     (uri) => server.sendResourceUpdated({ uri }),
   );
 
-  registerAllTools(server, client);
+  registerAllTools();
   registerMcpHandlers(server, client, subscriptions);
 
   return { server, subscriptions };

@@ -76,7 +76,7 @@ Contains MCP server settings (path, environment variables)
 ```text
 dist/index.js          # Compiled server
 src/                   # Source code
-src/tool-handlers.ts   # Single registry for all 40 MCP tools
+src/handlers/          # Per-category tool registry (registerTool/getAllTools/executeTool in common.ts)
 docs/setup/mcp-connection-guide.md  # Complete configuration guide with examples
 ```
 

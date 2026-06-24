@@ -404,7 +404,7 @@ openl-mcp/
 │   ├── http-server.ts     # HTTP server (Streamable HTTP transport at /mcp)
 │   ├── mcp-core.ts        # Shared MCP core (handlers) for both transports
 │   ├── client.ts          # OpenL API client
-│   ├── tool-handlers.ts   # Tool definitions and execution logic
+│   ├── handlers/          # Per-category tool registry + register*Handlers/executeTool
 │   ├── auth.ts            # Authentication (Basic/PAT)
 │   ├── schemas.ts         # Zod validation schemas
 │   ├── prompts.ts         # Prompt definitions

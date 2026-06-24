@@ -293,8 +293,8 @@ export class OpenLClient {
   /**
    * Resolve a user-supplied repository identifier (id OR display name,
    * case-insensitive) to the canonical repository id used by the OpenL REST
-   * API. This is the contract advertised by the tool descriptions in
-   * `tools.ts` / `tool-handlers.ts` — LLMs tend to pass whichever of the two
+   * API. This is the contract advertised by the tool descriptions under
+   * `src/handlers/` — LLMs tend to pass whichever of the two
    * fields they see first in `openl_list_repositories()` output, sometimes
    * with case drift, so we accept both forms.
    *
