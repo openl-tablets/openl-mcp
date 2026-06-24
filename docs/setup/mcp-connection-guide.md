@@ -1,131 +1,59 @@
 # MCP Server Connection Guide
 
-Step-by-step guide for connecting AI clients to the OpenL MCP server.
+Connect your AI client to the OpenL MCP server. The server is the npm package
+[`openl-mcp-server`](https://www.npmjs.com/package/openl-mcp-server); your client
+launches it on demand over stdio — nothing to install or build first.
 
-## Quick Jump
+There are two ways to launch it:
 
-- [Prerequisites](#prerequisites)
-- [Create a Personal Access Token](#create-a-personal-access-token-pat)
-- [Cursor IDE](#cursor-ide)
-- [Claude Desktop](#claude-desktop)
-- [VS Code / GitHub Copilot](#vs-code--github-copilot)
-- [Verify Connection](#verify-connection)
-- [Troubleshooting](#troubleshooting)
+- **With Node.js** — `npx -y openl-mcp-server <openl-studio-url>`
+- **Without Node.js** — run that same command inside the official Node image:
+  `docker run --rm -i node:lts-alpine npx -y openl-mcp-server <openl-studio-url>`
 
----
+Pick one and drop it into your client's config below.
 
-## Prerequisites
+## Do I need Node.js?
 
-- **[Node.js 24+](https://nodejs.org/)** — required for Claude Desktop (uses `mcp-remote` stdio proxy)
-- **`mcp-remote`** — install with `npm install -g mcp-remote` (required for Claude Desktop)
-- **AI Client** — [Cursor IDE](https://cursor.com), [Claude Desktop](https://claude.ai/download), or [VS Code](https://code.visualstudio.com/) with GitHub Copilot
-- **MCP Server running** — see [Quick Start](../getting-started/quick-start.md) or [Docker Setup](docker.md)
+| Client | Node.js | Notes |
+|--------|---------|-------|
+| **Claude Code** | ✅ Built in | Claude Code itself runs on Node, so `npx` works out of the box. |
+| **Claude Desktop** | Install it, or use Docker | The desktop app does not provide a `node` for MCP servers. |
+| **Cursor** | Install it, or use Docker | |
+| **VS Code (GitHub Copilot)** | Install it, or use Docker | VS Code bundles Node for itself, but `npx` is resolved from your PATH. |
 
-Verify paths (needed for Claude Desktop configuration):
-
-```bash
-which node
-```
-Example output: `/Users/username/.nvm/versions/node/v24.0.0/bin/node`
-
-```bash
-which mcp-remote
-```
-Example output: `/Users/username/.nvm/versions/node/v24.0.0/bin/mcp-remote`
-
----
+Get Node.js (LTS, version 24+) from [nodejs.org](https://nodejs.org/). Prefer not
+to install it? Use the [Docker option](#running-without-nodejs-docker) in any
+client below — it needs only Docker.
 
 ## Create a Personal Access Token (PAT)
 
-> **Skip this step** if you use `compose.studio.yaml` (single-user mode — no authentication needed).
+> Skip this if your OpenL Studio runs in single-user mode (e.g. the
+> [compose demo](docker.md)) — it accepts unauthenticated requests.
 
-PAT is a secure way to authenticate without using a password.
+1. Sign in to OpenL Studio.
+2. Profile icon → **User Settings** → **Personal Access Tokens** → **Create Token**.
+3. Name it (e.g. `Cursor MCP`), optionally set an expiry.
+4. **Copy it now** — it is shown only once. Format: `openl_pat_<publicId>.<secret>`.
 
-1. Open OpenL Studio in your browser and sign in
-2. Click the profile icon (top right) → **User Settings**
-3. Go to **Personal Access Tokens** → **Create Token**
-4. Enter a descriptive name (e.g., `Cursor MCP`, `Claude Desktop MCP`)
-5. (Optional) Set expiration date (recommended: 90 days)
-6. **Copy the token immediately** — it is shown only once!
-   - Format: `openl_pat_<publicId>.<secret>`
-   - Store in a password manager
+The token goes in the `env` block of each config below as
+`OPENL_PERSONAL_ACCESS_TOKEN`. Never commit it.
 
-**Security:**
-- Don't commit tokens to Git
-- Use different tokens for different environments
-- Delete and rotate tokens regularly
+## Claude Code
 
----
+```bash
+# With a token:
+claude mcp add openl --env OPENL_PERSONAL_ACCESS_TOKEN=<your-token> \
+  -- npx -y openl-mcp-server http://localhost:8080
 
-## Cursor IDE
-
-Cursor supports direct HTTP connection to MCP servers (no proxy needed).
-
-### Remote MCP Server
-
-**Via Cursor UI** (Settings → MCP Servers → Add):
-
-```json
-{
-  "mcpServers": {
-    "openl-mcp-server": {
-      "url": "https://<your-openl-server>/mcp",
-      "transport": "streamablehttp",
-      "headers": {
-        "Authorization": "Token <your-pat-token>"
-      }
-    }
-  }
-}
+# Single-user OpenL Studio (no token):
+claude mcp add openl -- npx -y openl-mcp-server http://localhost:8080
 ```
 
-**Via configuration file:**
-
-| OS | Path |
-|----|------|
-| macOS | `~/Library/Application Support/Cursor/User/settings.json` |
-| Windows | `%APPDATA%\Cursor\User\settings.json` |
-| Linux | `~/.config/Cursor/User/settings.json` |
-
-Add the `mcpServers` section to the file.
-
-### Docker MCP Server
-
-```json
-{
-  "mcpServers": {
-    "openl-mcp-server": {
-      "url": "http://localhost:3000/mcp",
-      "transport": "streamablehttp",
-      "headers": {
-        "Authorization": "Token <your-pat-token>"
-      }
-    }
-  }
-}
-```
-
-For `compose.studio.yaml` (single-user mode), omit the `headers` section.
-
-For remote Docker, use HTTPS to protect your token in transit (e.g., `https://<docker-host>/mcp` with TLS termination via a reverse proxy). Only use plain `http://localhost` for true localhost connections on the same machine.
-
-### Transport
-
-The server speaks the MCP **Streamable HTTP** transport (MCP spec 2025-11-25)
-at a single `/mcp` endpoint, so use `"transport": "streamablehttp"`. The legacy
-HTTP+SSE transport is no longer supported.
-
-After configuration, **restart Cursor** completely.
-
----
+Run `claude mcp list` to confirm `openl` shows as connected.
 
 ## Claude Desktop
 
-Claude Desktop only supports stdio transport. Use `mcp-remote` as a proxy bridge to connect to HTTP-based MCP servers.
-
-**Requirements:** [Node.js 24+](https://nodejs.org/) and `mcp-remote` (`npm install -g mcp-remote`).
-
-### Configuration File Location
+Edit `claude_desktop_config.json`:
 
 | OS | Path |
 |----|------|
@@ -133,261 +61,108 @@ Claude Desktop only supports stdio transport. Use `mcp-remote` as a proxy bridge
 | Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
 | Linux | `~/.config/Claude/claude_desktop_config.json` |
 
-Create the file if it doesn't exist.
+```json
+{
+  "mcpServers": {
+    "openl": {
+      "command": "npx",
+      "args": ["-y", "openl-mcp-server", "http://localhost:8080"],
+      "env": { "OPENL_PERSONAL_ACCESS_TOKEN": "<your-token>" }
+    }
+  }
+}
+```
 
-### Remote MCP Server
+Drop the `env` block for single-user mode. Quit and reopen Claude Desktop to apply.
+
+## Cursor
+
+Edit `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (per project):
 
 ```json
 {
   "mcpServers": {
-    "openl-mcp-server": {
-      "command": "<path-to-node>",
-      "args": [
-        "<path-to-mcp-remote>",
-        "https://<your-openl-server>/mcp",
-        "--header",
-        "Authorization: Token <your-pat-token>"
-      ]
+    "openl": {
+      "command": "npx",
+      "args": ["-y", "openl-mcp-server", "http://localhost:8080"],
+      "env": { "OPENL_PERSONAL_ACCESS_TOKEN": "<your-token>" }
     }
   }
 }
 ```
 
-### Docker MCP Server
+Restart Cursor. **Settings → MCP** should show `openl` connected.
 
-```json
-{
-  "mcpServers": {
-    "openl-mcp-server": {
-      "command": "<path-to-node>",
-      "args": [
-        "<path-to-mcp-remote>",
-        "http://localhost:3000/mcp",
-        "--header",
-        "Authorization: Token <your-pat-token>"
-      ]
-    }
-  }
-}
-```
+## VS Code (GitHub Copilot)
 
-For `compose.studio.yaml` (single-user mode), omit `"--header"` and `"Authorization: Token ..."` from args.
-
-For remote Docker, use HTTPS to protect your token in transit (e.g., `https://<docker-host>/mcp` with TLS termination via a reverse proxy). Only use plain `http://localhost` for true localhost connections on the same machine.
-
-**Replace paths:**
-- `<path-to-node>` → output of `which node`
-- `<path-to-mcp-remote>` → output of `which mcp-remote`
-
-After configuration, **quit and reopen Claude Desktop** (`Cmd+Q` / `Alt+F4`).
-
----
-
-## VS Code / GitHub Copilot
-
-VS Code supports two approaches for connecting to MCP servers.
-
-### Approach A: HTTP Transport (remote or Docker MCP Server)
-
-For connecting to an MCP server that's already running (remote or in Docker).
-
-**Prerequisites:** VS Code 1.108.1+ with GitHub Copilot, Agent mode enabled.
-
-Open `settings.json` (`Cmd/Ctrl + Shift + P` → `Preferences: Open User Settings (JSON)`):
-
-**Remote MCP Server:**
-```json
-{
-  "github.copilot.chat.mcp.servers": {
-    "openl-mcp-server": {
-      "type": "http",
-      "url": "https://<your-openl-server>/mcp",
-      "headers": {
-        "Authorization": "Token <your-pat-token>"
-      }
-    }
-  }
-}
-```
-
-**Docker MCP Server:**
-```json
-{
-  "github.copilot.chat.mcp.servers": {
-    "openl-mcp-server": {
-      "type": "http",
-      "url": "http://localhost:3000/mcp",
-      "headers": {
-        "Authorization": "Token <your-pat-token>"
-      }
-    }
-  }
-}
-```
-
-After configuration, reload VS Code (`Cmd/Ctrl + Shift + P` → `Developer: Reload Window`).
-
-### Approach B: Stdio Transport via Docker (standalone)
-
-For running MCP server directly from Docker without a separate `docker compose` setup. VS Code launches a Docker container and communicates via stdin/stdout.
-
-**Prerequisites:** VS Code 1.99+ with GitHub Copilot, Docker installed and running.
-
-#### Step 1: Create an environment file
-
-Create `~/.mcp/.env` (or `%USERPROFILE%\.mcp\.env` on Windows):
-
-```bash
-mkdir -p ~/.mcp
-chmod 700 ~/.mcp
-```
-
-```env
-# OpenL Studio API base URL (required)
-# Use host.docker.internal to reach OpenL on the host machine (macOS/Windows)
-OPENL_BASE_URL=http://host.docker.internal:8080
-
-# Personal Access Token (required)
-OPENL_PERSONAL_ACCESS_TOKEN=<your-pat-token>
-```
-
-Restrict permissions: `chmod 600 ~/.mcp/.env`. Never commit this file to Git.
-
-> On Linux, add `--add-host=host.docker.internal:host-gateway` to the Docker args below.
-
-#### Step 2: Configure MCP in VS Code
-
-Create `.vscode/mcp.json` in your project (workspace config) or use `Cmd/Ctrl + Shift + P` → `MCP: Open User Configuration` (global config):
+Requires GitHub Copilot with Agent mode. Create `.vscode/mcp.json` in your
+workspace (or run **MCP: Open User Configuration** for a global one):
 
 ```json
 {
   "servers": {
     "openl": {
       "type": "stdio",
-      "command": "docker",
-      "args": [
-        "run",
-        "--rm",
-        "-i",
-        "--pull=always",
-        "--env-file",
-        "/Users/<username>/.mcp/.env",
-        "ghcr.io/openl-tablets/openl-mcp:latest",
-        "node",
-        "dist/index.js"
-      ]
+      "command": "npx",
+      "args": ["-y", "openl-mcp-server", "http://localhost:8080"],
+      "env": { "OPENL_PERSONAL_ACCESS_TOKEN": "<your-token>" }
     }
   }
 }
 ```
 
-Replace `/Users/<username>/.mcp/.env` with the absolute path to your env file.
+> A workspace `.vscode/mcp.json` is committed with your repo — keep the token out
+> of it. Use VS Code [input variables](https://code.visualstudio.com/docs/copilot/customization/mcp-servers)
+> or the user-level config for secrets.
 
-> `node dist/index.js` overrides the default container command to use stdio transport instead of HTTP server.
+Open the Copilot Chat **Agent** tools picker and enable the OpenL tools.
 
-#### Step 3: Start and trust
+## Running without Node.js (Docker)
 
-1. Save `mcp.json`
-2. VS Code will ask to **trust** the MCP server — review the command and confirm
-3. Start via `MCP: List Servers` or the Start action in `mcp.json` editor
+No Node.js on the machine? Run the package inside the official Node image: the
+container starts, runs `npx`, speaks stdio to your client, and is removed on exit.
+In **any** config above, replace the `command`/`args` with:
 
-#### Using a local image (for development)
-
-```bash
-docker build -t openl-mcp:local .
+```json
+"command": "docker",
+"args": [
+  "run", "--rm", "-i",
+  "-e", "OPENL_PERSONAL_ACCESS_TOKEN",
+  "node:lts-alpine",
+  "npx", "-y", "openl-mcp-server", "http://host.docker.internal:8080"
+]
 ```
 
-In `mcp.json`, replace the image name with `openl-mcp:local` and remove `--pull=always`.
+Two differences from the npx form:
 
----
+- **Use `host.docker.internal`, not `localhost`**, to reach an OpenL Studio on the
+  host machine. On Linux, also add `"--add-host", "host.docker.internal:host-gateway"`
+  to the args.
+- For single-user mode, drop the `"-e", "OPENL_PERSONAL_ACCESS_TOKEN"` entries
+  (and the `env` block). Otherwise keep both — `-e` forwards the token into the
+  container.
 
-## Verify Connection
+For Claude Code: `claude mcp add openl -- docker run --rm -i node:lts-alpine npx -y openl-mcp-server http://host.docker.internal:8080`.
 
-### Cursor IDE
+## Verify the connection
 
-1. Open Settings (`Cmd/Ctrl + ,`) → MCP Servers → status should show **Connected**
-2. In chat, try: `List repositories in OpenL Studio`
+1. Your client's MCP panel lists **openl** as connected.
+2. In chat, ask: `List repositories in OpenL Studio`.
+3. The client calls an OpenL tool and returns the list.
 
-### Claude Desktop
+Not connecting? See [Troubleshooting](../guides/troubleshooting.md).
 
-1. Open Settings (gear icon or `Cmd + ,`) → MCP Servers → status should show **Connected**
-2. In chat, try: `What OpenL Studio tools are available?`
+## Connect to a shared HTTP server (optional)
 
-### VS Code
-
-1. Check MCP server status: `MCP: List Servers` from Command Palette
-2. Open Copilot Chat in **Agent** mode
-3. Open the **tools** picker and ensure OpenL tools are enabled
-4. Try: `List OpenL design repositories`
-
----
-
-## Troubleshooting
-
-### MCP Server Not Connecting
-
-1. **Check paths** (Claude Desktop): run `which node` and `which mcp-remote`, ensure paths in config match exactly
-2. **Check JSON syntax**: no trailing commas, valid JSON
-3. **Check token**: copied completely, not expired, not revoked
-4. **Network**: `curl https://<your-openl-server>/mcp` should respond (not "connection refused")
-5. **Restart**: completely close and reopen the AI client
-
-### 401 Unauthorized
-
-- Token format should be `openl_pat_<publicId>.<secret>` (copied in full)
-- Authorization header: `Token <your-pat-token>` (note the space after "Token")
-- Check token hasn't expired in OpenL Studio UI → User Settings → Personal Access Tokens
-
-### Docker Container Not Reachable
-
-```bash
-# Check container is running
-docker ps | grep mcp-server
-
-# Check health
-curl http://localhost:3000/health
-
-# Check port
-lsof -i :3000
-```
-
-If container is not running:
-```bash
-docker compose logs mcp-server
-docker compose restart mcp-server
-```
-
-### ENOTFOUND / DNS Error
-
-- Check VPN is connected (if required)
-- Verify DNS: `nslookup <your-openl-server>`
-- For Docker stdio: use `host.docker.internal` instead of `localhost` in env file
-
-### mcp-remote Not Found
-
-```bash
-npm install -g mcp-remote
-which mcp-remote
-
-# If not found, check npm global path:
-npm config get prefix
-# Add <prefix>/bin to your PATH
-```
-
-### Client-Specific Logs
-
-| Client | How to view logs |
-|--------|-----------------|
-| Cursor | `tail -f ~/Library/Logs/Cursor/*.log` |
-| Claude Desktop | `tail -f ~/Library/Logs/Claude/*.log` |
-| VS Code | Output panel → select "GitHub Copilot Chat" |
-
----
+Each config above launches its own stdio server — ideal for one user. To run a
+single long-lived server that several clients share, start it in HTTP mode
+(`--http`) and point clients at its `/mcp` URL. See [Docker Setup](docker.md) for
+the compose stack and the standalone `docker run … --http` command.
 
 ## Additional Resources
 
-- [Quick Start](../getting-started/quick-start.md) — Get started with Docker Compose
-- [Docker Setup](docker.md) — Docker configuration details
-- [Authentication Guide](../guides/authentication.md) — Personal Access Token authentication
-- [Troubleshooting Guide](../guides/troubleshooting.md) — More common issues and solutions
-- [VS Code MCP docs](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) — Official VS Code MCP documentation
+- [Quick Start](../getting-started/quick-start.md) — get running in a few minutes
+- [Docker Setup](docker.md) — run via Docker (no Node.js) and the compose demo
+- [Authentication Guide](../guides/authentication.md) — Personal Access Tokens
+- [Troubleshooting Guide](../guides/troubleshooting.md) — common issues
+- [VS Code MCP docs](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) — official VS Code MCP reference

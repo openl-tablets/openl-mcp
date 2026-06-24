@@ -15,26 +15,25 @@ The MCP server authenticates with a Personal Access Token (PAT) — a user-gener
 
 ## Setup
 
-**IMPORTANT**: Authentication tokens **MUST NOT** be set in Docker configuration or server environment variables for the HTTP transport. They should be provided **only** in the MCP client configuration (Cursor / Claude Desktop) or via the HTTP `Authorization` header.
+The token lives **with the client**, never inside the server. How you pass it
+depends on the transport:
 
-### How It Works
+1. **stdio** (default — Claude Code, Claude Desktop, Cursor, VS Code) — set
+   `OPENL_PERSONAL_ACCESS_TOKEN` in the `env` block of the client's MCP config.
+2. **HTTP** (`--http`, a shared server) — send it on the `Authorization` header
+   when connecting.
 
-The MCP server supports two modes of operation:
+### stdio transport (per client)
 
-1. **stdio transport** (for Cursor/Claude Desktop) - authentication is set in the MCP client configuration via environment variables in the config file
-2. **HTTP transport** (for Docker) - authentication is passed via the HTTP Authorization header when connecting
+Put the token in the `env` block that launches `npx` (or Docker). Example for Cursor
+(`~/.cursor/mcp.json`):
 
-### For Cursor IDE or Claude Desktop (stdio transport)
-
-Configure authentication in the MCP client configuration file:
-
-**Example for Cursor:**
 ```json
 {
   "mcpServers": {
-    "openl-mcp-server": {
-      "command": "node",
-      "args": ["<path-to-project>/dist/index.js", "http://localhost:8080"],
+    "openl": {
+      "command": "npx",
+      "args": ["-y", "openl-mcp-server", "http://localhost:8080"],
       "env": {
         "OPENL_PERSONAL_ACCESS_TOKEN": "<your-pat-token>"
       }
@@ -43,59 +42,29 @@ Configure authentication in the MCP client configuration file:
 }
 ```
 
-**Example for Claude Desktop** (macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`):
-```json
-{
-  "mcpServers": {
-    "openl-mcp-server": {
-      "command": "node",
-      "args": ["<path-to-project>/dist/index.js", "http://localhost:8080"],
-      "env": {
-        "OPENL_PERSONAL_ACCESS_TOKEN": "<your-pat-token>"
-      }
-    }
-  }
-}
-```
+> The base URL is the positional argument (`http://localhost:8080`). You can instead
+> set `OPENL_BASE_URL` in `env`; the positional wins if both are present. Omit the
+> `env` block entirely for a single-user Studio.
 
-> The base URL is passed as the positional argument (`args: [..., "http://localhost:8080"]`). You can instead keep it in `env` as `OPENL_BASE_URL`; the positional takes precedence if both are set. The `env` block here carries only the (optional) auth token.
+Per-client configs (Claude Code, Claude Desktop, VS Code, and the Docker form) are in
+the [MCP Connection Guide](../setup/mcp-connection-guide.md).
 
-### For HTTP Transport (Docker)
+### HTTP transport (shared server)
 
-When connecting via HTTP, the base URL always comes from the **server** configuration
-(`OPENL_BASE_URL`). The client supplies only the authentication token — a base URL sent
-by the client is ignored.
-
-**Recommended — `Authorization` header:**
+When a client connects to a server started with `--http`, the base URL always comes
+from the **server** (its positional `<url>` / `OPENL_BASE_URL`); the client supplies
+only the token, on the header:
 
 ```text
 Authorization: Token <your-token>
 ```
 
-The `Bearer <your-token>` scheme is also accepted and automatically converted to `Token`
-for the OpenL API.
+`Bearer <your-token>` is also accepted and converted to `Token` for the OpenL API.
 
-### Docker Configuration
-
-In Docker configuration (`compose.yaml`), **only** the base URL is set:
-
-```yaml
-environment:
-  PORT: 3000
-  OPENL_BASE_URL: http://studio:8080
-  NODE_ENV: production
-  # Authentication is NOT set here!
-```
-
-⚠️ **Security**: Never set tokens or other secrets in:
-- Docker compose files
-- Host environment variables (for Docker)
-- Git repository
-- Logs
-
-✅ **Correct**: Set the token only in:
-- MCP client configuration files (Cursor/Claude Desktop)
-- The `Authorization` header when connecting via HTTP
+⚠️ **Never bake the token into the server** — not in `compose.yaml`, host environment
+variables, the Git repository, or logs. The server reads only the OpenL **base URL**;
+the **token** always comes from the client (its `env` for stdio, or the `Authorization`
+header for HTTP).
 
 For complete configuration examples, see [MCP Connection Guide](../setup/mcp-connection-guide.md).
 
@@ -142,9 +111,9 @@ OPENL_PERSONAL_ACCESS_TOKEN=<your-pat-token>
 ```json
 {
   "mcpServers": {
-    "openl-studio": {
-      "command": "node",
-      "args": ["<path-to-project>/dist/index.js", "https://openl.example.com"],
+    "openl": {
+      "command": "npx",
+      "args": ["-y", "openl-mcp-server", "https://openl.example.com"],
       "env": {
         "OPENL_PERSONAL_ACCESS_TOKEN": "<your-pat-token>"
       }
@@ -268,18 +237,16 @@ OPENL_PERSONAL_ACCESS_TOKEN  # Personal Access Token (format: openl_pat_<publicI
 
 ## Examples
 
-### Local Development (single-user mode, no token)
+### Single-user mode (no token)
 ```bash
-export OPENL_BASE_URL=http://localhost:8080
-npm start
+npx -y openl-mcp-server http://localhost:8080
 ```
 
-### Production with Personal Access Token
+### Production with a Personal Access Token
 ```bash
-export OPENL_BASE_URL=https://openl-prod.example.com
 export OPENL_PERSONAL_ACCESS_TOKEN=$(vault read -field=token secret/openl/prod/pat)
 export OPENL_TIMEOUT=60000
-npm start
+npx -y openl-mcp-server https://openl-prod.example.com
 ```
 
 ## Related Documentation

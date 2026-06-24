@@ -1,5 +1,5 @@
 # This workflow will build MCP server every day (aka Nightly Build)
-# and deploys the built docker image to the GitHub Packages.
+# and deploys the package to the GitHub Packages.
 
 name: Build MCP package
 
@@ -15,16 +15,14 @@ on:
         required: false
         default: 'main'
 
-env:
-  IMAGE: ghcr.io/openl-tablets/openl-mcp:latest
-
 jobs:
   deploy:
     name: Build and Deploy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
 
     permissions:
-      packages: write
+      # Needed to move the 'x' tag and publish the prerelease via gh.
+      contents: write
 
     steps:
 
@@ -33,34 +31,38 @@ jobs:
         with:
           ref: ${{ github.event.inputs.branch || 'main' }}
 
-      - name: Setup Node.js and cache
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-          cache: 'npm'
-          cache-dependency-path: package-lock.json
-
       - name: Install dependencies
         run: npm ci
+
+      # Gate the release behind the same quality checks PRs run. A release
+      # MUST NOT be cut if main is red.
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
 
       - name: Build TypeScript
         run: npm run build
 
-      - name: Prepare for multi-platform docker build
+      # npm pack names the tarball openl-mcp-<version>.tgz; rename it to a
+      # fixed, version-free name so the release download URL stays stable.
+      - name: Generate Tarball
         run: |
-          docker run --privileged --rm tonistiigi/binfmt --install all
-          docker buildx create --use
+          npm pack
+          mv ./*.tgz openl-mcp.tgz
 
-      - name: Build and push Docker image
+      # Publish the tarball to a single, always-available 'x' prerelease.
+      # The 'x' tag is recreated on the freshly built commit every run, so it
+      # always points at the latest nightly and its tarball is downloadable.
+      - name: Publish tarball to 'x' prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
-          docker buildx build \
-            -t "${IMAGE}" \
-            --platform linux/amd64,linux/arm64/v8 \
-            --push \
-            --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --label "org.opencontainers.image.version=${{ github.ref_name }}" \
-            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
-            --label "org.opencontainers.image.title=OpenL MCP Server" \
-            --label "org.opencontainers.image.description=Model Context Protocol server for OpenL Studio" \
-            .
+          # Drop the previous prerelease and its tag so 'x' moves to HEAD.
+          gh release delete x --yes --cleanup-tag || true
+          gh release create x openl-mcp.tgz \
+            --target "$(git rev-parse HEAD)" \
+            --title x \
+            --notes "Latest nightly build tarball." \
+            --prerelease

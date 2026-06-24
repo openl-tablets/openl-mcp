@@ -16,9 +16,6 @@
 #                            Re-run `npm publish` manually from the tagged
 #                            checkout. The version number is NOT burned.
 #
-# Docker Hub publishing is decoupled: trigger publish-dockerhub.yml manually
-# after a release (or any time) to ship a Docker image for a given version.
-#
 # Authentication: OIDC via npm Trusted Publishers — no NPM_TOKEN secret
 # needed. Configure once on npmjs.com under the package's Access settings:
 #   Trusted Publisher → GitHub Actions

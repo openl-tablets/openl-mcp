@@ -878,46 +878,38 @@ dist/
 
 ### Deployment Options
 
-**1. npm Package**:
+**1. npm package (with Node.js)**:
 ```bash
-npm install -g openl-mcp-server
-openl-mcp
+npx -y openl-mcp-server http://localhost:8080
 ```
 
-**2. Docker Container**:
-```dockerfile
-FROM node:24-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --production
-COPY dist/ ./dist/
-CMD ["node", "dist/index.js"]
+**2. Docker (no Node.js)** — run the package on the official Node image:
+```bash
+docker run --rm -i node:lts-alpine npx -y openl-mcp-server http://host.docker.internal:8080
 ```
 
-**3. Claude Desktop Integration**:
+**3. Claude Desktop integration**:
 ```json
 {
   "mcpServers": {
-    "openl-studio": {
-      "command": "node",
-      "args": ["/path/to/dist/index.js"],
+    "openl": {
+      "command": "npx",
+      "args": ["-y", "openl-mcp-server", "http://localhost:8080"],
       "env": {
-        "OPENL_BASE_URL": "http://localhost:8080",
-        "OPENL_USERNAME": "admin",
-        "OPENL_PASSWORD": "admin"
+        "OPENL_PERSONAL_ACCESS_TOKEN": "<your-token>"
       }
     }
   }
 }
 ```
 
-**4. Standalone Script**:
+**4. Shared HTTP server / full stack**:
 ```bash
-# Build
-npm run build
+# One shared server over HTTP at /mcp
+npx -y openl-mcp-server http://localhost:8080 --http
 
-# Run directly
-node dist/index.js
+# OpenL Studio + MCP together
+docker compose up -d
 ```
 
 ### Configuration

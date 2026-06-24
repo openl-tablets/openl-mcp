@@ -1,11 +1,11 @@
 # Setup Guides
 
-Guides for setting up and configuring the OpenL MCP Server for different environments and clients.
+Guides for setting up and configuring the OpenL MCP Server.
 
 ## Available Guides
 
-- **[MCP Connection Guide](mcp-connection-guide.md)** — Connect Cursor, Claude Desktop, or VS Code to MCP server (Remote and Docker)
-- **[Docker Setup](docker.md)** — Running MCP server in Docker (technical details)
+- **[MCP Connection Guide](mcp-connection-guide.md)** — Connect Claude Code, Claude Desktop, Cursor, or VS Code (via `npx` or Docker)
+- **[Docker Setup](docker.md)** — Run the server via Docker (no Node.js), the compose demo, and a shared HTTP server
 
 ## Quick Links
 
@@ -15,17 +15,11 @@ Guides for setting up and configuring the OpenL MCP Server for different environ
 
 ## Setup by Client
 
-### Cursor IDE
-- [Remote MCP Server](mcp-connection-guide.md#remote-mcp-server)
-- [Docker MCP Server](mcp-connection-guide.md#docker-mcp-server)
-
-### Claude Desktop
-- [Remote MCP Server](mcp-connection-guide.md#remote-mcp-server-1)
-- [Docker MCP Server](mcp-connection-guide.md#docker-mcp-server-1)
-
-### VS Code / GitHub Copilot
-- [HTTP Transport](mcp-connection-guide.md#approach-a-http-transport-remote-or-docker-mcp-server) — connect to running MCP server
-- [Stdio via Docker](mcp-connection-guide.md#approach-b-stdio-transport-via-docker-standalone) — run MCP server from Docker directly
+- [Claude Code](mcp-connection-guide.md#claude-code)
+- [Claude Desktop](mcp-connection-guide.md#claude-desktop)
+- [Cursor](mcp-connection-guide.md#cursor)
+- [VS Code (GitHub Copilot)](mcp-connection-guide.md#vs-code-github-copilot)
+- [Running without Node.js (Docker)](mcp-connection-guide.md#running-without-nodejs-docker)
 
 ## Related Documentation
 

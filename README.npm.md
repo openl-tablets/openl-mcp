@@ -21,7 +21,7 @@ openl-mcp http://localhost:8080
 
 > The base URL can also come from the `OPENL_BASE_URL` environment variable instead of the positional argument (the positional wins if both are set).
 
-**Requirements:** Node.js **≥ 24**.
+**Requirements:** Node.js **≥ 24** — or just Docker, see [No Node.js? Use Docker](#no-nodejs-use-docker).
 
 ## Configure
 
@@ -67,7 +67,7 @@ Add to `claude_desktop_config.json`:
 
 The base URL is passed as the positional argument. Alternatively, drop it from `args` and set `OPENL_BASE_URL` in `env`. The `env` block holds auth and is optional — omit it for single-user servers that don't require credentials.
 
-For Cursor and other clients, see the [MCP Connection Guide](https://github.com/openl-tablets/openl-mcp/blob/main/docs/setup/mcp-connection-guide.md).
+For Claude Code (`claude mcp add openl -- npx -y openl-mcp-server <url>`), Cursor, and VS Code, see the [MCP Connection Guide](https://github.com/openl-tablets/openl-mcp/blob/main/docs/setup/mcp-connection-guide.md).
 
 ## Use as a CLI (direct API calls, no MCP client)
 
@@ -103,14 +103,18 @@ Run with just a `<url>` (and no tool name) — or with no arguments at all (fall
 
 Details and tool reference: [Usage Examples](https://github.com/openl-tablets/openl-mcp/blob/main/docs/guides/examples.md).
 
-## Alternatives
+## No Node.js? Use Docker
 
-Prefer containers? The same server is published as a Docker image:
+There's no custom image — run the package on the official Node image, with nothing
+installed but Docker:
 
-- Docker Hub — `docker pull openltablets/openl-mcp:<X.Y.Z>` (tagged releases) or `:latest`
-- GitHub Container Registry — `docker pull ghcr.io/openl-tablets/openl-mcp:latest` (nightly edge build, no tagged releases)
+```bash
+docker run --rm -i node:lts-alpine npx -y openl-mcp-server http://host.docker.internal:8080
+```
 
-See the [Docker setup guide](https://github.com/openl-tablets/openl-mcp/blob/main/docs/setup/docker.md).
+Use this as the `command`/`args` in your MCP client config (use `host.docker.internal`
+to reach an OpenL Studio on the host). For a one-command OpenL Studio + MCP stack, see
+the [Docker setup guide](https://github.com/openl-tablets/openl-mcp/blob/main/docs/setup/docker.md).
 
 ## Links
 

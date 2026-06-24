@@ -10,8 +10,8 @@ New to the project? Start here:
 
 ### ⚙️ Setup & Configuration
 Setting up the MCP server for your environment:
-- **[MCP Connection Guide](setup/mcp-connection-guide.md)** - Connect Cursor, Claude Desktop, or VS Code to MCP server
-- **[Docker Setup](setup/docker.md)** - Run MCP server in Docker
+- **[MCP Connection Guide](setup/mcp-connection-guide.md)** - Connect Claude Code, Claude Desktop, Cursor, or VS Code to MCP server
+- **[Docker Setup](setup/docker.md)** - Run the server via Docker (no Node.js) and the compose demo
 - **[Authentication Guide](guides/authentication.md)** - Configure authentication (Personal Access Token)
 
 ### 📖 Usage Guides

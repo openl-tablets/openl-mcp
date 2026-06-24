@@ -9,14 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Simplified how the server is delivered: run it with `npx -y openl-mcp-server <openl-url>` when Node.js is installed, or on the official `node:lts-alpine` image (`docker run --rm -i node:lts-alpine npx -y openl-mcp-server <openl-url>`) when it isn't — there is no longer a custom Docker image to pull. Setup docs now cover Claude Code, Claude Desktop, Cursor, and VS Code (GitHub Copilot) connecting over stdio.
+- `compose.yaml` now starts OpenL Studio together with the MCP server, with the MCP service running the latest nightly build (the `x` prerelease tarball) via `npx` on `node:lts-alpine`; the separate `compose.studio.yaml` was folded into it.
 - The prompt registry is now built by reading the `prompts/` directory and deriving each prompt's title, description, and arguments from its file's YAML frontmatter, instead of duplicating those definitions in a hardcoded array. A prompt's name comes from its filename, so the redundant `name` field was dropped from every prompt's frontmatter.
 - Prompt files are now read and parsed once at startup, when the registry is built, and their content is cached in memory — instead of being re-read and re-parsed on every prompt request.
 - Updated all runtime and development dependencies to their latest versions, including the major bump of `@types/node` to v26 and bumps of the MCP SDK (v1.29), `zod` (v4.4), `axios` (v1.18), `eslint`, `jest`, and `ts-jest`.
 - The HTTP server now serves MCP over the Streamable HTTP transport (MCP spec 2025-11-25) at a single `/mcp` endpoint (`POST` to send messages, `GET` for the server stream, `DELETE` to end a session), replacing the previous `/mcp/sse` + `/mcp/messages` endpoints. Update client configs to `"url": ".../mcp"` with `"transport": "streamablehttp"`.
-- The server now has a single entry point: `dist/index.js` runs the stdio transport by default, or the Streamable HTTP transport when launched with `--http`. The standalone `dist/server.js` is gone — Docker and `npm run start:http` now use `dist/index.js --http`.
+- The server now has a single entry point: `dist/index.js` runs the stdio transport by default, or the Streamable HTTP transport when launched with `--http`. The standalone `dist/server.js` is gone — `npm run start:http` now uses `dist/index.js --http`.
 
 ### Removed
 
+- Removed the custom Docker image and its build pipeline — the `Dockerfile`, `.dockerignore`, the nightly GHCR image build, and Docker Hub / GHCR `openl-mcp` image distribution. Run the npm package via `npx` or the official `node:lts-alpine` image instead.
+- Removed the `deploy.sh` helper script: its Docker commands are gone, and the rest duplicated existing `npm` scripts.
+- Dropped the `mcp-remote` proxy from the Claude Desktop setup — clients now launch the server directly over stdio (`npx`, or Docker without Node.js).
 - Removed the legacy HTTP+SSE transport (`GET /mcp/sse`, `POST /mcp/messages`) and the nginx-proxy path aliases (`/sse`, `/messages`). Only Streamable HTTP at `/mcp` is supported.
 - Removed the standalone REST tool endpoints (`GET /tools`, `GET /tools/:name`, `POST /tools/:name/execute`, `POST /execute`); use the MCP protocol over `/mcp` instead. The unauthenticated `GET /health` liveness probe is retained.
 - The HTTP transport no longer accepts credentials via URL query parameters (e.g. `?OPENL_PERSONAL_ACCESS_TOKEN=…`); pass them in the `Authorization` header (`Token`/`Bearer`). Query strings leak into proxy/access logs, browser history, and `Referer` headers.

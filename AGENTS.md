@@ -2,7 +2,7 @@
 
 ## Overview
 
-The OpenL MCP Server is a Model Context Protocol (MCP) server that provides AI coding agents with seamless access to the OpenL Studio Business Rules Management System (BRMS). It acts as a bridge between AI assistants (like Claude Desktop, Cursor IDE) and the OpenL Studio API, enabling natural language interaction with business rules management.
+The OpenL MCP Server is a Model Context Protocol (MCP) server that provides AI coding agents with seamless access to the OpenL Studio Business Rules Management System (BRMS). It acts as a bridge between AI assistants (like Claude Code, Claude Desktop, Cursor, and VS Code / GitHub Copilot) and the OpenL Studio API, enabling natural language interaction with business rules management.
 
 ## Purpose
 
@@ -226,8 +226,8 @@ OPENL_PERSONAL_ACCESS_TOKEN=openl_pat_your-token
 
 ### Transport Modes
 
-1. **stdio** - Standard input/output (for Claude Desktop, via `dist/index.js`)
-2. **Streamable HTTP** - MCP spec 2025-11-25 transport at `POST/GET/DELETE /mcp` (for Docker / direct HTTP clients, via `dist/index.js --http`)
+1. **stdio** (default) - for MCP clients (Claude Code, Claude Desktop, Cursor, VS Code) that launch the server via `npx` or Docker
+2. **Streamable HTTP** - MCP spec 2025-11-25 transport at `POST/GET/DELETE /mcp`, enabled with `--http` (for one shared server that several clients connect to)
 
 ## Key Features
 
@@ -433,26 +433,24 @@ npm run watch
 
 ## Deployment
 
-### Pre-built distributions
+The server ships only as the npm package `openl-mcp-server`. There is no custom
+Docker image — run it with Node.js via `npx`, or on the official Node image when
+Node.js isn't available.
 
-- **npm:** `npx -y openl-mcp-server` (stdio transport)
-
-### Docker
+### With Node.js (stdio)
 ```bash
-docker build -t openl-mcp-server .
-docker run -e OPENL_BASE_URL=http://openl:8080 \
-           -e OPENL_PERSONAL_ACCESS_TOKEN=openl_pat_your-token \
-           openl-mcp-server
+npx -y openl-mcp-server http://localhost:8080
 ```
 
-### Docker Compose
-```yaml
-services:
-  mcp-server:
-    image: ghcr.io/openl-tablets/openl-mcp:x
-    environment:
-      OPENL_BASE_URL: https://openl.example.com/studio
+### Without Node.js (Docker)
+```bash
+docker run --rm -i node:lts-alpine npx -y openl-mcp-server http://host.docker.internal:8080
 ```
+
+### Shared HTTP server / full stack
+Add `--http` to serve MCP over HTTP at `/mcp`, or use [`compose.yaml`](compose.yaml)
+to run OpenL Studio + the MCP server together (`docker compose up -d`). See
+[docs/setup/docker.md](docs/setup/docker.md).
 
 ## Version
 

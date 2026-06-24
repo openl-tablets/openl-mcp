@@ -2,23 +2,31 @@
 
 Guide for enabling detailed logging to debug PAT authentication.
 
-## Enabling DEBUG Mode
+## Enabling DEBUG mode
 
-### Option 1: Through Environment Variable in compose.yaml
+Run the server with `DEBUG_AUTH=true` (or `DEBUG=true`) to log detailed PAT
+authentication.
 
-Add to `mcp-server` section:
-
-```yaml
-environment:
-  DEBUG_AUTH: "true"
-  # or
-  DEBUG: "true"
-```
-
-### Option 2: When Starting Container
+**Directly (npx or Docker):**
 
 ```bash
-docker compose run -e DEBUG_AUTH=true mcp-server
+DEBUG_AUTH=true npx -y openl-mcp-server http://localhost:8080
+```
+
+**In a client config** — add it to the `env` block that launches the server:
+
+```json
+"env": {
+  "OPENL_PERSONAL_ACCESS_TOKEN": "<your-pat-token>",
+  "DEBUG_AUTH": "true"
+}
+```
+
+**Full-stack compose** — add `DEBUG_AUTH: "true"` to the `openl-mcp` service's
+`environment`, or run a one-off:
+
+```bash
+docker compose run -e DEBUG_AUTH=true openl-mcp
 ```
 
 ## What Gets Logged
@@ -80,17 +88,16 @@ Authorization: Token <your-pat-token>
 
 **Important:** Uses `Token` prefix, not `Bearer`.
 
-## Viewing Logs
+## Viewing logs
+
+Run directly and the logs print to the terminal (stderr). With compose:
 
 ```bash
-# All logs
-docker compose logs -f mcp-server
-
 # Only authentication logs
-docker compose logs -f mcp-server | grep "\[Auth\]"
+docker compose logs -f openl-mcp | grep "\[Auth\]"
 
 # Logs with error context
-docker compose logs -f mcp-server | grep -A 10 -B 5 "401\|ERROR\|Failed"
+docker compose logs -f openl-mcp | grep -A 10 -B 5 "401\|ERROR\|Failed"
 ```
 
 ## Common Issues
@@ -102,7 +109,7 @@ docker compose logs -f mcp-server | grep -A 10 -B 5 "401\|ERROR\|Failed"
 [Auth]   personalAccessToken: not configured
 ```
 
-**Solution:** Check that PAT is provided via the MCP client's `Authorization` header, not Docker environment variables.
+**Solution:** Provide the PAT in your client config — `env` → `OPENL_PERSONAL_ACCESS_TOKEN` for stdio, or the `Authorization` header for HTTP. Never bake it into the server.
 
 ### 2. Incorrect Header Format
 

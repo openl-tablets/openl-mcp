@@ -7,7 +7,7 @@ Built with MCP SDK v1.29+ featuring type-safe validation (Zod) and comprehensive
 ## Quick Links
 
 - 🚀 [Quick Start](docs/getting-started/quick-start.md) - Get up and running in 5 minutes
-- ⚙️ [MCP Connection Guide](docs/setup/mcp-connection-guide.md) - Configure Claude Desktop, Cursor, or Docker
+- ⚙️ [MCP Connection Guide](docs/setup/mcp-connection-guide.md) - Configure Claude Code, Claude Desktop, Cursor, or VS Code
 - 🖥️ [CLI Guide](README.cli.md) - Use the same binary as a shell tool (no MCP client needed)
 - 📖 [Usage Examples](docs/guides/examples.md) - Learn how to use MCP tools
 - 🔐 [Authentication](docs/guides/authentication.md) - Authentication setup
@@ -16,7 +16,7 @@ Built with MCP SDK v1.29+ featuring type-safe validation (Zod) and comprehensive
 
 ## npm Distribution
 
-The MCP server is published as an npm package: [`openl-mcp-server`](https://www.npmjs.com/package/openl-mcp-server) — stdio transport via `npx` for Claude Desktop / Cursor / VS Code.
+The MCP server is published as an npm package: [`openl-mcp-server`](https://www.npmjs.com/package/openl-mcp-server) — stdio transport via `npx` for Claude Code / Claude Desktop / Cursor / VS Code. No Node.js? Run it on the official Docker image instead — see the [Connection Guide](docs/setup/mcp-connection-guide.md#running-without-nodejs-docker).
 
 The same binary also doubles as a **CLI** for direct API calls without an MCP client (`npx -y openl-mcp-server <tool> '<json-args>'`) — see [README.cli.md](README.cli.md) for the full CLI guide.
 
@@ -24,21 +24,25 @@ For npm package details see [README.npm.md](README.npm.md).
 
 ## Quick Start
 
-### Run OpenL Studio + MCP with Docker
-
-You only need a local copy of [`compose.studio.yaml`](compose.studio.yaml).
+Point your AI client at OpenL Studio — it launches the server over stdio via
+`npx` (or Docker, if you don't have Node.js):
 
 ```bash
-docker compose -f compose.studio.yaml up -d
+# Claude Code
+claude mcp add openl -- npx -y openl-mcp-server http://localhost:8080
 ```
 
-This starts:
-- OpenL Studio image from GHCR: `ghcr.io/openl-tablets/webstudio:x`
-- MCP image from GHCR: `ghcr.io/openl-tablets/openl-mcp:latest`
-- OpenL Studio at `http://localhost:8080`
-- MCP server at `http://localhost:3000`
+For Claude Desktop, Cursor, and VS Code (and the no-Node.js Docker option), see the
+[Quick Start guide](docs/getting-started/quick-start.md) and
+[MCP Connection Guide](docs/setup/mcp-connection-guide.md).
 
-For a fast setup, use [Method 1 (Docker Compose, recommended) in the Quick Start guide](docs/getting-started/quick-start.md#method-1-docker-compose-recommended).
+Or bring up OpenL Studio **and** a shared MCP server with one command using
+[`compose.yaml`](compose.yaml) — only Docker required:
+
+```bash
+docker compose up -d
+# OpenL Studio → http://localhost:8080, MCP server → http://localhost:3000/mcp
+```
 
 ## Documentation Structure
 
@@ -46,8 +50,8 @@ For a fast setup, use [Method 1 (Docker Compose, recommended) in the Quick Start
 - [Quick Start](docs/getting-started/quick-start.md) - Get up and running quickly
 
 ### Setup Guides
-- [MCP Connection Guide](docs/setup/mcp-connection-guide.md) - Complete guide for connecting Cursor and Claude Desktop to MCP server (Remote and Docker)
-- [Docker Setup](docs/setup/docker.md) - Running MCP server in Docker (technical details)
+- [MCP Connection Guide](docs/setup/mcp-connection-guide.md) - Connect Claude Code, Claude Desktop, Cursor, or VS Code (via `npx` or Docker)
+- [Docker Setup](docs/setup/docker.md) - Run the server via Docker (no Node.js) and the compose demo
 
 ### Guides
 - [Usage Examples](docs/guides/examples.md) - Practical examples of using MCP tools
@@ -169,7 +173,7 @@ openl-mcp/
 - [Documentation Index](docs/README.md) - Complete documentation navigation
 - [Debug Personal Access Token](docs/guides/debug-pat.md) - PAT debugging guide
 - 🚀 [Quick Start](docs/getting-started/quick-start.md) - Get up and running in 5 minutes
-- ⚙️ [MCP Connection Guide](docs/setup/mcp-connection-guide.md) - Configure Claude Desktop, Cursor, or Docker
+- ⚙️ [MCP Connection Guide](docs/setup/mcp-connection-guide.md) - Configure Claude Code, Claude Desktop, Cursor, or VS Code
 - 🖥️ [CLI Guide](README.cli.md) - Use the same binary as a shell tool (no MCP client needed)
 - 📖 [Usage Examples](docs/guides/examples.md) - Learn how to use MCP tools
 - 🔐 [Authentication](docs/guides/authentication.md) - Authentication setup

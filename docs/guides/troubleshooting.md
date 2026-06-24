@@ -1,407 +1,146 @@
 # 🔍 Troubleshooting Guide
 
-This guide covers common issues and their solutions when working with the OpenL MCP Server.
+Common issues and fixes for the OpenL MCP Server.
 
 ## Table of Contents
 
-- [Viewing Debug Logs](#viewing-debug-logs)
-- [Common Issues](#common-issues)
-- [Connection Issues](#connection-issues)
-- [Remote Connection Issues](#remote-connection-issues)
-- [Configuration Issues](#configuration-issues)
-- [WebSocket Wait Issues (compile / trace status)](#websocket-wait-issues-compile--trace-status)
+- [See the server's logs](#see-the-servers-logs)
+- [Quick checks](#quick-checks)
+- [Common issues](#common-issues)
+- [Docker / compose](#docker--compose)
+- [Connecting to a remote OpenL Studio](#connecting-to-a-remote-openl-studio)
+- [WebSocket wait issues (compile / trace status)](#websocket-wait-issues-compile--trace-status)
 
 ---
 
-## Viewing Debug Logs
+## See the server's logs
 
-### Quick Method
+All MCP server logs go to **stderr**, so they never corrupt the JSON-RPC stream on stdout.
 
-#### 1. Claude Desktop Logs (macOS)
-
-```bash
-# View latest logs in real-time
-tail -f ~/Library/Logs/Claude/*.log
-
-# Or via Console.app (GUI)
-open -a Console
-# Then find Claude Desktop logs
-```
-
-#### 2. Cursor IDE Logs (macOS)
+**Run it directly in a terminal** — the fastest way to see everything. Run the same
+command your client runs:
 
 ```bash
-# View latest logs in real-time
-tail -f ~/Library/Logs/Cursor/*.log
-```
-
-#### 3. Run Server Directly for Debugging
-
-The easiest way to see all logs - run the server directly in terminal:
-
-```bash
-cd <path-to-project>
-
-# Set environment variables
-export OPENL_BASE_URL="http://localhost:8080"
-export OPENL_PERSONAL_ACCESS_TOKEN="openl_pat_your-token"  # optional
-# Run the server
-node dist/index.js
-```
-
-All logs will be visible directly in the terminal! Press `Ctrl+C` to stop.
-
-### Detailed Debugging
-
-#### Enable Verbose Logging
-
-For more detailed logs, set the `DEBUG` environment variable:
-
-```bash
-export DEBUG=1
-export NODE_ENV=development
-node dist/index.js
-```
-
-#### Search for Specific Errors
-
-**OpenL Connection Errors:**
-```bash
-tail -f ~/Library/Logs/Claude/*.log | grep -i "openl\|401\|unauthorized\|connection"
-```
-
-
-**Configuration Errors:**
-```bash
-tail -f ~/Library/Logs/Claude/*.log | grep -i "config\|environment\|missing"
-```
-
-### Log Structure
-
-All MCP server logs have prefixes for easy filtering:
-
-- `[Config]` - configuration logs
-- `[Auth]` - authentication logs
-- `[Browser]` - browser interaction logs
-- `[Error]` - errors
-
-**Example Log Filtering:**
-```bash
-# Errors only
-tail -f ~/Library/Logs/Claude/*.log | grep "\[Error\]"
-
-
-# Configuration logs only
-tail -f ~/Library/Logs/Claude/*.log | grep "\[Config\]"
-```
-
-### Server Health Checks
-
-#### Test 1: Build Check
-
-```bash
-cd <path-to-project>
-npm run build
-```
-
-If build is successful, there will be no errors.
-
-#### Test 2: Configuration Check
-
-```bash
-# Check Claude Desktop configuration
-cat ~/Library/Application\ Support/Claude/config.json | jq '.mcpServers["openl-mcp-server"]'
-```
-
-#### Test 3: OpenL Connection Check
-
-```bash
-curl -u admin:admin http://localhost:8080/rest/repos
-```
-
-If OpenL is running, you'll get JSON with repositories.
-
-#### Test 4: Run Server with Verification
-
-```bash
-cd <path-to-project>
-
-# Auth is optional; set it from your configuration if your server requires it
+# Auth is optional — set it only if your Studio requires it
 export OPENL_PERSONAL_ACCESS_TOKEN="openl_pat_your-token"
-# Run the server — base URL as a positional argument
-node dist/index.js http://localhost:8080
-# (or set OPENL_BASE_URL instead of passing it positionally)
+npx -y openl-mcp-server http://localhost:8080
 ```
 
-You should see initialization logs:
+Press `Ctrl+C` to stop. For more detail set `DEBUG=1` (also `DEBUG_AUTH=true` for auth —
+see [Debug PAT](debug-pat.md) — and `DEBUG_STOMP=true` for the WebSocket wait).
+
+**Client log files:**
+
+| Client | Where |
+|--------|-------|
+| Claude Code | `claude mcp list` shows status; start `claude --debug` for details |
+| Claude Desktop | `~/Library/Logs/Claude/*.log` (macOS) |
+| Cursor | `~/Library/Logs/Cursor/*.log` (macOS) |
+| VS Code | Output panel → "GitHub Copilot Chat" / MCP server output |
+
+Filter by log prefix — `[Config]`, `[Auth]`, `[Error]`:
+
+```bash
+tail -f ~/Library/Logs/Claude/*.log | grep -E "\[Error\]|\[Auth\]|\[Config\]"
+```
+
+## Quick checks
+
+```bash
+# 1. The package runs (downloads + prints the tool catalog)
+npx -y openl-mcp-server --help
+
+# 2. OpenL Studio is reachable
+curl http://localhost:8080
+
+# 3. The server connects to it — watch the startup logs
+npx -y openl-mcp-server http://localhost:8080
+```
+
+A healthy start logs:
+
 ```
 [Config] Resolving configuration (positional <url> / flags / environment)...
-[Config] NOTE: This is for stdio transport. Auth credentials may come from MCP client config or CLI flags.
 [Config] Authentication:
 [Config]   - Personal Access Token: configured (hidden)
 ```
 
-If the server starts without errors, everything is working correctly.
+## Common issues
 
-### Useful Commands
+### Client doesn't list the server / "not connected"
 
-**View last 100 lines of logs:**
+1. Validate the config JSON — no trailing commas, right file
+   (see the [Connection Guide](../setup/mcp-connection-guide.md)).
+2. Confirm the package name is `openl-mcp-server` and the URL is correct.
+3. Using `npx`? Make sure Node.js is installed (`node -v`) — or switch to the
+   [Docker option](../setup/mcp-connection-guide.md#running-without-nodejs-docker).
+4. Fully restart the client after editing the config.
+
+### "Cannot connect to OpenL API"
+
+1. `curl http://localhost:8080` — is Studio up?
+2. Check the base URL (positional argument or `OPENL_BASE_URL`).
+3. If the server runs in Docker, use `host.docker.internal`, not `localhost`.
+
+### "Authentication failed" / 401
+
+1. The token is correct, not expired, not revoked.
+2. It starts with `openl_pat_`.
+3. The user has the needed permissions, and Studio runs in OAuth2/SAML mode (PATs
+   require it). See [Debug PAT](debug-pat.md).
+
+### Tools don't appear in chat
+
+1. The client shows the server **connected** in its MCP panel.
+2. (VS Code / Copilot) enable the OpenL tools in the Agent tools picker.
+3. Ask explicitly: "Use the OpenL tools to list repositories."
+
+## Docker / compose
+
+### Containers don't start
+
 ```bash
-tail -n 100 ~/Library/Logs/Claude/*.log
+docker ps                       # is Docker running?
+lsof -i :8080; lsof -i :3000    # ports free?
+docker compose logs             # what failed?
 ```
 
-**Search for all errors in the last hour:**
-```bash
-grep -i error ~/Library/Logs/Claude/*.log | tail -20
-```
+### Port already in use
 
-**Monitor logs in real-time:**
-```bash
-tail -f ~/Library/Logs/Claude/*.log | grep --color=always -E "error|Error|ERROR|\[Error\]|\[Auth\]|\[Config\]"
-```
+Change the published port in [`compose.yaml`](../../compose.yaml):
 
-**Save logs to file:**
-```bash
-tail -f ~/Library/Logs/Claude/*.log > mcp-debug.log 2>&1
-```
-
----
-
-## Common Issues
-
-### Issue: "require is not defined"
-
-**Solution:** Make sure the project is rebuilt:
-```bash
-cd <path-to-project>
-npm run build
-```
-
-### Issue: "Unexpected token 'C', '[Config] Lo'... is not valid JSON"
-
-**Solution:** This means logs are going to stdout. Make sure you're using the latest code where all logs go to stderr via `console.error()`.
-
-### Issue: Server doesn't start
-
-**Solution:** Check logs directly:
-```bash
-cd <path-to-project>
-node dist/index.js 2>&1 | tee debug.log
-```
-
-Then open `debug.log` to view all errors.
-
-### Issue: No logs in Claude Desktop
-
-**Solution:** 
-1. Make sure Claude Desktop is completely restarted (not just minimized)
-2. Check that logging is enabled in Claude Desktop settings
-3. Try running the server directly to verify
-
-### Issue: MCP Server doesn't appear in AI client
-
-**Solution:**
-1. Check path to `dist/index.js` (must be absolute)
-2. Ensure project is built: `npm run build`
-3. Restart your AI client
-
-### Issue: "Cannot connect to OpenL API"
-
-**Solution:**
-1. Ensure OpenL Studio is running:
-   ```bash
-   curl http://localhost:8080/rest/projects
-   ```
-2. Check `OPENL_BASE_URL` in configuration
-3. Ensure `OPENL_BASE_URL` points to the OpenL server base URL (trailing slash is optional).
-
-### Issue: "Authentication failed"
-
-**Solution:**
-1. Check the token (`OPENL_PERSONAL_ACCESS_TOKEN`) is correct and not expired
-2. Confirm the token starts with `openl_pat_`
-3. Ensure user has necessary permissions
-
-### Issue: Tools don't work in chat
-
-**Solution:**
-1. Check MCP server status in settings (should be "Connected")
-2. Try explicitly asking the AI to use the tool
-3. Check logs for errors
-
----
-
-## Connection Issues
-
-### Issue: Docker containers don't start
-
-**Solution:**
-1. Check that Docker is running:
-   ```bash
-   docker ps
-   ```
-2. Check ports (8080, 5432 should not be occupied):
-   ```bash
-   lsof -i :8080
-   lsof -i :5432
-   ```
-3. View logs:
-   ```bash
-   docker compose logs
-   ```
-
-### Issue: Port 3000 occupied (Docker)
-
-**Solution:**
-Change port in `compose.yaml`:
 ```yaml
 ports:
-  - "3001:3000"  # External:Internal
+  - "3001:3000"   # host:container
 ```
 
-Or set environment variable:
-```yaml
-environment:
-  PORT: 3001
-```
+### Container can't reach OpenL Studio
 
----
+Use `host.docker.internal` instead of `localhost`. On Linux, add
+`--add-host=host.docker.internal:host-gateway` (or `extra_hosts` in compose).
 
-## Remote Connection Issues
+## Connecting to a remote OpenL Studio
 
-### Problem: Connection Issues with the Remote MCP Server
+You don't need a remote MCP server. Run the MCP server **locally** (via `npx` or
+Docker) and point it at the remote OpenL backend — stdio avoids the network and proxy
+issues of a remote transport:
 
-If you're experiencing:
-- `Request timed out` errors
-- Connection issues with the remote Streamable HTTP transport
-- Authentication failures
-
-### Root Cause
-
-Possible causes:
-1. Incorrect Node.js or `mcp-remote` paths
-2. Network connectivity issues
-3. Invalid or expired PAT token
-4. Remote MCP endpoint may not be responding correctly
-
-### Solution: Use Local MCP Server with Remote OpenL Backend
-
-Instead of connecting to a remote MCP server over HTTP, run the MCP server locally and connect it to the remote OpenL backend via API.
-
-**Configuration:**
-
-**macOS/Linux:**
 ```json
 {
   "mcpServers": {
     "openl": {
-      "command": "node",
-      "args": [
-        "<path-to-project>/dist/index.js"
-      ],
-      "env": {
-        "OPENL_BASE_URL": "https://<your-openl-server>",
-        "OPENL_PERSONAL_ACCESS_TOKEN": "<your-pat-token>"
-      }
+      "command": "npx",
+      "args": ["-y", "openl-mcp-server", "https://openl.example.com"],
+      "env": { "OPENL_PERSONAL_ACCESS_TOKEN": "<your-pat-token>" }
     }
   }
 }
 ```
 
-**Prerequisites:**
+If requests time out: check connectivity (`curl https://openl.example.com`), verify the
+token, and raise `OPENL_TIMEOUT` (milliseconds) if the backend is slow.
 
-1. **Build the MCP server:**
-   ```bash
-   cd <path-to-project>
-   npm install
-   npm run build
-   ```
-
-2. **Verify the build:**
-   ```bash
-   ls -la dist/index.js
-   # Should exist and be executable
-   ```
-
-**Advantages:**
-- ✅ Reliable stdio transport (no network issues)
-- ✅ Full control over authentication
-- ✅ Better error messages and debugging
-- ✅ Works even if the remote HTTP endpoint has issues
-- ✅ No dependency on `mcp-remote` package
-
-### Alternative: Verify Remote HTTP Configuration
-
-Make sure you're using the correct format with `--header` flag:
-
-```json
-{
-  "mcpServers": {
-    "openl-remote": {
-      "command": "/path/to/node",
-      "args": [
-        "/path/to/mcp-remote",
-        "https://<your-openl-server>/mcp",
-        "--header",
-        "Authorization: Token <your-pat-token>"
-      ]
-    }
-  }
-}
-```
-
-**Important:** Use absolute paths for both `command` and the first `args` element (mcp-remote path).
-
-### Why This Works Better
-
-1. **stdio transport** avoids network issues entirely
-2. **Local process** gives better error visibility
-3. **API** connection to OpenL is well-tested and stable
-4. **No npm package dependencies** - just Node.js and your built MCP server
-
-### Verification
-
-After updating the configuration:
-
-1. **Restart Claude Desktop completely**
-2. **Check MCP server status** in settings (should show "Connected")
-3. **Test with a simple query:**
-   ```
-   List repositories in OpenL Studio
-   ```
-
-If you still see timeouts, check:
-- Network connectivity to `https://<your-openl-server>`
-- PAT token validity
-- MCP server build status
-
----
-
-## Configuration Issues
-
-### Issue: File doesn't exist
-
-**Solution:**
-1. Ensure project is built:
-   ```bash
-   cd <path-to-project>
-   npm run build
-   ls -la dist/index.js  # Should exist
-   ```
-2. Verify the path in configuration matches the actual location
-
-### Issue: Environment variables not set
-
-**Solution:**
-1. Check configuration file for your AI client
-2. Ensure all required variables are set:
-   - `OPENL_BASE_URL` (required)
-   - `OPENL_PERSONAL_ACCESS_TOKEN` (optional — omit for single-user mode)
-3. Restart your AI client after changing configuration
-
----
-
-## WebSocket Wait Issues (compile / trace status)
+## WebSocket wait issues (compile / trace status)
 
 Some tools wait for the studio's asynchronous work over a STOMP WebSocket instead of polling: `openl_project_status` with `wait: true`, the `openl://status/...` resource, and `openl_get_trace_nodes` / `openl_export_trace` while a trace is running. See [WebSockets (STOMP)](../development/websockets.md) for how this works.
 
@@ -410,28 +149,15 @@ Some tools wait for the studio's asynchronous work over a STOMP WebSocket instea
 - In CLI mode each invocation is a new process/session — pass `--cookie-jar <path>` to share the session between `openl_start_trace` and the subsequent read, and pass `tableId` to the read tool.
 
 **Wait hangs until timeout, nothing arrives**
-- The WS upgrade must carry an `Authorization` header (Basic or PAT). Anonymous WebSocket sessions cannot subscribe to user-routed topics in multi-user mode — the server logs a warning when this happens. Provide credentials.
+- The WS upgrade must carry an `Authorization` header (PAT). Anonymous WebSocket sessions cannot subscribe to user-routed topics in multi-user mode — the server logs a warning when this happens. Provide credentials.
 - Verify the studio is reachable at `<base-url>/ws` (e.g. `http://<host>:8080/rest/ws`) — proxies must allow WebSocket upgrade on that path.
 
 **Diagnosing**
 - Set `DEBUG_STOMP=true` to log the WebSocket URL, CONNECT/SUBSCRIBE frames, and every inbound frame to stderr.
 
-## Additional Information
-
-- All MCP server logs go to **stderr** (via `console.error()`) to avoid interfering with JSON-RPC protocol on stdout
-- AI client logs are automatically saved to their respective log directories
-- For debugging, it's recommended to run the server directly in terminal
-- Use `DEBUG=1` environment variable for more verbose logs
-
 ## Related Documentation
 
-- [Authentication Guide](authentication.md) - Authentication setup and troubleshooting
-- [MCP Connection Guide](../setup/mcp-connection-guide.md#troubleshooting) - Connection troubleshooting
-- [Quick Start Guide](../getting-started/quick-start.md) - Quick setup instructions
-- [Usage Examples](examples.md) - Usage examples and workflows
-
-For more help:
+- [MCP Connection Guide](../setup/mcp-connection-guide.md) — per-client setup
+- [Authentication Guide](authentication.md) — Personal Access Tokens
+- [Debug PAT](debug-pat.md) — detailed auth logging
 - [Quick Start Guide](../getting-started/quick-start.md)
-- [MCP Connection Guide](../setup/mcp-connection-guide.md)
-- [Authentication Guide](authentication.md)
-

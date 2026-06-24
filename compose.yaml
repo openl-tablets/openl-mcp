@@ -1,39 +1,43 @@
+# Full-stack demo: OpenL Studio + MCP Server.
+#
+# The MCP server is NOT a custom image — it runs on the official Node image and
+# fetches the latest nightly build via npx: the `x` prerelease tarball published
+# by .github/workflows/deploy.yml. No build step, no image to maintain.
+#
+# Start everything:  docker compose up -d
+# Studio UI:         http://localhost:8080   (single-user mode, no auth)
+# MCP endpoint:      http://localhost:3000/mcp
+#
+# To run a released version from npm instead, swap the command for:
+#   npx -y openl-mcp http://studio:8080 --http
 services:
-  mcp-server:
-    # Use pre-built image (production) or build from source (development)
-    # Production: MCP_IMAGE=ghcr.io/openl-tablets/mcp-server:x docker compose up -d
-    # Development (local build): docker compose up -d --build
-    # By default, builds from local source. Set MCP_IMAGE to use pre-built image.
-    # If MCP_IMAGE is not set, image will be built locally and named: openl-mcp-server
-    image: ${MCP_IMAGE:-openl-mcp:latest}
-    build:
-      context: .
-      dockerfile: Dockerfile
-    pull_policy: ${MCP_PULL_POLICY:-missing}
-    container_name: mcp-server
+  studio:
+    image: ghcr.io/openl-tablets/webstudio:x
+    pull_policy: always
+    container_name: openl-studio
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${MCP_PORT:-3000}:3000"
-    # Add custom host mapping if needed (e.g., for VPN or internal DNS)
-    # extra_hosts:
-      # - "<your-openl-host>:host-gateway"
-    environment:
-      PORT: 3000
-      OPENL_BASE_URL: ${OPENL_BASE_URL:?OPENL_BASE_URL is required}
-      NODE_ENV: ${NODE_ENV:-production}
+      - "127.0.0.1:8080:8080"
+
+  openl-mcp:
+    image: node:lts-alpine
+    command: npx -y -p https://github.com/openl-tablets/openl-mcp/releases/download/x/openl-mcp.tgz openl-mcp-server http://studio:8080 --http
+    container_name: openl-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - studio
     deploy:
       resources:
         limits:
-          cpus: '0.5'
+          cpus: "0.5"
           memory: 512M
         reservations:
-          cpus: '0.25'
+          cpus: "0.25"
           memory: 256M
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
-    # Stdin/TTY for stdio transport (if needed)
-    stdin_open: true
-    tty: true

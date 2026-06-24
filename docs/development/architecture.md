@@ -68,9 +68,9 @@ subscribed, why, and how authentication works.
 
 ### Claude Desktop
 ```text
-~/Library/Application Support/Claude/config.json
+~/Library/Application Support/Claude/claude_desktop_config.json
 ```
-Contains MCP server settings (path, environment variables)
+Contains MCP server settings (command, arguments, environment variables)
 
 ### MCP Server
 ```text
@@ -88,23 +88,23 @@ DEMO/start                         # Local startup script
 
 ## Startup Process
 
-### Option 1: Docker (recommended)
-```bash
-# Terminal 1: Start OpenL
-docker compose up
+The MCP server is launched **by your AI client** over stdio (via `npx`, or Docker when
+Node.js isn't installed) — you don't start it yourself. You only need OpenL Studio
+running:
 
-# Claude Desktop starts separately (application)
-# MCP Server starts automatically by Claude Desktop
+### Option 1: Docker
+```bash
+# Start OpenL Studio (compose.yaml also runs a shared MCP server)
+docker compose up
 ```
 
 ### Option 2: Locally
 ```bash
-# Terminal 1: Start OpenL
 cd DEMO && ./start
-
-# Claude Desktop starts separately
-# MCP Server starts automatically by Claude Desktop
 ```
+
+Then configure your client (see the [Connection Guide](../setup/mcp-connection-guide.md));
+it spawns the MCP server on demand.
 
 ## Authentication
 
@@ -123,7 +123,7 @@ curl http://localhost:8080/rest/repos
 
 ### Level 2: Is MCP Server configured?
 ```bash
-cat ~/Library/Application\ Support/Claude/config.json | grep openl-mcp-server
+cat ~/Library/Application\ Support/Claude/claude_desktop_config.json | grep openl
 ```
 
 ### Level 3: Does Claude see the server?
@@ -136,8 +136,8 @@ In Claude: "List repositories in OpenL Studio"
 ## Common Issues
 
 ### Issue: Claude doesn't see MCP server
-**Cause:** Incorrect path in configuration or server not built
-**Solution:** Check `config.json` and run `npm run build` in the MCP Server repository
+**Cause:** Invalid client config, or Node.js missing for `npx`
+**Solution:** Check the client's MCP config (valid JSON, correct package name and URL); confirm `node -v`, or use the [Docker option](../setup/mcp-connection-guide.md#running-without-nodejs-docker). Restart the client.
 
 ### Issue: "Cannot connect to OpenL API"
 **Cause:** OpenL not running or inaccessible

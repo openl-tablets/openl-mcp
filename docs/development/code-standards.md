@@ -182,8 +182,8 @@ npm run test:coverage # With coverage
 - **[Quick Start Guide](../getting-started/quick-start.md)** - Get up and running quickly
 
 **Setup Guides:**
-- **[MCP Connection Guide](../setup/mcp-connection-guide.md)** - Connect Cursor or Claude Desktop
-- **[Docker Setup](../setup/docker.md)** - Running MCP server in Docker
+- **[MCP Connection Guide](../setup/mcp-connection-guide.md)** - Connect Claude Code, Claude Desktop, Cursor, or VS Code
+- **[Docker Setup](../setup/docker.md)** - Run the server via Docker (no Node.js) and the compose demo
 
 **Usage Guides:**
 - **[Usage Examples](../guides/examples.md)** - Real-world usage examples
