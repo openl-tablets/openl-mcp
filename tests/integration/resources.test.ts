@@ -2,8 +2,8 @@
  * Integration tests for the MCP resource layer.
  *
  * These run in CI without a live OpenL Studio: the OpenL client's HTTP layer is
- * mocked with axios-mock-adapter (the same harness tests/mcp-server.test.ts uses
- * for tools). We register the REAL resource handlers onto a real MCP `Server`
+ * mocked with axios-mock-adapter (the same harness tests/integration/tool-handlers.test.ts
+ * uses for tools). We register the REAL resource handlers onto a real MCP `Server`
  * exactly as the production session setup does — `ListResources` →
  * `STATIC_RESOURCES`, `ListResourceTemplates` → `RESOURCE_TEMPLATES`,
  * `ReadResource` → `handleResourceRead(uri, client)` — and then invoke those

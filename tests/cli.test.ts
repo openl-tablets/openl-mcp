@@ -57,7 +57,7 @@ function createMockClient(): { client: OpenLClient; mock: MockAdapter } {
     password: "admin",
   };
   const client = new OpenLClient(config);
-  // @ts-ignore Access private axios instance for mocking, mirrors mcp-server.test.ts
+  // @ts-ignore Access private axios instance for mocking, mirrors tests/integration/tool-handlers.test.ts
   const mock = new MockAdapter(client.axiosInstance);
   return { client, mock };
 }

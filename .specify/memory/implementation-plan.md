@@ -955,10 +955,10 @@ OPENL_TIMEOUT=30000  # milliseconds
 tests/
 ├── mocks/
 │   └── openl-api-mocks.ts      # Mock API responses
-├── openl-client.test.ts         # Unit tests for client
-├── mcp-server.test.ts           # Integration tests for server
-├── prompts.test.ts              # Prompt rendering tests
+├── client.test.ts               # Unit tests for client
+├── prompts-registry.test.ts     # Prompt registry + prompts/ data validation
 └── integration/
+    ├── tool-handlers.test.ts    # MCP tools via executeTool() + mocked HTTP
     └── openl-live.test.ts       # Live integration tests
 ```
 

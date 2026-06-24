@@ -7,16 +7,26 @@ This document describes the testing strategy and how to run tests for the OpenL 
 ```text
 tests/
 ├── mocks/
-│   └── openl-api-mocks.ts    # Mock data for API responses
-├── openl-client.test.ts       # Unit tests for API client
-└── mcp-server.test.ts         # Integration tests for MCP tools
+│   └── openl-api-mocks.ts          # Mock data for API responses
+├── <module>.test.ts                # Unit tests, one file per src/<module>.ts
+│                                   #   (auth, client, constants, formatters,
+│                                   #    schemas, validators, prompts, …)
+└── integration/                    # Integration tests (excluded from test:unit)
+    ├── tool-handlers.test.ts       # MCP tools via executeTool() + mocked HTTP
+    ├── resources.test.ts           # MCP resource read/list/template handlers
+    └── openl-live.test.ts          # Live tests against a real OpenL Studio
 ```
+
+Each unit test file is named for the `src/` module it exercises; integration
+tests (those wired through the OpenL client's mocked HTTP layer) live under
+`tests/integration/`. The split is enforced by the npm scripts: `test:unit`
+ignores the `integration` path, `test:integration` runs only that folder.
 
 ## Testing Stack
 
 - **Jest**: Testing framework
 - **ts-jest**: TypeScript support for Jest
-- **nock**: HTTP mocking library for testing API calls
+- **axios-mock-adapter**: HTTP mocking layer for the OpenL client in tests
 - **ESM Support**: Full ES module support for modern TypeScript
 
 ## Running Tests
@@ -54,9 +64,11 @@ start coverage/index.html  # Windows
 
 ## Test Categories
 
-### Unit Tests (openl-client.test.ts)
+### Unit Tests (per `src/` module)
 
-Tests individual API client methods without running the full MCP server:
+Each unit suite targets one module in isolation. For example, the API client
+suite (`client.test.ts`) exercises individual client methods without running
+the full MCP server:
 
 - **Repository Management**
   - List repositories
@@ -88,20 +100,19 @@ Tests individual API client methods without running the full MCP server:
   - API key auth
   - Unauthorized access handling
 
-### Integration Tests (mcp-server.test.ts)
+### Integration Tests (`tests/integration/`)
 
-Tests MCP server tools end-to-end:
+Exercise the MCP surface end-to-end with the OpenL client's HTTP layer mocked:
 
-- **MCP Resources**
-  - Repositories resource
-  - Projects resource
-  - Deployments resource
-
-- **MCP Tools**
-  - All 40 tools (list_repositories, list_projects, etc.)
+- **MCP Tools** (`tool-handlers.test.ts`)
+  - Every registered tool via `executeTool()` (list_repositories, list_projects, etc.)
   - Tool input validation
   - Tool output formatting
   - Error handling and edge cases
+
+- **MCP Resources** (`resources.test.ts`)
+  - Static resources (repositories, projects, deployments)
+  - Parameterized resource templates and read/error paths
 
 ## Mock Data
 
@@ -262,7 +273,7 @@ it('should create resource', async () => {
 ### Run Specific Test File
 
 ```bash
-npm test openl-client.test.ts
+npm test client.test.ts
 ```
 
 ### Run Specific Test Suite
