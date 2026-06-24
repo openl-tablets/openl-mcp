@@ -17,7 +17,6 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { OpenLClient } from './client.js';
 import { createConfiguredServer } from './mcp-core.js';
 import { sanitizeError } from './utils.js';
-import { logger } from './logger.js';
 import { SERVER_INFO } from './constants.js';
 import type * as Types from './types.js';
 
@@ -45,7 +44,7 @@ function getDefaultClientOrThrow(): OpenLClient {
 
 // Initialize default OpenL client (async - will be awaited before server starts)
 // NOTE: Authentication credentials should NOT be set in Docker/environment variables.
-// They must be provided via MCP client configuration (Authorization header or query params).
+// They must be provided per session via the MCP client's Authorization header.
 async function initializeDefaultClient(): Promise<void> {
   try {
     // Try to get base URL from env, but don't require authentication
@@ -64,13 +63,13 @@ async function initializeDefaultClient(): Promise<void> {
     }
 
     // Create a minimal config with just base URL (no auth)
-    // Auth will come from query params or headers per session
+    // Auth comes from the Authorization header per session
     const config: Types.OpenLConfig = {
       baseUrl,
     };
 
     // Only create client if we have at least base URL
-    // Auth will be provided per-session via query params or headers
+    // Auth will be provided per-session via the Authorization header
     defaultClient = new OpenLClient(config);
   } catch (error) {
     console.error('❌ Failed to initialize default OpenL client:', sanitizeError(error));
@@ -79,10 +78,13 @@ async function initializeDefaultClient(): Promise<void> {
 }
 
 /**
- * Get client for a session, creating one with authentication from client if provided
- * Base URL always comes from server configuration (OPENL_BASE_URL env var or Docker config)
+ * Get the OpenL client for a session. When the client supplied credentials via
+ * the `Authorization` header, build a session client pairing the
+ * server-configured base URL with those credentials; otherwise reuse the
+ * credential-less default client. Base URL always comes from server
+ * configuration (OPENL_BASE_URL env var or Docker config) — never the client.
  */
-function getClientForSession(sessionId: string, query?: Record<string, string | undefined>): OpenLClient {
+function getClientForSession(sessionId: string, auth?: Record<string, string | undefined>): OpenLClient {
   // If client already exists for this session, return it
   if (clientsBySession[sessionId]) {
     return clientsBySession[sessionId];
@@ -91,19 +93,19 @@ function getClientForSession(sessionId: string, query?: Record<string, string | 
   // Base URL must come from server configuration
   const baseClient = getDefaultClientOrThrow();
 
-  // If authentication is provided via query params/headers, create a new client with same base URL but different auth
-  if (query && (query.OPENL_PERSONAL_ACCESS_TOKEN || query.OPENL_USERNAME)) {
+  // If the Authorization header carried credentials, create a session client
+  // with the server's base URL and those credentials.
+  if (auth && (auth.OPENL_PERSONAL_ACCESS_TOKEN || auth.OPENL_USERNAME)) {
     try {
       // Get base URL from default client (server configuration)
       const baseUrl = baseClient.getBaseUrl();
 
-      // Build config with server's base URL and client's authentication
+      // Build config with server's base URL and the client's authentication
       const config: Types.OpenLConfig = {
         baseUrl,
-        username: query.OPENL_USERNAME,
-        password: query.OPENL_PASSWORD,
-        personalAccessToken: query.OPENL_PERSONAL_ACCESS_TOKEN,
-        timeout: query.OPENL_TIMEOUT ? parseInt(query.OPENL_TIMEOUT, 10) : undefined,
+        username: auth.OPENL_USERNAME,
+        password: auth.OPENL_PASSWORD,
+        personalAccessToken: auth.OPENL_PERSONAL_ACCESS_TOKEN,
       };
 
       const client = new OpenLClient(config);
@@ -161,34 +163,6 @@ function authConfigFromHeader(
 }
 
 /**
- * Sensitive config keys that should never travel in a URL query string.
- * Query parameters routinely end up in proxy/access logs, browser history,
- * and Referer headers — see docs/guides/authentication.md.
- */
-const SENSITIVE_QUERY_KEYS = ["OPENL_PERSONAL_ACCESS_TOKEN", "OPENL_PASSWORD"] as const;
-
-/**
- * Emit a deprecation/security warning when credentials arrive via URL query
- * parameters. Passing secrets in the query string is still honored for
- * backward compatibility and local development, but the `Authorization` header
- * is the secure path. Never logs the secret value itself — only which keys
- * were present, so the warning is safe to keep in production logs.
- */
-function warnIfSecretsInQuery(query: Record<string, unknown>): void {
-  const leaked = SENSITIVE_QUERY_KEYS.filter((key) => query[key] !== undefined);
-  if (leaked.length === 0) {
-    return;
-  }
-  logger.warn(
-    `Received credential(s) via URL query parameter (${leaked.join(", ")}). ` +
-      "This is deprecated and insecure: query strings are commonly captured in " +
-      "proxy/access logs, browser history, and Referer headers. Pass the token " +
-      'via the "Authorization: Token <PAT>" header instead. ' +
-      "See docs/guides/authentication.md.",
-  );
-}
-
-/**
  * JSON-RPC error payload for malformed Streamable HTTP requests (no valid
  * session). Mirrors the shape the MCP SDK uses for transport-level errors.
  */
@@ -204,13 +178,9 @@ function jsonRpcError(code: number, message: string): Record<string, unknown> {
  * `mcp-session-id` header and are routed to that session's transport.
  *
  * Base URL is always configured on the server (OPENL_BASE_URL). Only the
- * authentication token is supplied per request, via:
- *   1. HTTP Authorization header (recommended): "Authorization: Token <PAT>",
- *      "Authorization: Bearer <PAT>", or "Authorization: Basic <base64 user:pass>".
- *   2. Query parameter: ?OPENL_PERSONAL_ACCESS_TOKEN=<PAT> — DEPRECATED and
- *      insecure (query strings leak into proxy/access logs, browser history,
- *      and Referer headers). Honored for backward compatibility / local
- *      development only; emits a warning.
+ * authentication token is supplied per request, via the HTTP Authorization
+ * header: "Authorization: Token <PAT>", "Authorization: Bearer <PAT>", or
+ * "Authorization: Basic <base64 user:pass>".
  */
 const handleMcpPost = async (req: Request, res: Response): Promise<Response | void> => {
   try {
@@ -221,14 +191,12 @@ const handleMcpPost = async (req: Request, res: Response): Promise<Response | vo
       // Existing session — route to its transport.
       transport = streamableHttpTransports[sessionId];
     } else if (!sessionId && isInitializeRequest(req.body)) {
-      // New session. Extract auth from the Authorization header (Token/Bearer/Basic),
-      // then merge query params (base URL always comes from server config).
-      warnIfSecretsInQuery(req.query as Record<string, unknown>);
-      const configFromHeaders = authConfigFromHeader(req.headers.authorization);
-      const configParams = { ...req.query, ...configFromHeaders } as Record<string, string | undefined>;
+      // New session. Extract auth from the Authorization header (Token/Bearer/Basic);
+      // the base URL always comes from server config.
+      const auth = authConfigFromHeader(req.headers.authorization);
 
       const newSessionId = randomUUID();
-      const client = getClientForSession(newSessionId, configParams);
+      const client = getClientForSession(newSessionId, auth);
       const { server: sessionServer, subscriptions } = createConfiguredServer(client);
 
       transport = new StreamableHTTPServerTransport({
@@ -334,7 +302,7 @@ app.use((req: Request, res: Response) => {
  * Start the server
  */
 async function startServer(): Promise<void> {
-  // Initialize default client before starting server (optional - can use query params)
+  // Initialize default client before starting server (optional - auth is per-session)
   await initializeDefaultClient();
 
   app.listen(PORT, () => {

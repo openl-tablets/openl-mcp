@@ -102,7 +102,7 @@ docker compose logs -f mcp-server | grep -A 10 -B 5 "401\|ERROR\|Failed"
 [Auth]   personalAccessToken: not configured
 ```
 
-**Solution:** Check that PAT is provided via MCP client configuration (query parameters or headers), not Docker environment variables.
+**Solution:** Check that PAT is provided via the MCP client's `Authorization` header, not Docker environment variables.
 
 ### 2. Incorrect Header Format
 

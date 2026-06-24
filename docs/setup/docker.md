@@ -28,7 +28,7 @@ MCP Server runs as a standalone HTTP application (Express) that provides MCP pro
 ```
 
 **Key points:**
-- MCP Server does NOT store credentials — authentication is passed from the AI client via headers or query parameters
+- MCP Server does NOT store credentials — authentication is passed from the AI client via the Authorization header
 - `OPENL_BASE_URL` is configured on the server side (tells MCP Server where OpenL Studio is)
 - The AI client provides the authentication token per session
 
@@ -146,7 +146,7 @@ MCP Server uses the following environment variables:
 | `PORT` | HTTP server port | No | `3000` |
 | `NODE_ENV` | Environment mode | No | `production` |
 
-> **Authentication is NOT configured via environment variables.** Credentials are passed from the AI client per session via `Authorization` header or query parameters. See [Authentication Guide](../guides/authentication.md) for details.
+> **Authentication is NOT configured via environment variables.** Credentials are passed from the AI client per session via the `Authorization` header. See [Authentication Guide](../guides/authentication.md) for details.
 
 ---
 

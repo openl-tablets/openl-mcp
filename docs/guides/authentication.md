@@ -28,7 +28,7 @@ Choose the method that best fits your security requirements and infrastructure.
 The MCP server supports two modes of operation:
 
 1. **stdio transport** (for Cursor/Claude Desktop) - authentication is set in the MCP client configuration via environment variables in the config file
-2. **HTTP transport** (for Docker) - authentication is passed via query parameters or HTTP headers when connecting
+2. **HTTP transport** (for Docker) - authentication is passed via the HTTP Authorization header when connecting
 
 ### For Cursor IDE or Claude Desktop (stdio transport)
 
@@ -81,17 +81,6 @@ Authorization: Token <your-token>
 The `Bearer <your-token>` scheme is also accepted and automatically converted to `Token`
 for the OpenL API. For basic auth, use `Authorization: Basic <base64(username:password)>`.
 
-> ⚠️ **Local development only — token in the query string.** The server also accepts the
-> token as a query parameter, but this is **deprecated and insecure**: query strings are
-> routinely captured in proxy/access logs (e.g. nginx `access.log`), browser history, and
-> `Referer` headers, so the token can leak even over HTTPS. The server logs a warning when
-> a credential arrives this way. Use it only for quick local testing against `localhost`,
-> never in production — always prefer the `Authorization` header above.
->
-> ```text
-> http://localhost:3000/mcp?OPENL_PERSONAL_ACCESS_TOKEN=<your-token>
-> ```
-
 ### Docker Configuration
 
 In Docker configuration (`compose.yaml`), **only** the base URL is set:
@@ -113,7 +102,6 @@ environment:
 ✅ **Correct**: Set secrets only in:
 - MCP client configuration files (Cursor/Claude Desktop)
 - The `Authorization` header when connecting via HTTP
-- Query parameters **only** for one-time local testing against `localhost` (deprecated, insecure — see warning above)
 
 For complete configuration examples, see [MCP Connection Guide](../setup/mcp-connection-guide.md).
 

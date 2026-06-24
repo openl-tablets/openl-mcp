@@ -77,58 +77,6 @@ class OpenLMCPServer {
 }
 
 /**
- * Load configuration from query parameters (for the Streamable HTTP transport)
- *
- * @param query - Query parameters from HTTP request
- * @returns OpenL Studio configuration or null if not enough parameters
- * @throws Error if configuration is invalid (invalid URL format, invalid timeout, missing authentication)
- */
-export function loadConfigFromQuery(query: Record<string, string | undefined>): Types.OpenLConfig | null {
-  const baseUrl = query.OPENL_BASE_URL;
-  if (!baseUrl) {
-    return null; // Not enough parameters
-  }
-
-  // Validate base URL format
-  try {
-    new URL(baseUrl);
-  } catch {
-    throw new Error(`Invalid OPENL_BASE_URL format: ${baseUrl}`);
-  }
-
-  // Parse and validate timeout if provided
-  let timeout: number | undefined;
-  if (query.OPENL_TIMEOUT) {
-    const parsedTimeout = parseInt(query.OPENL_TIMEOUT, 10);
-    if (isNaN(parsedTimeout) || parsedTimeout <= 0) {
-      throw new Error(`Invalid OPENL_TIMEOUT value: ${query.OPENL_TIMEOUT}`);
-    }
-    timeout = parsedTimeout;
-  }
-
-  const config: Types.OpenLConfig = {
-    baseUrl,
-    username: query.OPENL_USERNAME,
-    password: query.OPENL_PASSWORD,
-    personalAccessToken: query.OPENL_PERSONAL_ACCESS_TOKEN,
-    timeout,
-  };
-
-  // Authentication is optional: OpenL Studio in single-user mode accepts
-  // unauthenticated requests. Warn when partial Basic Auth is given (username
-  // without password, or vice versa) — that is almost certainly a misconfig.
-  const hasPat = !!config.personalAccessToken;
-  const hasBasic = !!(config.username && config.password);
-  if (!hasPat && !hasBasic && (config.username || config.password)) {
-    console.error(
-      "[Config] ⚠️  Incomplete Basic Auth (only one of OPENL_USERNAME/OPENL_PASSWORD set) — sending no Authorization header"
-    );
-  }
-
-  return config;
-}
-
-/**
  * Explicit configuration overrides for the stdio server launch. Each field,
  * when defined, takes precedence over the matching `OPENL_*` environment
  * variable. Populated from the binary's command-line arguments (a positional

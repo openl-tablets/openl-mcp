@@ -1,82 +1,14 @@
 /**
- * Unit tests for the config loaders exported from src/index.ts.
+ * Unit tests for `loadConfigFromEnv` (the stdio MCP transport's config loader)
+ * exported from src/index.ts.
  *
- * `loadConfigFromQuery` (Streamable HTTP transport) and `loadConfigFromEnv` (stdio
- * MCP transport) are pure-ish validators with several branches (missing base
- * URL, invalid URL, invalid timeout, missing auth). They were previously
- * untested (index.ts at 0%); these cover the validation logic directly,
- * in-process, without spawning the binary.
+ * It is a pure-ish validator with several branches (missing base URL, invalid
+ * URL, invalid timeout, missing auth); these cover the validation logic
+ * directly, in-process, without spawning the binary.
  */
 
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
-import { loadConfigFromQuery, loadConfigFromEnv } from "../src/index.js";
-
-describe("loadConfigFromQuery (Streamable HTTP transport)", () => {
-  it("returns null when OPENL_BASE_URL is absent (not enough params)", () => {
-    expect(loadConfigFromQuery({})).toBeNull();
-  });
-
-  it("throws on an invalid base URL", () => {
-    expect(() =>
-      loadConfigFromQuery({ OPENL_BASE_URL: "not-a-url", OPENL_PERSONAL_ACCESS_TOKEN: "t" }),
-    ).toThrow(/Invalid OPENL_BASE_URL/);
-  });
-
-  it("throws on an invalid timeout", () => {
-    expect(() =>
-      loadConfigFromQuery({
-        OPENL_BASE_URL: "http://localhost:8080",
-        OPENL_PERSONAL_ACCESS_TOKEN: "t",
-        OPENL_TIMEOUT: "-5",
-      }),
-    ).toThrow(/Invalid OPENL_TIMEOUT/);
-  });
-
-  it("returns an unauthenticated config when no auth method is provided (single-user mode)", () => {
-    const cfg = loadConfigFromQuery({ OPENL_BASE_URL: "http://localhost:8080" });
-    expect(cfg).toMatchObject({ baseUrl: "http://localhost:8080" });
-    expect(cfg?.username).toBeUndefined();
-    expect(cfg?.password).toBeUndefined();
-    expect(cfg?.personalAccessToken).toBeUndefined();
-  });
-
-  it("returns a config and warns when only one half of Basic Auth is set", () => {
-    const errSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      const cfg = loadConfigFromQuery({ OPENL_BASE_URL: "http://localhost:8080", OPENL_USERNAME: "u" });
-      expect(cfg).toMatchObject({ baseUrl: "http://localhost:8080", username: "u" });
-      expect(errSpy).toHaveBeenCalledWith(expect.stringMatching(/Incomplete Basic Auth/i));
-    } finally {
-      errSpy.mockRestore();
-    }
-  });
-
-  it("accepts a Personal Access Token", () => {
-    const cfg = loadConfigFromQuery({
-      OPENL_BASE_URL: "http://localhost:8080",
-      OPENL_PERSONAL_ACCESS_TOKEN: "openl_pat_x",
-    });
-    expect(cfg).toMatchObject({
-      baseUrl: "http://localhost:8080",
-      personalAccessToken: "openl_pat_x",
-    });
-  });
-
-  it("accepts Basic Auth and parses a valid timeout", () => {
-    const cfg = loadConfigFromQuery({
-      OPENL_BASE_URL: "http://localhost:8080",
-      OPENL_USERNAME: "u",
-      OPENL_PASSWORD: "p",
-      OPENL_TIMEOUT: "60000",
-    });
-    expect(cfg).toMatchObject({
-      baseUrl: "http://localhost:8080",
-      username: "u",
-      password: "p",
-      timeout: 60000,
-    });
-  });
-});
+import { loadConfigFromEnv } from "../src/index.js";
 
 describe("loadConfigFromEnv (stdio MCP transport)", () => {
   const OPENL_KEYS = [

@@ -225,12 +225,6 @@ Open `settings.json` (`Cmd/Ctrl + Shift + P` → `Preferences: Open User Setting
 }
 ```
 
-**Last resort:** if your client does not support custom headers, you can pass the token via query parameter. **This is less secure** — query parameters may be logged, cached, or exposed in server logs. Always prefer the `Authorization` header above.
-
-```json
-"url": "http://localhost:3000/mcp?OPENL_PERSONAL_ACCESS_TOKEN=<your-pat-token>"
-```
-
 After configuration, reload VS Code (`Cmd/Ctrl + Shift + P` → `Developer: Reload Window`).
 
 ### Approach B: Stdio Transport via Docker (standalone)

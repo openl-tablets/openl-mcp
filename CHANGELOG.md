@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Removed the legacy HTTP+SSE transport (`GET /mcp/sse`, `POST /mcp/messages`) and the nginx-proxy path aliases (`/sse`, `/messages`). Only Streamable HTTP at `/mcp` is supported.
 - Removed the standalone REST tool endpoints (`GET /tools`, `GET /tools/:name`, `POST /tools/:name/execute`, `POST /execute`); use the MCP protocol over `/mcp` instead. The unauthenticated `GET /health` liveness probe is retained.
+- The HTTP transport no longer accepts credentials via URL query parameters (e.g. `?OPENL_PERSONAL_ACCESS_TOKEN=…`); pass them in the `Authorization` header (`Token`/`Bearer`/`Basic`). Query strings leak into proxy/access logs, browser history, and `Referer` headers.
 
 ### Fixed
 
