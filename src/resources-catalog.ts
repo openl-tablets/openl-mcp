@@ -273,8 +273,8 @@ function buildResult(filtered: {
 
 /**
  * Read an `openl://` resource and return its MCP `contents`. Single
- * implementation shared by every transport (stdio in index.ts, HTTP/SSE in
- * server.ts) so the URI routing lives in exactly one place.
+ * implementation shared by every transport (stdio in stdio-server.ts, HTTP in
+ * http-server.ts) so the URI routing lives in exactly one place.
  *
  * Dispatches on the URI's resource type and sub-path:
  *  - `openl://repositories` / `openl://projects` / `openl://deployments`

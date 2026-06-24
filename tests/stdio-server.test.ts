@@ -1,6 +1,6 @@
 /**
  * Unit tests for `loadConfigFromEnv` (the stdio MCP transport's config loader)
- * exported from src/index.ts.
+ * exported from src/stdio-server.ts.
  *
  * It is a pure-ish validator with several branches (missing base URL, invalid
  * URL, invalid timeout, missing auth); these cover the validation logic
@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
-import { loadConfigFromEnv } from "../src/index.js";
+import { loadConfigFromEnv } from "../src/stdio-server.js";
 
 describe("loadConfigFromEnv (stdio MCP transport)", () => {
   const OPENL_KEYS = [

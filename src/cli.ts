@@ -133,7 +133,7 @@ interface RunCliOptions {
 }
 
 /** Parsed shape of CLI arguments. */
-interface ParsedArgs {
+export interface ParsedArgs {
   toolName?: string;
   /**
    * A bareword positional that parses as an `http(s)://` URL. Tool names are

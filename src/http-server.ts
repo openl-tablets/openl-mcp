@@ -1,12 +1,14 @@
-#!/usr/bin/env node
-
 /**
- * Express HTTP Server for OpenL MCP Server
+ * Express HTTP transport for OpenL MCP Server
  *
  * Exposes the MCP protocol over the Streamable HTTP transport (MCP spec
  * 2025-11-25) at a single endpoint, `/mcp`, so the server can run as a
  * standalone microservice in Docker Compose. The legacy HTTP+SSE transport
  * and the REST helper endpoints are intentionally not provided.
+ *
+ * This module is not an entry point: the single binary entry, `index.ts`,
+ * lazy-imports it and calls {@link startHttpServer} when launched with
+ * `--http`, so a stdio launch never loads Express.
  */
 
 import express, { Request, Response, NextFunction } from 'express';
@@ -299,9 +301,11 @@ app.use((req: Request, res: Response) => {
 });
 
 /**
- * Start the server
+ * Start the Express HTTP transport. Called by the binary entry point
+ * (`index.ts`) when launched with `--http`. Startup errors propagate to the
+ * caller, which logs them and exits non-zero.
  */
-async function startServer(): Promise<void> {
+export async function startHttpServer(): Promise<void> {
   // Initialize default client before starting server (optional - auth is per-session)
   await initializeDefaultClient();
 
@@ -309,9 +313,3 @@ async function startServer(): Promise<void> {
     console.log(`OpenL MCP Server listening on port ${PORT}`);
   });
 }
-
-// Start the server
-startServer().catch((error) => {
-  console.error('❌ Failed to start server:', sanitizeError(error));
-  process.exit(1);
-});

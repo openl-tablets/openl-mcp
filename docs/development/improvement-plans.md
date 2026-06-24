@@ -6,10 +6,10 @@ Deep codebase analysis results. Plans are grouped by priority.
 
 ## Plan 1. TTL-based Cleanup for Sessions and Transport Maps [CRITICAL]
 
-**Problem:** In `server.ts`, `streamableHttpTransports` (and the associated `clientsBySession` entries) are cleaned up via `transport.onclose`. If that close callback doesn't fire (e.g., network drop, client process kill, or abrupt server termination), entries can remain indefinitely. During long-running Docker deployments, this leads to memory leaks.
+**Problem:** In `http-server.ts`, `streamableHttpTransports` (and the associated `clientsBySession` entries) are cleaned up via `transport.onclose`. If that close callback doesn't fire (e.g., network drop, client process kill, or abrupt server termination), entries can remain indefinitely. During long-running Docker deployments, this leads to memory leaks.
 
 **Affected files:**
-- `src/server.ts` — primary changes
+- `src/http-server.ts` — primary changes
 - New file `src/session-store.ts`
 
 **Implementation steps:**
@@ -23,7 +23,7 @@ Deep codebase analysis results. Plans are grouped by priority.
    - `size()` — for monitoring
    - Optional `onExpire` callback for graceful cleanup (e.g., closing transports)
 
-2. In `server.ts`, replace plain objects with `SessionStore`:
+2. In `http-server.ts`, replace plain objects with `SessionStore`:
    ```typescript
    // Before:
    const clientsBySession: Record<string, OpenLClient> = {};
@@ -80,10 +80,10 @@ Deep codebase analysis results. Plans are grouped by priority.
 
 ## Plan 3. Mutex for getClientForSession [LOW]
 
-**Problem:** Today, `getClientForSession()` in `server.ts` (line 89) is fully synchronous and runs to completion without `await`, so Node's event loop will not interleave two calls mid-function and duplicate clients for the same `sessionId` cannot be created within a single process. However, if `getClientForSession()` is later refactored to perform async work (e.g., network I/O, disk access) or is invoked across multiple workers/processes, two concurrent calls with the same `sessionId` could race, creating multiple clients and causing one to be dropped or leaked. We should future-proof this by explicitly deduplicating in-flight client creation.
+**Problem:** Today, `getClientForSession()` in `http-server.ts` (line 89) is fully synchronous and runs to completion without `await`, so Node's event loop will not interleave two calls mid-function and duplicate clients for the same `sessionId` cannot be created within a single process. However, if `getClientForSession()` is later refactored to perform async work (e.g., network I/O, disk access) or is invoked across multiple workers/processes, two concurrent calls with the same `sessionId` could race, creating multiple clients and causing one to be dropped or leaked. We should future-proof this by explicitly deduplicating in-flight client creation.
 
 **Affected files:**
-- `src/server.ts`
+- `src/http-server.ts`
 
 **Implementation steps:**
 
@@ -196,10 +196,10 @@ Deep codebase analysis results. Plans are grouped by priority.
 
 ## Plan 7. Rate Limiting for HTTP Server [MEDIUM]
 
-**Problem:** The HTTP server (`server.ts`) does not limit request rates. A single client can overload both the MCP server and the downstream OpenL Studio API.
+**Problem:** The HTTP server (`http-server.ts`) does not limit request rates. A single client can overload both the MCP server and the downstream OpenL Studio API.
 
 **Affected files:**
-- `src/server.ts`
+- `src/http-server.ts`
 - `package.json` — new dependency
 
 **Implementation steps:**
@@ -239,7 +239,7 @@ Deep codebase analysis results. Plans are grouped by priority.
 
 ## Plan 9. Extract Shared Code from index.ts and http-server.ts [MEDIUM] — ✅ DONE
 
-**Outcome:** The duplicated MCP wiring was extracted into `src/mcp-core.ts`. `createConfiguredServer(client)` builds a fully-configured `Server` — capabilities declared, tools registered, and every request handler wired via `registerMcpHandlers()` — and returns it together with its `ResourceSubscriptionManager`. Both entry points now build their server from it: `index.ts` attaches a stdio transport, and `server.ts` attaches a Streamable HTTP transport per session, so the MCP surface (tools, resources, prompts, completion, subscriptions) is defined once and the two transports can't drift. (The shared module landed as `mcp-core.ts` rather than the originally-proposed `mcp-setup.ts`; `loadConfigFromEnv()` stayed in `index.ts` since it is specific to the stdio launch.)
+**Outcome:** The duplicated MCP wiring was extracted into `src/mcp-core.ts`. `createConfiguredServer(client)` builds a fully-configured `Server` — capabilities declared, tools registered, and every request handler wired via `registerMcpHandlers()` — and returns it together with its `ResourceSubscriptionManager`. Both entry points now build their server from it: `index.ts` attaches a stdio transport, and `http-server.ts` attaches a Streamable HTTP transport per session, so the MCP surface (tools, resources, prompts, completion, subscriptions) is defined once and the two transports can't drift. (The shared module landed as `mcp-core.ts` rather than the originally-proposed `mcp-setup.ts`; the transport-specific launch code — including `loadConfigFromEnv()` — lives in `stdio-server.ts` and `http-server.ts`, with `index.ts` reduced to a dispatcher.)
 
 ---
 
@@ -257,7 +257,7 @@ Deep codebase analysis results. Plans are grouped by priority.
    - JSON format for production (`NODE_ENV=production`), human-readable for dev.
    - Fields: `timestamp`, `level`, `message`, `correlationId`, `sessionId`, `context`.
 
-2. Add middleware in `server.ts` for `correlationId` generation using `res.locals` (type-safe without module augmentation):
+2. Add middleware in `http-server.ts` for `correlationId` generation using `res.locals` (type-safe without module augmentation):
    ```typescript
    app.use((req, res, next) => {
      res.locals.correlationId = req.headers['x-correlation-id'] || randomUUID();
@@ -376,13 +376,13 @@ Deep codebase analysis results. Plans are grouped by priority.
 
 | # | Plan | Priority | Complexity | Files | Status |
 |---|------|----------|------------|-------|--------|
-| 1 | TTL session cleanup | Critical | Medium | server.ts, new session-store.ts | Planned |
+| 1 | TTL session cleanup | Critical | Medium | http-server.ts, new session-store.ts | Planned |
 | 2 | TTL/LRU for client caches | Critical | Low | client.ts | Planned |
-| 3 | Mutex for getClientForSession | Low | Low | server.ts | Planned |
+| 3 | Mutex for getClientForSession | Low | Low | http-server.ts | Planned |
 | 4 | File download size validation | High | Low | client.ts, constants.ts | Planned |
 | 5 | Split tool-handlers | High | High | tool-handlers.ts, new handlers/ dir | Planned |
 | 6 | Replace `any` with types | Medium | Medium | formatters.ts, client.ts, mcp-proxy.ts, types.ts | Planned |
-| 7 | Rate limiting | Medium | Low | server.ts, package.json | Planned |
+| 7 | Rate limiting | Medium | Low | http-server.ts, package.json | Planned |
 | 8 | Prompt caching | Medium | Low | prompts-registry.ts | ✅ Done |
 | 9 | Extract shared code | Medium | Medium | mcp-core.ts | ✅ Done |
 | 10 | Structured logging | Low | High | logger.ts, all files | Planned |

@@ -19,8 +19,10 @@ This document outlines all the best practices implemented in the OpenL MCP Serve
 ### Modular Architecture ✓
 
 **Core Modules**:
-- `index.ts` - Server orchestration (stdio transport)
-- `server.ts` - HTTP server (Streamable HTTP transport at `/mcp`)
+- `index.ts` - Binary entry point that dispatches to a transport (stdio / HTTP / CLI)
+- `stdio-server.ts` - stdio transport (Claude Desktop / Cursor / other MCP clients)
+- `http-server.ts` - HTTP server (Streamable HTTP transport at `/mcp`)
+- `mcp-core.ts` - Shared MCP server core (capabilities, tool/resource/prompt handlers) built once for both transports
 - `client.ts` - OpenL Studio API client
 - `auth.ts` - Authentication (Basic Auth, PAT)
 - `tool-handlers.ts` - Tool definitions, schemas, and execution handlers
@@ -218,8 +220,10 @@ npm run test:coverage # With coverage
 ```text
 Module              Complexity
 --------------------------------
-index.ts            Moderate
-server.ts           Moderate
+index.ts            Low
+stdio-server.ts     Moderate
+http-server.ts      Moderate
+mcp-core.ts         Low
 client.ts           Low
 auth.ts             Moderate
 tool-handlers.ts    Moderate

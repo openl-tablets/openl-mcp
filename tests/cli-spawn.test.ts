@@ -60,7 +60,7 @@ function envWithoutOpenl(): NodeJS.ProcessEnv {
 describe("built binary (dist/index.js)", () => {
   beforeAll(() => {
     // Rebuild only if dist is missing or older than the entry/dispatch sources.
-    const srcs = ["src/index.ts", "src/cli.ts"].map((p) => join(root, p));
+    const srcs = ["src/index.ts", "src/cli.ts", "src/stdio-server.ts"].map((p) => join(root, p));
     const distMtime = existsSync(distEntry) ? statSync(distEntry).mtimeMs : 0;
     const newestSrc = Math.max(...srcs.map((s) => statSync(s).mtimeMs));
     if (distMtime < newestSrc) {

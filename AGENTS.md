@@ -234,7 +234,7 @@ OPENL_PERSONAL_ACCESS_TOKEN=your-token
 ### Transport Modes
 
 1. **stdio** - Standard input/output (for Claude Desktop, via `dist/index.js`)
-2. **Streamable HTTP** - MCP spec 2025-11-25 transport at `POST/GET/DELETE /mcp` (for Docker / direct HTTP clients, via `dist/server.js`)
+2. **Streamable HTTP** - MCP spec 2025-11-25 transport at `POST/GET/DELETE /mcp` (for Docker / direct HTTP clients, via `dist/index.js --http`)
 
 ## Key Features
 
@@ -410,8 +410,10 @@ Always use placeholders:
 ```text
 openl-mcp/
 ├── src/                    # Source code
-│   ├── index.ts           # Main entry (stdio transport)
-│   ├── server.ts          # HTTP server (Streamable HTTP transport at /mcp)
+│   ├── index.ts           # Binary entry point / transport dispatcher
+│   ├── stdio-server.ts    # stdio transport (Claude Desktop / Cursor)
+│   ├── http-server.ts     # HTTP server (Streamable HTTP transport at /mcp)
+│   ├── mcp-core.ts        # Shared MCP core (handlers) for both transports
 │   ├── client.ts          # OpenL API client
 │   ├── tool-handlers.ts   # Tool definitions and execution logic
 │   ├── auth.ts            # Authentication (Basic/PAT)

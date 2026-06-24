@@ -1,8 +1,8 @@
 /**
  * Shared MCP server core
  *
- * Both transports — stdio ({@link file://./index.ts}) and Streamable HTTP
- * ({@link file://./server.ts}) — expose the identical MCP surface (tools,
+ * Both transports — stdio ({@link file://./stdio-server.ts}) and Streamable HTTP
+ * ({@link file://./http-server.ts}) — expose the identical MCP surface (tools,
  * resources, resource templates, completion, subscriptions, prompts). This
  * module builds a fully-configured `Server` (capabilities declared, tools
  * registered, every request handler wired) together with the

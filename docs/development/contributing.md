@@ -32,8 +32,10 @@ npm run lint:fix       # Fix linting issues
 
 ```
 src/
-├── index.ts             # MCP server entry point
-├── server.ts            # HTTP server (Streamable HTTP transport at /mcp)
+├── index.ts             # Binary entry point / transport dispatcher
+├── stdio-server.ts      # stdio transport (Claude Desktop / Cursor)
+├── http-server.ts       # HTTP server (Streamable HTTP transport at /mcp)
+├── mcp-core.ts          # Shared MCP core (handlers) for both transports
 ├── client.ts            # OpenL Studio API client
 ├── auth.ts              # Authentication (Basic Auth, PAT)
 ├── tool-handlers.ts     # Tool registration and handlers
