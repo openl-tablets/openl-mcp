@@ -316,26 +316,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 
 **Security Requirement**: All credentials must be redacted from error messages.
 
-### FR-4: Resource Exposure
-
-**Requirement**: Expose OpenL Studio data as MCP resources.
-
-**Resources**:
-- `openl://repositories` - List of repositories
-- `openl://projects` - List of projects
-- `openl://deployments` - List of deployments
-
-**Resource Format**:
-```json
-{
-  "uri": "openl://repositories",
-  "name": "OpenL Repositories",
-  "description": "Design and production repositories",
-  "mimeType": "application/json"
-}
-```
-
-### FR-5: Prompt System
+### FR-4: Prompt System
 
 **Requirement**: Provide 14 prompts with argument substitution.
 
@@ -353,7 +334,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - Default values
 - Description for each argument
 
-### FR-6: Health Check
+### FR-5: Health Check
 
 **Requirement**: Provide server health and connectivity verification.
 
@@ -374,7 +355,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - API endpoint availability
 - Response time
 
-### FR-7: Authentication Management
+### FR-6: Authentication Management
 
 **Requirement**: Support 2 authentication methods (Basic Auth, Personal Access Token).
 
@@ -398,7 +379,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - URL format validation
 - Timeout limits enforced
 
-### FR-8: OpenL API Compatibility
+### FR-7: OpenL API Compatibility
 
 **Requirement**: Support OpenL Studio 6.0.0+ REST API.
 
@@ -411,7 +392,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 **Known Limitations** (Documented):
 - Some endpoints vary by OpenL Studio version; the server degrades gracefully when an endpoint is unavailable
 
-### FR-9: Performance Requirements
+### FR-8: Performance Requirements
 
 **Requirement**: Efficient resource usage and caching.
 
@@ -428,7 +409,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - Clean error handling paths
 - No memory leaks
 
-### FR-10: Type Safety Requirements
+### FR-9: Type Safety Requirements
 
 **Requirement**: Full TypeScript strict mode compliance.
 
@@ -440,7 +421,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - Unknown over any in error handling
 - Proper null/undefined handling
 
-### FR-11: Documentation Requirements
+### FR-10: Documentation Requirements
 
 **Requirement**: Comprehensive documentation for all features.
 
@@ -453,7 +434,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - JSDoc on all public APIs
 - Inline comments for complex logic
 
-### FR-12: Testing Requirements
+### FR-11: Testing Requirements
 
 **Requirement**: Comprehensive test coverage.
 
@@ -469,7 +450,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - Utilities: >90%
 - Schemas: >95%
 
-### FR-13: Response Formatting
+### FR-12: Response Formatting
 
 **Requirement**: All tools must support flexible output formatting.
 
@@ -488,7 +469,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - Invalid formats return clear error message
 - Consistent formatting across all tool types
 
-### FR-14: Pagination Support
+### FR-13: Pagination Support
 
 **Requirement**: All list operations must support pagination.
 
@@ -513,7 +494,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - Clear indication when results are truncated
 - Total count included in response when available
 
-### FR-15: Character Limit Enforcement
+### FR-14: Character Limit Enforcement
 
 **Requirement**: All tool responses must enforce character limits.
 

@@ -142,7 +142,7 @@ token, and raise `OPENL_TIMEOUT` (milliseconds) if the backend is slow.
 
 ## WebSocket wait issues (compile / trace status)
 
-Some tools wait for the studio's asynchronous work over a STOMP WebSocket instead of polling: `openl_project_status` with `wait: true`, the `openl://status/...` resource, and `openl_get_trace_nodes` / `openl_export_trace` while a trace is running. See [WebSockets (STOMP)](../development/websockets.md) for how this works.
+Some tools wait for the studio's asynchronous work over a STOMP WebSocket instead of polling: `openl_project_status` with `wait: true`, and `openl_get_trace_nodes` / `openl_export_trace` while a trace is running. See [WebSockets (STOMP)](../development/websockets.md) for how this works.
 
 **`wait: true` returns before compilation finished, or trace wait errors with "session cookie"**
 - The WebSocket must join the **same studio session** as the REST calls (compile/trace registries are session-scoped). The session cookie is issued by the studio on the first REST call; if the studio issues no session, the compile wait falls back to a snapshot and the trace wait reports that the websocket is unavailable.

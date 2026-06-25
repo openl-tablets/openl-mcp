@@ -209,7 +209,7 @@ const handleMcpPost = async (req: Request, res: Response): Promise<Response | vo
 
       const newSessionId = randomUUID();
       const client = getClientForSession(newSessionId, auth);
-      const { server: sessionServer, subscriptions } = createConfiguredServer(client);
+      const sessionServer = createConfiguredServer(client);
 
       transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => newSessionId,
@@ -224,8 +224,6 @@ const handleMcpPost = async (req: Request, res: Response): Promise<Response | vo
           delete streamableHttpTransports[transport.sessionId];
           delete clientsBySession[transport.sessionId];
         }
-        // Tear down STOMP subscriptions owned by this session.
-        void subscriptions.closeAll();
       };
 
       await sessionServer.connect(transport);

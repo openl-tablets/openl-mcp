@@ -1342,9 +1342,9 @@ export class OpenLClient {
    *
    * Implemented as a fixed ANCESTORS-scope `file-search` (`from = <folder>/AGENTS.md`),
    * which returns every same-named ancestor nearest-first WITH its content.
-   * Proximity is carried by the array order alone (nearest-first); callers that
-   * present these (the tool + the `openl://docs/...` resource) render them as one
-   * document via `formatAgentsDocument`.
+   * Proximity is carried by the array order alone (nearest-first); the
+   * `openl_get_project_agents_md` tool renders them as one document via
+   * `formatAgentsDocument`.
    *
    * @param projectId - Project ID or name (same resolution as other project calls).
    * @param options - `folder`: project-relative sub-folder to start the walk from

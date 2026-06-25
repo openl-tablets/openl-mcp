@@ -18,7 +18,6 @@ import { OpenLClient } from "./client.js";
 import { createConfiguredServer } from "./mcp-core.js";
 import { sanitizeError } from "./utils.js";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import type { ResourceSubscriptionManager } from "./resource-subscriptions.js";
 import type { ParsedArgs } from "./cli.js";
 import type * as Types from "./types.js";
 
@@ -29,7 +28,6 @@ import type * as Types from "./types.js";
  */
 class OpenLMCPServer {
   private server: Server;
-  private subscriptions: ResourceSubscriptionManager;
 
   /**
    * Create a new MCP server instance
@@ -37,27 +35,8 @@ class OpenLMCPServer {
    * @param config - OpenL Studio configuration
    */
   constructor(config: Types.OpenLConfig) {
-    // stdio is single-session, so one configured server + subscription manager
-    // is enough; the Server's `sendResourceUpdated` is bound to the single
-    // connected stdio transport.
-    const { server, subscriptions } = createConfiguredServer(new OpenLClient(config));
-    this.server = server;
-    this.subscriptions = subscriptions;
-
-    this.setupShutdownHooks();
-  }
-
-  /**
-   * Tear down all STOMP subscriptions cleanly on process exit so the studio
-   * isn't left with dangling WS sessions.
-   */
-  private setupShutdownHooks(): void {
-    const shutdown = (signal: string): void => {
-      console.error(`[OpenLMCP] received ${signal}, closing ${this.subscriptions.size} subscription(s)…`);
-      void this.subscriptions.closeAll().finally(() => process.exit(0));
-    };
-    process.once("SIGINT", () => shutdown("SIGINT"));
-    process.once("SIGTERM", () => shutdown("SIGTERM"));
+    // stdio is single-session, so one configured server is enough.
+    this.server = createConfiguredServer(new OpenLClient(config));
   }
 
   /**

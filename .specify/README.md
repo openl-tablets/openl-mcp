@@ -45,7 +45,7 @@ Spec Kit is a toolkit that helps AI coding agents understand projects through st
 - Core capabilities (10 major capabilities)
 - All 40 MCP tools with detailed descriptions (openl_ prefix naming)
 - 14 prompts with usage guidance
-- Functional requirements (FR-1 through FR-15, including pagination & formatting)
+- Functional requirements (FR-1 through FR-14, including pagination & formatting)
 - Non-functional requirements (security, performance, reliability)
 - Success criteria
 
@@ -120,7 +120,7 @@ Spec Kit is a toolkit that helps AI coding agents understand projects through st
 2. Use it as context when writing code
 3. Reference specific sections in comments:
    ```typescript
-   // Implements FR-7: Authentication Management (see specification.md)
+   // Implements FR-6: Authentication Management (see specification.md)
    // Follows Security First principle (see constitution.md)
    ```
 
@@ -324,7 +324,7 @@ feat(auth): add SAML authentication support
 | Understand how it works | `implementation-plan.md` |
 | Find work to do | `task-list.md` |
 | Add a new tool | `implementation-plan.md` → Adding Tools |
-| Set up authentication | `specification.md` → FR-7 |
+| Set up authentication | `specification.md` → FR-6 |
 | Write tests | `task-list.md` → T-001 through T-007 |
 | Make architectural decision | `constitution.md` → Decision-Making Framework |
 | Plan a sprint | `task-list.md` → Sprint Planning |

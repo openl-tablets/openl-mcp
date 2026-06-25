@@ -21,7 +21,6 @@ blocks on a real completion event instead of polling.
 | Feature | Trigger | Topic |
 |---|---|---|
 | `openl_project_status` with `wait: true` | blocks until `compileState` is terminal (`ok`/`warnings`/`errors`), emitting MCP progress notifications per compiled module | project status topic |
-| `openl://status/{projectId}` MCP resource subscriptions | pushes `notifications/resources/updated` to subscribed MCP clients on every status change (long-lived subscription with reconnect) | project status topic |
 | `openl_get_trace_nodes` / `openl_export_trace` (default `wait: true`) | on `409 Conflict` (trace still running) waits for the trace's terminal event, then reads the result | trace status topic |
 
 Everything else in the server is plain REST. WebSockets are used **only to wait for
@@ -64,9 +63,7 @@ Two properties of these topics shape the implementation:
   - `Authorization: Basic ...` / `Token openl_pat_...` — without it the WS session is
     anonymous and the studio rejects subscriptions to user-routed destinations (the
     server logs a warning and the wait can only end by timeout).
-- **Lifecycle:** one subscription per tool call, torn down when the call returns. Only
-  the `openl://status/...` resource holds a long-lived subscription (with reconnect and
-  automatic re-SUBSCRIBE).
+- **Lifecycle:** one subscription per tool call, torn down when the call returns.
 
 ## Behavior when the WebSocket is unavailable
 
@@ -93,7 +90,6 @@ For the trace flow (`openl_start_trace` → `openl_get_trace_nodes`) across sepa
 |---|---|
 | [`src/stomp-client.ts`](../../src/stomp-client.ts) | the only place that opens WebSockets: URL derivation, auth headers, connect/error/abort lifecycle; generic `subscribeTopic` (raw frames) + `subscribeProjectStatus` (status JSON) + destination builders |
 | [`src/stomp-waits.ts`](../../src/stomp-waits.ts) | both waits + their shared primitive (`awaitTerminal`: bounded, abortable, self-cleaning wait for one out-of-band value). `waitForCompilation`: REST seed → subscribe → race-close re-fetch → terminal frame / timeout / abort. `executeTraceReadWithWait`: optimistic read → on 409 subscribe → race-close re-read → terminal frame → final read |
-| [`src/resource-subscriptions.ts`](../../src/resource-subscriptions.ts) | long-lived status subscriptions backing the `openl://status/...` MCP resource |
 
 Both waits expose an injectable subscriber (`subscribeImpl` parameter) as a test
 seam — unit tests drive the orchestration with fake STOMP frames and never touch the
@@ -102,5 +98,5 @@ network (`tests/stomp-waits.compilation.test.ts`, `tests/stomp-waits.trace.test.
 ## Debugging
 
 Set `DEBUG_STOMP=true` to log the WebSocket URL construction, CONNECT/SUBSCRIBE frames,
-every inbound frame, reconnects, and disconnect causes to stderr. Errors are always
+every inbound frame, and disconnect causes to stderr. Errors are always
 logged regardless of the flag.

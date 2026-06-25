@@ -38,7 +38,7 @@ This MCP server enables AI agents to:
 └─────────────────┘
 ```
 
-Most traffic is plain REST. The WebSocket (STOMP) channel is used only to wait, inside a single tool call, for the studio's asynchronous work — project compilation (`openl_project_status` with `wait: true`, the `openl://status/...` resource) and trace execution (`openl_get_trace_nodes` / `openl_export_trace` while the trace is running) — instead of forcing the agent to poll. Details: [docs/development/websockets.md](docs/development/websockets.md).
+Most traffic is plain REST. The WebSocket (STOMP) channel is used only to wait, inside a single tool call, for the studio's asynchronous work — project compilation (`openl_project_status` with `wait: true`) and trace execution (`openl_get_trace_nodes` / `openl_export_trace` while the trace is running) — instead of forcing the agent to poll. Details: [docs/development/websockets.md](docs/development/websockets.md).
 
 ## Capabilities
 
@@ -137,7 +137,7 @@ Operate on ANY file in a project by exact project-relative path (not just Excel 
 - `openl_search_project_files` - Search by glob `pattern`, `extensions`, `type`, or case-insensitive `content` substring; `scope` SUBTREE (default) or ANCESTORS
 - `openl_copy_project_file` - Copy a file within the project (no overwrite — destination collision returns 409)
 - `openl_move_project_file` - Move or rename a file within the project
-- `openl_get_project_agents_md` - Load the **AGENTS.md** guidance for a project as a **single aggregated markdown document**: walks UP from the project (or an optional `folder`) to the repository root, collects every applicable `AGENTS.md`, and returns them concatenated in one response — ordered from the root folder (lowest priority) down to the project folder (highest priority), later sections winning on conflict. (Also exposed as the `openl://docs/{project}/AGENTS.md` resource.)
+- `openl_get_project_agents_md` - Load the **AGENTS.md** guidance for a project as a **single aggregated markdown document**: walks UP from the project (or an optional `folder`) to the repository root, collects every applicable `AGENTS.md`, and returns them concatenated in one response — ordered from the root folder (lowest priority) down to the project folder (highest priority), later sections winning on conflict.
 
 ### Trace Tools (6, BETA)
 - `openl_start_trace` - Start trace execution for a table
@@ -187,20 +187,6 @@ Expert guidance templates for complex OpenL workflows:
 12. **project_history** - Project audit trail
 13. **validate_after_edit** - Post-edit validation workflow (compile state, error surfacing, re-validation)
 14. **project_agents_md** - Load and apply a project's AGENTS.md guidance (walk up to repo root; nearest-file-wins)
-
-## Resources
-
-MCP resources provide read-only access to OpenL data:
-
-- `openl://repositories` - All design repositories
-- `openl://projects` - All projects
-- `openl://projects/{projectId}` - Specific project details
-- `openl://projects/{projectId}/tables` - Project tables
-- `openl://projects/{projectId}/tables/{tableId}` - Specific table
-- `openl://projects/{projectId}/history` - Project Git history
-- `openl://projects/{projectId}/files/{filePath}` - Download file
-- `openl://docs/{project}/AGENTS.md` - The project's applicable **AGENTS.md** guidance as one aggregated markdown document (root-first, later sections win); mirrors `openl_get_project_agents_md`
-- `openl://deployments` - All deployments
 
 ## Authentication
 

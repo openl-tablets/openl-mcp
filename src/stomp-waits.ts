@@ -126,7 +126,7 @@ function awaitTerminal<T>(opts: {
 }
 
 // =============================================================================
-// Compilation wait (openl_project_status wait:true, openl://status resource)
+// Compilation wait (openl_project_status wait:true)
 // =============================================================================
 
 /**

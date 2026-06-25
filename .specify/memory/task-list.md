@@ -104,7 +104,6 @@
 #### T-004: Implement index.ts Test Coverage (>80%)
 - [ ] Test MCP server initialization
 - [ ] Test tool routing for all 40 openl_* tools
-- [ ] Test resource providers (3 resources)
 - [ ] Test prompt integration (14 prompts)
 - [ ] Test error handling at server level
 - [ ] Test configuration validation
@@ -376,7 +375,7 @@
 - [ ] Add push notifications
 - [ ] Document WebSocket usage
 
-**Acceptance Criteria**: Real-time updates available for subscribed resources
+**Acceptance Criteria**: Real-time updates available to subscribed clients
 
 #### T-029: Add Metrics and Telemetry
 - [ ] Integrate OpenTelemetry
@@ -437,7 +436,6 @@
 #### T-100: Implement MCP Server
 - [x] Server initialization
 - [x] Tool request routing
-- [x] Resource providers
 - [x] Error handling
 
 **Completed**: 2024-Q4

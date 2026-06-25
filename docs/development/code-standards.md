@@ -22,7 +22,7 @@ This document outlines all the best practices implemented in the OpenL MCP Serve
 - `index.ts` - Binary entry point that dispatches to a transport (stdio / HTTP / CLI)
 - `stdio-server.ts` - stdio transport (Claude Desktop / Cursor / other MCP clients)
 - `http-server.ts` - HTTP server (Streamable HTTP transport at `/mcp`)
-- `mcp-core.ts` - Shared MCP server core (capabilities, tool/resource/prompt handlers) built once for both transports
+- `mcp-core.ts` - Shared MCP server core (capabilities, tool/prompt handlers) built once for both transports
 - `client.ts` - OpenL Studio API client
 - `auth.ts` - Authentication (Personal Access Token)
 - `handlers/` - Per-category tool registry (registerTool/getAllTools/executeTool in common.ts)

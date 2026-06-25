@@ -44,7 +44,7 @@ The OpenL MCP Server underwent a **major architectural refactoring** in November
 
 **Protocol**: Model Context Protocol (MCP) SDK 1.21.1
 - Rationale: Official SDK, latest stable version
-- Features: Tools, resources, prompts, type-safe validation
+- Features: Tools, prompts, type-safe validation
 
 ### Dependencies
 
@@ -52,7 +52,7 @@ The OpenL MCP Server underwent a **major architectural refactoring** in November
 
 1. **@modelcontextprotocol/sdk** (^1.21.1)
    - Purpose: MCP protocol implementation
-   - Features: Server, tools, resources, prompts
+   - Features: Server, tools, prompts
    - Size: ~500KB
 
 2. **axios** (^1.7.9)
@@ -101,8 +101,6 @@ The OpenL MCP Server underwent a **major architectural refactoring** in November
 │  ┌──────────────────────────────────────────┐   │
 │  │  Tool Handlers (40 tools)                │   │
 │  ├──────────────────────────────────────────┤   │
-│  │  Resource Providers (3 resources)        │   │
-│  ├──────────────────────────────────────────┤   │
 │  │  Prompt Registry (14 prompts)            │   │
 │  └──────────────────────────────────────────┘   │
 └───────────────────┬─────────────────────────────┘
@@ -134,7 +132,6 @@ The MCP server has been **refactored from a 766-line monolithic index.ts to a mo
 - `src/index.ts` (352 lines, **REDUCED from 766**)
   - MCP server initialization
   - Request routing (delegated to tool-handlers)
-  - Resource providers
   - Prompt integration
   - High-level error handling
 
@@ -779,22 +776,6 @@ Content with {variable} placeholders...
 - Prompts loaded once at startup
 - Cached in memory
 - No file I/O on each request
-
-### Resource System
-
-**Design**: MCP resources expose OpenL data
-
-**Resources**:
-1. `openl://repositories` - List of repositories
-2. `openl://projects` - List of projects
-3. `openl://deployments` - List of deployments
-
-**Dynamic Content**:
-- Resources fetch fresh data on each access
-- No caching (always up-to-date)
-- Error handling for unavailable data
-
-**Use Case**: Allow AI agents to browse available resources without executing tools.
 
 ### Project ID Handling
 

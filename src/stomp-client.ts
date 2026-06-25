@@ -13,8 +13,7 @@
  *
  * This module is intentionally narrow: one subscription per call, no pooling,
  * no global state. It's invoked from `stomp-waits.ts` inside a single tool
- * invocation and torn down when the call returns (the `openl://status/...`
- * resource holds one longer).
+ * invocation and torn down when the call returns.
  */
 
 import { Client, IFrame, IMessage } from "@stomp/stompjs";
@@ -25,8 +24,8 @@ import type * as Types from "./types.js";
 /**
  * Opt-in verbose STOMP wire logging. Set `DEBUG_STOMP=true` on the container
  * to trace WebSocket URL construction, CONNECT/CONNECTED events, SUBSCRIBE
- * frames, every inbound frame, reconnect attempts, and disconnect causes on
- * stderr. Errors are always logged.
+ * frames, every inbound frame, and disconnect causes on stderr. Errors are
+ * always logged.
  */
 const DEBUG = process.env.DEBUG_STOMP === "true";
 
@@ -67,15 +66,6 @@ export interface SubscribeProjectStatusOpts {
   onError?: (error: Error) => void;
   /** Aborting deactivates the underlying STOMP client. */
   signal?: AbortSignal;
-  /**
-   * Milliseconds to wait before reconnecting after a disconnect. Default 0
-   * (no reconnect) preserves the per-call wait-flow behavior. Long-lived
-   * subscriptions (the `openl://status/...` resource) pass a positive value
-   * — typically 5000 — so transient WS drops don't kill the subscription.
-   * On reconnect, the SUBSCRIBE frame is re-sent automatically inside
-   * `onConnect`, so the upstream caller does not need to re-subscribe.
-   */
-  reconnectDelay?: number;
 }
 
 export interface Subscription {
@@ -99,7 +89,6 @@ export interface SubscribeTopicOpts {
   onFrame: (body: string) => void;
   onError?: (error: Error) => void;
   signal?: AbortSignal;
-  reconnectDelay?: number;
 }
 
 /**
@@ -116,7 +105,6 @@ export async function subscribeProjectStatus(
     authorizationHeader: opts.authorizationHeader,
     destination: buildDestination(opts.projectId, opts.branch),
     signal: opts.signal,
-    reconnectDelay: opts.reconnectDelay,
     onError: opts.onError,
     onFrame: (body) => {
       try {
@@ -149,7 +137,6 @@ export async function subscribeTopic(
   debug("subscribe.config", {
     wsUrl,
     destination,
-    reconnectDelay: opts.reconnectDelay ?? 0,
     cookiePrefix: opts.cookieHeader.substring(0, 24) + "…",
   });
 
@@ -168,7 +155,9 @@ export async function subscribeTopic(
       // compatible — cast through `unknown` to satisfy the SDK's type.
       return new WebSocket(wsUrl, { headers }) as unknown as WebSocket;
     },
-    reconnectDelay: opts.reconnectDelay ?? 0,
+    // No reconnect: every subscription is scoped to a single tool wait and
+    // torn down when the call returns.
+    reconnectDelay: 0,
     heartbeatIncoming: 10_000,
     heartbeatOutgoing: 10_000,
   });
@@ -225,7 +214,7 @@ export async function subscribeTopic(
     };
 
     client.onDisconnect = () => {
-      debug("stomp.disconnected", { destination, willReconnect: (opts.reconnectDelay ?? 0) > 0 });
+      debug("stomp.disconnected", { destination });
     };
 
     client.onStompError = (frame: IFrame) => {

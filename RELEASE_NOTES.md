@@ -96,18 +96,6 @@ Built-in templates provide contextual assistance for complex OpenL workflows:
 **Deployment**
 - `deploy_project` - Deployment workflow
 
-### MCP Resources
-
-Read-only access to OpenL data via URI scheme:
-- `openl://repositories` - All design repositories
-- `openl://projects` - All projects
-- `openl://projects/{projectId}` - Project details
-- `openl://projects/{projectId}/tables` - Project tables
-- `openl://projects/{projectId}/tables/{tableId}` - Table data
-- `openl://projects/{projectId}/history` - Git history
-- `openl://projects/{projectId}/files/{filePath}` - File download
-- `openl://deployments` - All deployments
-
 ### Multi-Client Support
 
 Seamless integration with three AI platforms:

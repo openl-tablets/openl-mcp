@@ -39,6 +39,3 @@ A **single aggregated markdown document** containing every applicable AGENTS.md,
 1. Read the **whole document** — guidance is **cumulative**: a root section may set workspace-wide conventions while a project section adds specifics.
 2. On any **conflict**, the **later section wins** — the one closer to the project (lower in the document) takes precedence; the root section has the lowest priority.
 3. A short **"No AGENTS.md files apply to this project."** note is normal — it simply means no AGENTS.md exists anywhere in the project's ancestry. Proceed without project-specific guidance.
-
-## Resource alternative
-The same document is exposed as an MCP resource: **`openl://docs/{project}/AGENTS.md`** — read it to attach the resolved guidance as context. It returns the identical document.

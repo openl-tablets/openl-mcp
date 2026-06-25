@@ -151,7 +151,6 @@ catch (error: unknown) {
 - **Latest SDK** - Use stable MCP SDK v1.21.1+
 - **Standard patterns** - Follow MCP best practices
 - **Tool metadata** - Include version, category, auth requirements
-- **Resource URIs** - Follow MCP URI conventions
 
 ### 11. Dependency Hygiene
 
