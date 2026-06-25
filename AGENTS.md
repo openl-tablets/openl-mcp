@@ -96,7 +96,7 @@ Most traffic is plain REST. The WebSocket (STOMP) channel is used only to wait, 
 - Deploy projects to production
 - Redeploy with new versions
 
-## Tools (40 Total)
+## Tools (51 Total)
 
 All tools are prefixed with `openl_` and versioned (v1.0.0+).
 
@@ -129,6 +129,20 @@ All tools are prefixed with `openl_` and versioned (v1.0.0+).
 - `openl_append_table` - Add rows/fields to table
 - `openl_create_project_table` - Create new table
 
+### Raw Table-Source Action Tools (11)
+Apply a SINGLE in-place edit to a table's raw source (any table type). Positions are 0-based (row 0 is the header, column 0 the leading labels). An edit that relocates the table changes its id; each tool returns the table's CURRENT `tableId` (plus `previousTableId` when it changed) and reads the table back to trigger a recompile.
+- `openl_append_table_row` - Add a row to the end (optional `cells`)
+- `openl_append_table_column` - Add a column to the end (optional `cells`)
+- `openl_insert_table_row` - Insert a row at `position` (optional `cells`)
+- `openl_insert_table_column` - Insert a column at `position` (optional `cells`)
+- `openl_delete_table_row` - Delete the row at `position`
+- `openl_delete_table_column` - Delete the column at `position`
+- `openl_update_table_row` - Overwrite the row at `position` (optional `cells`)
+- `openl_update_table_column` - Overwrite the column at `position` (optional `cells`)
+- `openl_update_table_cell` - Set a single cell's value at (`row`, `column`)
+- `openl_merge_table_cells` - Merge a `rowspan`×`colspan` range from (`row`, `column`)
+- `openl_unmerge_table_cells` - Unmerge the cell covering (`row`, `column`)
+
 ### Project Files Tools (7, BETA)
 Operate on ANY file in a project by exact project-relative path (not just Excel rule files). Writes/deletes/copies/moves land in the project **working copy** — commit them with `openl_save_project`. Use the optional `branch` to pin the project's branch (omit for `local`/non-branch repositories).
 - `openl_read_project_file` - Read a file (text verbatim, binary as base64; optional `offset`/`length` byte range), read file metadata (`view: "meta"`), or list a folder (`recursive`, `viewMode` FLAT/NESTED, `extensions`, `namePattern`, `foldersOnly`); optional `version` reads a historical revision
@@ -159,7 +173,7 @@ Projects with `repository: 'local'` are stored on disk without Git; **OPENED/EDI
 
 **For local, these work:**
 - `openl_list_projects` (call without repository filter, then filter by `repository: "local"` in the response; the `repository: "local"` filter may fail because the "local" repository is often not returned by `openl_list_repositories`), `openl_get_project`;
-- Table tools: `openl_list_tables`, `openl_get_table`, `openl_update_table`, `openl_append_table`, `openl_create_project_table`;
+- Table tools: `openl_list_tables`, `openl_get_table`, `openl_update_table`, `openl_append_table`, `openl_create_project_table`, and the raw table-source action tools (`openl_insert_table_row`/`openl_delete_table_row`/`openl_update_table_cell`/`openl_merge_table_cells`/…);
 - Test execution and results: `openl_start_project_tests`, `openl_get_test_results_summary`, `openl_get_test_results`, `openl_get_test_results_by_table` (the project is not opened before running tests for local).
 
 **For local, do not use:**

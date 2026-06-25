@@ -208,7 +208,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 
 ### FR-1: Tool Execution
 
-**Requirement**: MCP server provides 40 tools.
+**Requirement**: MCP server provides 51 tools.
 
 **Repository Tools**:
 - `openl_list_repositories` - List all design repositories
@@ -243,6 +243,14 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - `openl_update_table` - Update table content
 - `openl_append_table` - Append data to existing table
 - `openl_create_project_table` - Create new table/rule
+
+**Raw Table-Source Action Tools** (single in-place edit of a table's raw source):
+- `openl_append_table_row` / `openl_append_table_column` - Append a row/column
+- `openl_insert_table_row` / `openl_insert_table_column` - Insert a row/column at a position
+- `openl_delete_table_row` / `openl_delete_table_column` - Delete a row/column at a position
+- `openl_update_table_row` / `openl_update_table_column` - Overwrite a row/column at a position
+- `openl_update_table_cell` - Set a single cell's value
+- `openl_merge_table_cells` / `openl_unmerge_table_cells` - Merge/unmerge cells
 
 **Testing Tools**:
 - `openl_start_project_tests` - Start project test execution
@@ -585,7 +593,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 
 The MCP server is considered successful when:
 
-1. ✅ All 40 tools execute successfully
+1. ✅ All 51 tools execute successfully
 2. ✅ All tools support response_format parameter
 3. ✅ All list operations support pagination
 4. ✅ Character limits enforced on all responses
@@ -629,4 +637,4 @@ Potential enhancements for future versions:
 
 *Last Updated: 2026-01-28*
 *Version: 1.0.0*
-*Status: Production-ready (40 tools, 14 prompts)*
+*Status: Production-ready (51 tools, 14 prompts)*

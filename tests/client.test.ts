@@ -2143,6 +2143,57 @@ describe("OpenLClient — additional method coverage", () => {
         expect(newId).toBe("Customer_relocated id");
       });
     });
+
+    describe("editTableSource", () => {
+      it("POSTs the action to /tables/{id}/actions and returns undefined on a 204 in-place edit", async () => {
+        const tableId = "Customer_1234";
+        let url = "";
+        let body: Record<string, unknown> = {};
+        mockAxios.onPost(`${projectPath}/tables/${encodeURIComponent(tableId)}/actions`).reply((config) => {
+          url = config.url || "";
+          body = JSON.parse(config.data);
+          return [204];
+        });
+
+        const action: Types.RawTableSourceAction = {
+          operation: "update",
+          target: { type: "cell", row: 2, column: 1, value: "X" },
+        };
+        const newId = await client.editTableSource(projectId, tableId, action);
+
+        expect(url).toBe(`${projectPath}/tables/${encodeURIComponent(tableId)}/actions`);
+        expect(body).toEqual(action);
+        expect(newId).toBeUndefined();
+      });
+
+      it("returns the relocated table id from the 200 response body when the edit moved the table", async () => {
+        const tableId = "Customer_1234";
+        mockAxios
+          .onPost(`${projectPath}/tables/${encodeURIComponent(tableId)}/actions`)
+          .reply(200, { id: "Customer_5678" });
+
+        const newId = await client.editTableSource(projectId, tableId, {
+          operation: "insert",
+          target: { type: "row", position: 1 },
+        });
+        expect(newId).toBe("Customer_5678");
+      });
+
+      it("URL-encodes the table id in the actions path", async () => {
+        const tableId = "Customer 1234";
+        let url = "";
+        mockAxios.onPost(`${projectPath}/tables/${encodeURIComponent(tableId)}/actions`).reply((config) => {
+          url = config.url || "";
+          return [204];
+        });
+
+        await client.editTableSource(projectId, tableId, {
+          operation: "delete",
+          target: { type: "row", position: 3 },
+        });
+        expect(url).toBe(`${projectPath}/tables/Customer%201234/actions`);
+      });
+    });
   });
 
   describe("Deployment (gap)", () => {
