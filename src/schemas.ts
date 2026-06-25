@@ -248,57 +248,61 @@ export const appendTableColumnSchema = z.object({
 
 export const insertTableRowSchema = z.object({
   ...tableActionBase,
-  position: z.number().int().describe("0-based index the new row will occupy. Row 0 is the header, so this must be between 1 and the table height (height appends to the end)."),
+  position: z.number().int().min(1).describe("0-based index the new row will occupy. Row 0 is the header, so this must be between 1 and the table height (height appends to the end)."),
   cells: rowCellsSchema,
 }).strict();
 
 export const insertTableColumnSchema = z.object({
   ...tableActionBase,
-  position: z.number().int().describe("0-based index the new column will occupy. Column 0 carries the leading labels, so this must be between 1 and the table width (width appends to the end)."),
+  position: z.number().int().min(1).describe("0-based index the new column will occupy. Column 0 carries the leading labels, so this must be between 1 and the table width (width appends to the end)."),
   cells: columnCellsSchema,
 }).strict();
 
 export const deleteTableRowSchema = z.object({
   ...tableActionBase,
-  position: z.number().int().describe("0-based index of the row to delete (0..height-1). Rows below it shift up."),
+  position: z.number().int().min(0).describe("0-based index of the row to delete (0..height-1). Rows below it shift up."),
 }).strict();
 
 export const deleteTableColumnSchema = z.object({
   ...tableActionBase,
-  position: z.number().int().describe("0-based index of the column to delete (0..width-1). Columns to its right shift left."),
+  position: z.number().int().min(0).describe("0-based index of the column to delete (0..width-1). Columns to its right shift left."),
 }).strict();
 
 export const updateTableRowSchema = z.object({
   ...tableActionBase,
-  position: z.number().int().describe("0-based index of the row to overwrite (0..height-1). The table is not resized."),
+  position: z.number().int().min(0).describe("0-based index of the row to overwrite (0..height-1). The table is not resized."),
   cells: rowCellsSchema,
 }).strict();
 
 export const updateTableColumnSchema = z.object({
   ...tableActionBase,
-  position: z.number().int().describe("0-based index of the column to overwrite (0..width-1). The table is not resized."),
+  position: z.number().int().min(0).describe("0-based index of the column to overwrite (0..width-1). The table is not resized."),
   cells: columnCellsSchema,
 }).strict();
 
 export const updateTableCellSchema = z.object({
   ...tableActionBase,
-  row: z.number().int().describe("0-based row index of the cell (0..height-1)."),
-  column: z.number().int().describe("0-based column index of the cell (0..width-1)."),
+  row: z.number().int().min(0).describe("0-based row index of the cell (0..height-1)."),
+  column: z.number().int().min(0).describe("0-based column index of the cell (0..width-1)."),
   value: z.any().optional().describe("New cell value. Null or omitted clears the cell."),
 }).strict();
 
 export const mergeTableCellsSchema = z.object({
   ...tableActionBase,
-  row: z.number().int().describe("0-based row index of the top-left cell of the range (0..height-1)."),
-  column: z.number().int().describe("0-based column index of the top-left cell of the range (0..width-1)."),
+  row: z.number().int().min(0).describe("0-based row index of the top-left cell of the range (0..height-1)."),
+  column: z.number().int().min(0).describe("0-based column index of the top-left cell of the range (0..width-1)."),
   rowspan: z.number().int().min(1).describe("Number of rows the merged cell spans (>= 1)."),
   colspan: z.number().int().min(1).describe("Number of columns the merged cell spans (>= 1)."),
-}).strict();
+}).strict().refine((d) => d.rowspan * d.colspan > 1, {
+  // A 1×1 merge is a no-op; the range must cover more than one cell (the tool's contract).
+  error: "A merge must cover more than one cell: rowspan × colspan must be greater than 1.",
+  path: ["rowspan"],
+});
 
 export const unmergeTableCellsSchema = z.object({
   ...tableActionBase,
-  row: z.number().int().describe("0-based row index of any cell in the merged region (0..height-1)."),
-  column: z.number().int().describe("0-based column index of any cell in the merged region (0..width-1)."),
+  row: z.number().int().min(0).describe("0-based row index of any cell in the merged region (0..height-1)."),
+  column: z.number().int().min(0).describe("0-based column index of any cell in the merged region (0..width-1)."),
 }).strict();
 
 export const listBranchesSchema = z.object({

@@ -601,6 +601,32 @@ describe("Tool Handler Integration Tests", () => {
       ).rejects.toThrow(/Invalid arguments for insert_table_row/);
       expect(called).toBe(false);
     });
+
+    it("rejects a negative position before reaching the backend", async () => {
+      let called = false;
+      mockAxios.onPost(/\/actions$/).reply(() => {
+        called = true;
+        return [204];
+      });
+
+      await expect(
+        executeTool("delete_table_row", { projectId: "p1", tableId: "t1", position: -1 }, client),
+      ).rejects.toThrow(/Invalid arguments for delete_table_row/);
+      expect(called).toBe(false);
+    });
+
+    it("rejects a 1x1 (no-op) merge before reaching the backend", async () => {
+      let called = false;
+      mockAxios.onPost(/\/actions$/).reply(() => {
+        called = true;
+        return [204];
+      });
+
+      await expect(
+        executeTool("merge_table_cells", { projectId: "p1", tableId: "t1", row: 0, column: 0, rowspan: 1, colspan: 1 }, client),
+      ).rejects.toThrow(/more than one cell/);
+      expect(called).toBe(false);
+    });
   });
 
   describe("AGENTS.md Tool", () => {
