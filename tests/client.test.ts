@@ -2194,6 +2194,35 @@ describe("OpenLClient — additional method coverage", () => {
         expect(url).toBe(`${projectPath}/tables/Customer%201234/actions`);
       });
     });
+
+    describe("deleteTable", () => {
+      it("DELETEs /tables/{id} and resolves on a 204", async () => {
+        const tableId = "Customer_1234";
+        let url = "";
+        let method = "";
+        mockAxios.onDelete(`${projectPath}/tables/${encodeURIComponent(tableId)}`).reply((config) => {
+          url = config.url || "";
+          method = config.method || "";
+          return [204];
+        });
+
+        await expect(client.deleteTable(projectId, tableId)).resolves.toBeUndefined();
+        expect(method).toBe("delete");
+        expect(url).toBe(`${projectPath}/tables/${encodeURIComponent(tableId)}`);
+      });
+
+      it("URL-encodes the table id in the delete path", async () => {
+        const tableId = "Customer 1234";
+        let url = "";
+        mockAxios.onDelete(`${projectPath}/tables/${encodeURIComponent(tableId)}`).reply((config) => {
+          url = config.url || "";
+          return [204];
+        });
+
+        await client.deleteTable(projectId, tableId);
+        expect(url).toBe(`${projectPath}/tables/Customer%201234`);
+      });
+    });
   });
 
   describe("Deployment (gap)", () => {

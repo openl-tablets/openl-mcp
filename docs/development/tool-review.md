@@ -16,7 +16,7 @@ Projects with `repository: 'local'` are stored on disk without Git. For them, **
 | Open/save/close | `openl_open_project`, `openl_save_project`, `openl_close_project` | ❌ Blocked in MCP and API |
 | Git (branches, history) | `openl_list_branches`, `openl_create_project_branch`, `openl_repository_project_revisions` | ❌ Not applicable (no Git) |
 | Session history | `openl_list_project_local_changes`, `openl_restore_project_local_change` | ❌ Require opened project; local cannot be opened |
-| Tables/tests | `openl_list_tables`, `openl_get_table`, `openl_update_table`, `openl_append_table`, `openl_create_project_table`, the raw table-source action tools (`openl_insert_table_row`, `openl_delete_table_row`, `openl_update_table_cell`, `openl_merge_table_cells`, …), `openl_start_project_tests`, `openl_get_test_results_*` | ✅ Allowed; no OPENED/EDITING check; tests run without open |
+| Tables/tests | `openl_list_tables`, `openl_get_table`, `openl_update_table`, `openl_append_table`, `openl_create_project_table`, `openl_delete_table`, the raw table-source action tools (`openl_insert_table_row`, `openl_delete_table_row`, `openl_update_table_cell`, `openl_merge_table_cells`, …), `openl_start_project_tests`, `openl_get_test_results_*` | ✅ Allowed; no OPENED/EDITING check; tests run without open |
 | Project files | `openl_read_project_file`, `openl_write_project_file`, `openl_search_project_files`, `openl_copy_project_file`, `openl_move_project_file`, `openl_delete_project_file` | ✅ Work directly on project files |
 | Deploy | `openl_list_deploy_repositories`, `openl_list_deployments`, `openl_deploy_project`, `openl_redeploy_project` | Deploy from design repo; local usually not used |
 
@@ -511,7 +511,7 @@ compilation errors. Saving a project (`openl_save_project`) also validates it.
 
 ### Full Tools Table
 
-The server registers **51 tools**. All are listed below.
+The server registers **52 tools**. All are listed below.
 
 | # | Tool Name | Category | Status | OpenL API Endpoint | Description |
 |---|-----------|----------|--------|-------------------|-------------|
@@ -566,6 +566,7 @@ The server registers **51 tools**. All are listed below.
 | 49 | `openl_update_table_cell` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`update`/`cell`) | Set a single cell's value |
 | 50 | `openl_merge_table_cells` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`merge`/`cells`) | Merge a rectangular range of cells |
 | 51 | `openl_unmerge_table_cells` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`unmerge`/`cells`) | Unmerge the cell covering a position |
+| 52 | `openl_delete_table` | Rules | ✅ Complete | `DELETE /projects/{projectId}/tables/{tableId}` | Delete an entire table from the project |
 
 **Legend:**
 - ✅ **Complete**: Tool is fully implemented and working
@@ -580,10 +581,10 @@ The server registers **51 tools**. All are listed below.
 
 | Status | Count | Tools |
 |--------|-------|-------|
-| ✅ Complete | 50 | All repository, project, file, table, raw table-source action, deployment, testing, and trace tools (excluding `openl_list_deployments`, which is partial). |
+| ✅ Complete | 51 | All repository, project, file, table, raw table-source action, deployment, testing, and trace tools (excluding `openl_list_deployments`, which is partial). |
 | ⚠️ Partial | 1 | `openl_list_deployments` (missing `repository` filter parameter) |
 
-Total registered tools: **51**.
+Total registered tools: **52**.
 
 ### Critical Issues
 

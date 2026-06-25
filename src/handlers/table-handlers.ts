@@ -392,6 +392,62 @@ export function registerTableHandlers(): void {
   });
 
   registerTool({
+    name: "delete_table",
+    category: "Rules & Tables",
+    title: "Delete Table",
+    version: "1.0.0",
+    description:
+      "Delete an ENTIRE table from a project. The whole table area is cleared from the sheet regardless of table type, so the table no longer exists once the project is recompiled. To remove only a row or column WITHIN a table, use openl_delete_table_row / openl_delete_table_column instead. If the given id went stale through an edit made via this server, it is resolved to the current id automatically. The studio does not auto-compile after the delete — run openl_project_status afterward to confirm the project still compiles (a dangling reference to the deleted table surfaces there).",
+    inputSchema: schemas.z.toJSONSchema(schemas.deleteTableSchema) as Record<string, unknown>,
+    annotations: {
+      destructiveHint: true,
+      openWorldHint: true,
+    },
+    handler: async (args, client): Promise<ToolResponse> => {
+      const typedArgs = args as {
+        projectId: string;
+        tableId: string;
+        response_format?: "json" | "markdown";
+      };
+
+      if (!typedArgs || !typedArgs.projectId || !typedArgs.tableId) {
+        throw new McpError(ErrorCode.InvalidParams, "Missing required arguments: projectId, tableId. Use openl_list_tables() to find valid table IDs");
+      }
+
+      const format = validateResponseFormat(typedArgs.response_format);
+      const projectId = typedArgs.projectId;
+      const requestedId = typedArgs.tableId;
+      const notes: string[] = [
+        "The table area is cleared regardless of type; the table no longer exists once the project recompiles. Run openl_project_status to confirm the project still compiles.",
+      ];
+
+      try {
+        await client.deleteTable(projectId, requestedId);
+      } catch (error) {
+        // A 404 deletes nothing, so retrying with a known rename is safe.
+        const aliased = isNotFoundError(error) ? resolveTableIdAlias(projectId, requestedId) : undefined;
+        if (aliased === undefined) {
+          throw error;
+        }
+        await client.deleteTable(projectId, aliased);
+        notes.push(
+          `The provided tableId '${requestedId}' was stale (the table was edited after that id was issued) and was automatically resolved to '${aliased}'.`,
+        );
+      }
+
+      const result = {
+        success: true,
+        message: `Successfully deleted table ${requestedId}`,
+        note: notes.join(" "),
+      };
+
+      return {
+        content: [{ type: "text", text: formatResponse(result, format) }],
+      };
+    },
+  });
+
+  registerTool({
     name: "update_table",
     validateArgs: (args) =>
       validateStructuredArgs("update_table", { schema: schemas.updateTableSchema, payloadArg: "view", tableTypes: schemas.EDITABLE_TABLE_TYPES }, args),
