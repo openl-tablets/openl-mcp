@@ -253,15 +253,16 @@ function handleToolError(error: unknown, toolName: string, toolArgs?: unknown): 
       errorMessage = axiosCode ? `${axiosCode}: ${sanitized}` : sanitized;
     }
 
-    // Build final error message
+    // Build final error message. The studio's REST method/endpoint are kept in
+    // errorDetails for the server-side log only — they are deliberately NOT put in
+    // the message, which reaches the calling agent (as an isError result): the
+    // agent acts on tools, not raw API paths, so exposing the backend endpoint adds
+    // noise and leaks internal API shape.
     let finalMessage = `OpenL Studio API error`;
     if (status) {
       finalMessage += ` (${status})`;
     }
     finalMessage += `: ${errorMessage}`;
-    if (method && endpoint) {
-      finalMessage += ` [${method} ${endpoint}]`;
-    }
 
     // EPBDS-16086: a bare "The table is not found" after an edit reads as a
     // rollback. Explain that table ids go stale on every edit and how to recover.

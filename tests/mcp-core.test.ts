@@ -63,6 +63,9 @@ describe("MCP core — tool-call error channel", () => {
     // The precise backend reason reaches the model, not a generic "failed".
     expect(text).toContain("column height 6 exceeds table height 5");
     expect(text).toContain("400");
+    // ...but the internal studio REST endpoint is NOT leaked to the agent.
+    expect(text).not.toContain("/projects/");
+    expect(text).not.toContain("/tables/");
   });
 
   it("surfaces an argument-validation failure as an isError result (no backend call)", async () => {
