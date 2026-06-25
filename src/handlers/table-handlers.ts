@@ -14,11 +14,11 @@ import { validateResponseFormat, validatePagination } from "../validators.js";
 import { isNotFoundError, isPlainObject } from "../utils.js";
 import { registerTool, STALE_TABLE_ID_HINT, type ToolResponse } from "./common.js";
 import {
+  finalizeTableEdit,
   listTablesByExactName,
-  recordTableIdAlias,
   resolveCurrentTableId,
   resolveTableIdAlias,
-  triggerTableRecompile,
+  withStaleIdRetry,
   type TableIdentity,
 } from "./table-id-tracking.js";
 
@@ -421,18 +421,12 @@ export function registerTableHandlers(): void {
         "The table area is cleared regardless of type; the table no longer exists once the project recompiles. Run openl_project_status to confirm the project still compiles.",
       ];
 
-      try {
-        await client.deleteTable(projectId, requestedId);
-      } catch (error) {
-        // A 404 deletes nothing, so retrying with a known rename is safe.
-        const aliased = isNotFoundError(error) ? resolveTableIdAlias(projectId, requestedId) : undefined;
-        if (aliased === undefined) {
-          throw error;
-        }
-        await client.deleteTable(projectId, aliased);
-        notes.push(
-          `The provided tableId '${requestedId}' was stale (the table was edited after that id was issued) and was automatically resolved to '${aliased}'.`,
-        );
+      // A 404 deletes nothing, so retrying with a known rename is safe.
+      const { staleNote } = await withStaleIdRetry(projectId, requestedId, (id) =>
+        client.deleteTable(projectId, id),
+      );
+      if (staleNote) {
+        notes.push(staleNote);
       }
 
       const result = {
@@ -501,21 +495,16 @@ export function registerTableHandlers(): void {
         }
       }
 
-      let tableId = requestedId;
-      let reportedNewId: string | undefined;
-      try {
-        reportedNewId = await client.updateTable(projectId, tableId, view);
-      } catch (error) {
-        // A 404 writes nothing, so retrying with a known rename is safe.
-        const aliased = isNotFoundError(error) ? resolveTableIdAlias(projectId, tableId) : undefined;
-        if (aliased === undefined) {
-          throw error;
-        }
-        reportedNewId = await client.updateTable(projectId, aliased, { ...view, id: aliased });
-        notes.push(
-          `The provided tableId '${requestedId}' was stale (the table was edited after that id was issued) and was automatically resolved to '${aliased}'.`,
-        );
-        tableId = aliased;
+      // A 404 writes nothing, so retrying with a known rename is safe. The first
+      // attempt sends the view as-is (keeping client.updateTable's id-mismatch
+      // guard); only the retry forces the resolved id into the view.
+      const { value: reportedNewId, tableId, staleNote } = await withStaleIdRetry(
+        projectId,
+        requestedId,
+        (id) => client.updateTable(projectId, id, id === requestedId ? view : { ...view, id }),
+      );
+      if (staleNote) {
+        notes.push(staleNote);
       }
 
       // Determine the table's current id after the write. Prefer the id the
@@ -530,36 +519,14 @@ export function registerTableHandlers(): void {
           currentId = resolved;
         }
       }
-      if (currentId !== tableId) {
-        recordTableIdAlias(projectId, tableId, currentId);
-        notes.push(
-          `This edit changed the table's id from '${tableId}' to '${currentId}' (ids are derived from table content/position). Use 'tableId' from this response for subsequent calls.`,
-        );
-      }
 
-      // The studio resets (does not recompile) compile status on edit; reading the
-      // table back triggers its recompile so openl_project_status reflects the change.
-      const recompileTriggered = await triggerTableRecompile(client, projectId, currentId);
-      if (!recompileTriggered) {
-        notes.push(
-          `The post-edit read could not locate the table under id '${currentId}' — the update WAS applied, but the table's id likely changed. Refresh ids with openl_list_tables().`,
-        );
-      }
-
-      const idChanged = currentId !== requestedId;
-      const result = {
-        success: true,
-        message: `Successfully updated table ${requestedId}`,
-        recompileTriggered,
-        tableId: currentId,
-        ...(idChanged ? { tableIdChanged: true, previousTableId: requestedId } : {}),
-        ...(notes.length > 0 ? { note: notes.join(" ") } : {}),
-      };
-
-      const formattedResult = formatResponse(result, format);
+      const { result } = await finalizeTableEdit(
+        client, projectId, requestedId, tableId, currentId,
+        `Successfully updated table ${requestedId}`, "update", notes,
+      );
 
       return {
-        content: [{ type: "text", text: formattedResult }],
+        content: [{ type: "text", text: formatResponse(result, format) }],
       };
     },
   });
@@ -692,22 +659,6 @@ export function registerTableHandlers(): void {
           currentId = resolved;
         }
       }
-      if (currentId !== tableId) {
-        recordTableIdAlias(projectId, tableId, currentId);
-        notes.push(
-          `This edit changed the table's id from '${tableId}' to '${currentId}' (ids are derived from table content/position). Use 'tableId' from this response for subsequent calls.`,
-        );
-      }
-
-      // The studio resets (does not recompile) compile status on edit; reading the
-      // table back triggers its recompile so openl_project_status reflects the change.
-      const recompileTriggered = await triggerTableRecompile(client, projectId, currentId);
-      if (!recompileTriggered) {
-        notes.push(
-          `The post-edit read could not locate the table under id '${currentId}' — the append WAS applied, but the table's id likely changed. Refresh ids with openl_list_tables().`,
-        );
-      }
-
       // Generate appropriate success message based on table type
       let itemCount = 0;
       let itemType = "items";
@@ -732,20 +683,13 @@ export function registerTableHandlers(): void {
         itemType = "row(s)";
       }
 
-      const idChanged = currentId !== requestedId;
-      const result = {
-        success: true,
-        message: `Successfully appended ${itemCount} ${itemType} to table ${requestedId}`,
-        recompileTriggered,
-        tableId: currentId,
-        ...(idChanged ? { tableIdChanged: true, previousTableId: requestedId } : {}),
-        ...(notes.length > 0 ? { note: notes.join(" ") } : {}),
-      };
-
-      const formattedResult = formatResponse(result, format);
+      const { result } = await finalizeTableEdit(
+        client, projectId, requestedId, tableId, currentId,
+        `Successfully appended ${itemCount} ${itemType} to table ${requestedId}`, "append", notes,
+      );
 
       return {
-        content: [{ type: "text", text: formattedResult }],
+        content: [{ type: "text", text: formatResponse(result, format) }],
       };
     },
   });
