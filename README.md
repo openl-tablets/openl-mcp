@@ -6,17 +6,16 @@ Built with MCP SDK v1.29+ featuring type-safe validation (Zod) and comprehensive
 
 ## Quick Links
 
-- 🚀 [Quick Start](docs/getting-started/quick-start.md) - Get up and running in 5 minutes
-- ⚙️ [MCP Connection Guide](docs/setup/mcp-connection-guide.md) - Configure Claude Code, Claude Desktop, Cursor, or VS Code
+- 🚀 [Quick Start](docs/guides/quick-start.md) - Connect Claude Code, Claude Desktop, Cursor, or VS Code in ~5 minutes
+- ⚙️ [Advanced Guide](docs/guides/advanced.md) - Settings, authentication, Docker, and CLI mode
 - 🖥️ [CLI Guide](README.cli.md) - Use the same binary as a shell tool (no MCP client needed)
 - 📖 [Usage Examples](docs/guides/examples.md) - Learn how to use MCP tools
-- 🔐 [Authentication](docs/guides/authentication.md) - Authentication setup
 - 🐛 [Troubleshooting](docs/guides/troubleshooting.md) - Common issues and solutions
 - 👨‍💻 [Contributing](docs/development/contributing.md) - Development guide
 
 ## npm Distribution
 
-The MCP server is published as an npm package: [`openl-mcp`](https://www.npmjs.com/package/openl-mcp) — stdio transport via `npx` for Claude Code / Claude Desktop / Cursor / VS Code. No Node.js? Run it on the official Docker image instead — see the [Connection Guide](docs/setup/mcp-connection-guide.md#running-without-nodejs-docker).
+The MCP server is published as an npm package: [`openl-mcp`](https://www.npmjs.com/package/openl-mcp) — stdio transport via `npx` for Claude Code / Claude Desktop / Cursor / VS Code. No Node.js? Run it on the official Docker image instead — see the [Advanced Guide](docs/guides/advanced.md#run-with-docker).
 
 The same binary also doubles as a **CLI** for direct API calls without an MCP client (`npx -y openl-mcp <tool> '<json-args>'`) — see [README.cli.md](README.cli.md) for the full CLI guide.
 
@@ -33,8 +32,7 @@ claude mcp add openl -- npx -y openl-mcp http://localhost:8080
 ```
 
 For Claude Desktop, Cursor, and VS Code (and the no-Node.js Docker option), see the
-[Quick Start guide](docs/getting-started/quick-start.md) and
-[MCP Connection Guide](docs/setup/mcp-connection-guide.md).
+[Quick Start guide](docs/guides/quick-start.md).
 
 Or bring up OpenL Studio **and** a shared MCP server with one command using
 [`compose.yaml`](compose.yaml) — only Docker required:
@@ -47,15 +45,11 @@ docker compose up -d
 ## Documentation Structure
 
 ### Getting Started
-- [Quick Start](docs/getting-started/quick-start.md) - Get up and running quickly
-
-### Setup Guides
-- [MCP Connection Guide](docs/setup/mcp-connection-guide.md) - Connect Claude Code, Claude Desktop, Cursor, or VS Code (via `npx` or Docker)
-- [Docker Setup](docs/setup/docker.md) - Run the server via Docker (no Node.js) and the compose demo
+- [Quick Start](docs/guides/quick-start.md) - Connect your AI client (Claude Code, Claude Desktop, Cursor, VS Code)
 
 ### Guides
 - [Usage Examples](docs/guides/examples.md) - Practical examples of using MCP tools
-- [Authentication Guide](docs/guides/authentication.md) - Personal Access Token authentication
+- [Advanced Guide](docs/guides/advanced.md) - Settings, authentication, Docker, and CLI mode
 - [Troubleshooting Guide](docs/guides/troubleshooting.md) - Common issues, debugging, and solutions
 
 ### Development
@@ -125,11 +119,11 @@ OPENL_PERSONAL_ACCESS_TOKEN=<your-token>
 OPENL_TIMEOUT=60000
 ```
 
-See [Authentication Guide](docs/guides/authentication.md) for detailed auth setup.
+See the [Advanced Guide](docs/guides/advanced.md#authentication) for authentication and all settings.
 
-### Claude Desktop / Cursor Configuration
+### Client configuration
 
-See [MCP Connection Guide](docs/setup/mcp-connection-guide.md) for client-specific configuration instructions.
+See the [Quick Start](docs/guides/quick-start.md) for client-specific configuration (Claude Code, Claude Desktop, Cursor, VS Code).
 
 ## Key Features
 
@@ -160,25 +154,14 @@ openl-mcp/
 ├── prompts/                # AI assistant guidance (OpenL-specific)
 ├── dist/                   # Compiled output
 ├── docs/                   # Documentation
-│   ├── getting-started/    # Quick start and installation
-│   ├── setup/              # Client setup guides
-│   ├── guides/             # Usage guides and examples
-│   ├── development/        # Developer documentation
-│   └── reference/          # Reference materials
+│   ├── guides/             # User guides: setup, usage, auth, troubleshooting, Docker
+│   └── development/        # Developer documentation
 └── README.md               # This file
 ```
 
-## Additional Documentation
+## More Documentation
 
-- [Documentation Index](docs/README.md) - Complete documentation navigation
-- [Debug Personal Access Token](docs/guides/debug-pat.md) - PAT debugging guide
-- 🚀 [Quick Start](docs/getting-started/quick-start.md) - Get up and running in 5 minutes
-- ⚙️ [MCP Connection Guide](docs/setup/mcp-connection-guide.md) - Configure Claude Code, Claude Desktop, Cursor, or VS Code
-- 🖥️ [CLI Guide](README.cli.md) - Use the same binary as a shell tool (no MCP client needed)
-- 📖 [Usage Examples](docs/guides/examples.md) - Learn how to use MCP tools
-- 🔐 [Authentication](docs/guides/authentication.md) - Authentication setup
-- 🐛 [Troubleshooting](docs/guides/troubleshooting.md) - Common issues and solutions
-- 👨‍💻 [Contributing](docs/development/contributing.md) - Development guide
+- [Documentation Index](docs/README.md) - Full navigation map
 
 ## Resources
 

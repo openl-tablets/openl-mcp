@@ -1,100 +1,26 @@
-# OpenL MCP Server - Agent Description
+# OpenL MCP Server — Agent Guide
 
 ## Overview
 
-The OpenL MCP Server is a Model Context Protocol (MCP) server that provides AI coding agents with seamless access to the OpenL Studio Business Rules Management System (BRMS). It acts as a bridge between AI assistants (like Claude Code, Claude Desktop, Cursor, and VS Code / GitHub Copilot) and the OpenL Studio API, enabling natural language interaction with business rules management.
+The OpenL MCP Server connects AI coding agents (Claude Code, Claude Desktop,
+Cursor, VS Code / GitHub Copilot) to the OpenL Studio Business Rules Management
+System (BRMS). Through its tools you can:
 
-## Purpose
+- **Discover** repositories, projects, and rules
+- **Read** project structure, table definitions, and rule logic
+- **Modify** rules, tables, and project files
+- **Test** rules and inspect results
+- **Trace** rule execution
+- **Deploy** projects, and manage Git-based history
 
-This MCP server enables AI agents to:
-- **Discover** repositories, projects, and rules in OpenL Studio
-- **Read** project structures, table definitions, and rule logic
-- **Modify** rules, tables, and project configurations
-- **Test** rules by running project tests and inspecting results
-- **Deploy** projects to production environments
-- **Manage** version control and Git-based history
+## How it talks to OpenL Studio
 
-## Architecture
-
-```text
-┌─────────────────┐
-│ AI Assistant    │  ← Claude Desktop, Cursor IDE, etc.
-│ (MCP Client)    │
-└────────┬────────┘
-         │ MCP Protocol
-         │ (stdio / Streamable HTTP)
-         ▼
-┌─────────────────┐
-│  MCP Server     │  ← This Agent (Node.js/TypeScript)
-│  (openl-mcp)    │
-└────────┬────────┘
-         │ HTTP API (JSON, PAT)
-         │ + WebSocket/STOMP (waits for async studio work:
-         │   compile status & trace status topics)
-         ▼
-┌─────────────────┐
-│ OpenL Studio   │  ← Business Rules Server
-│  (Java/Jetty)   │     (port 8080)
-└─────────────────┘
-```
-
-Most traffic is plain REST. The WebSocket (STOMP) channel is used only to wait, inside a single tool call, for the studio's asynchronous work — project compilation (`openl_project_status` with `wait: true`) and trace execution (`openl_get_trace_nodes` / `openl_export_trace` while the trace is running) — instead of forcing the agent to poll. Details: [docs/development/websockets.md](docs/development/websockets.md).
-
-## Capabilities
-
-### 1. Repository Management
-- List design repositories
-- List deployment repositories
-- List Git branches
-- Get repository features
-- View project revision history
-
-### 2. Project Lifecycle
-- List projects with filtering (repository, status, tags)
-- Get comprehensive project details
-- Create new projects from a blank skeleton, or by cloning an existing project (full copy + rename)
-- Open projects (with branch/revision support)
-- Save project changes (with validation)
-- Close projects (with save/discard safety checks)
-- Create project branches
-- View local change history
-- Restore previous versions
-
-### 3. Rules & Tables Management
-- List all tables/rules in a project
-- Get detailed table structure and data
-- Update entire tables (modify, delete, reorder rows)
-- Append rows/fields to tables (additive changes)
-- Create new tables programmatically
-
-### 4. Project Files (BETA)
-- Read any project file by path (text returned verbatim, binary as base64) with optional byte range
-- List folders (flat or nested, recursive, with extension/name filters) and read file metadata
-- Write files to the project working copy (UTF-8 or base64; commit via save)
-- Delete files/folders (auto-cleans dangling config references)
-- Search by glob pattern, extensions, type, or case-insensitive content substring
-- Copy and move/rename files within a project
-
-### 5. Version Control
-- View committed project revision history
-- View uncommitted workspace change history
-- Restore previous workspace versions
-
-### 6. Testing & Validation
-- Run project tests (all or specific tables) and inspect results
-- Check project status for compile state and diagnostics (errors/warnings with location)
-
-### 7. Trace (BETA)
-- Start trace execution for rules/test tables
-- Get trace tree nodes and node details
-- Inspect parameters, context, and results
-- Export trace as text
-- Cancel ongoing trace
-
-### 8. Deployment
-- List active deployments
-- Deploy projects to production
-- Redeploy with new versions
+The server calls the OpenL Studio REST API (JSON, optional Personal Access Token).
+For the studio's asynchronous work it also opens a STOMP WebSocket so a single tool
+call can wait for the result instead of polling — project compilation
+(`openl_project_status` with `wait: true`) and trace execution
+(`openl_get_trace_nodes` / `openl_export_trace` while a trace runs). Details:
+[docs/development/websockets.md](docs/development/websockets.md).
 
 ## Tools (40 Total)
 
@@ -190,268 +116,25 @@ Expert guidance templates for complex OpenL workflows:
 
 ## Authentication
 
-The agent authenticates with a Personal Access Token (PAT). Authentication is
-optional — an OpenL Studio in single-user mode accepts unauthenticated requests.
+Authentication is optional — an OpenL Studio in single-user mode accepts
+unauthenticated requests. Otherwise a Personal Access Token (PAT) is used. The token
+always comes from the client (its `env` for stdio, or the `Authorization` header for
+HTTP), never from the server. Setup: [docs/guides/quick-start.md](docs/guides/quick-start.md).
 
-```env
-OPENL_PERSONAL_ACCESS_TOKEN=openl_pat_your-token
-```
+## Response formatting
 
-## Configuration
+- Formats: `json`, `markdown`, `markdown_concise`, `markdown_detailed` (the `response_format` argument).
+- List operations return pagination metadata.
+- Large responses are truncated at a 25K-character limit.
 
-### Environment Variables
+## OpenL-specific behaviour
 
-**Required:**
-- `OPENL_BASE_URL` - OpenL API base URL (e.g., `http://localhost:8080`)
-
-**Authentication (optional — omit for single-user mode):**
-- `OPENL_PERSONAL_ACCESS_TOKEN` (PAT)
-
-**Optional:**
-- `OPENL_TIMEOUT` - Request timeout in milliseconds (default: 30000)
-
-### Transport Modes
-
-1. **stdio** (default) - for MCP clients (Claude Code, Claude Desktop, Cursor, VS Code) that launch the server via `npx` or Docker
-2. **Streamable HTTP** - MCP spec 2025-11-25 transport at `POST/GET/DELETE /mcp`, enabled with `--http` (for one shared server that several clients connect to)
-
-## Key Features
-
-### Type Safety
-- Zod schemas for input validation
-- TypeScript types for all API responses
-- Compile-time type checking
-
-### Error Handling
-- Detailed error messages with context
-- Actionable suggestions for fixes
-- Automatic credential redaction in logs
-
-### Response Formatting
-- Multiple formats: `json`, `markdown`, `markdown_concise`, `markdown_detailed`
-- Automatic truncation for large responses (25K character limit)
-- Pagination support with metadata
-
-### Security
-- Credentials never logged
-- Request tracking via Client Document ID (OPENL_CLIENT_DOCUMENT_ID) for audit and debugging
-
-## Security Best Practices for AI Agents
-
-### Critical Rule: Never Write Sensitive Data in Code
-
-When writing code, configuration files, or examples as an AI agent:
-
-**❌ NEVER DO THIS:**
-- Hardcode passwords, tokens, or API keys in source code
-- Commit files with real credentials to Git
-- Use real values in examples or documentation
-
-**✅ ALWAYS DO THIS:**
-- Use environment variables: `process.env.VARIABLE_NAME`
-- Use placeholders in examples: `<your-token>`
-- Create `.env.example` files with placeholders
-- Add `.env` to `.gitignore`
-
-### Examples
-
-**Wrong:**
-```typescript
-const token = "openl_pat_abc123.xyz789"; // ❌ Real token in code
-```
-
-**Correct:**
-```typescript
-const token = process.env.OPENL_PERSONAL_ACCESS_TOKEN; // ✅ From environment
-
-if (!token) {
-  throw new Error("OPENL_PERSONAL_ACCESS_TOKEN is required");
-}
-```
-
-### When Creating Configuration Examples
-
-Always use placeholders:
-```json
-{
-  "OPENL_BASE_URL": "http://localhost:8080",
-  "OPENL_PERSONAL_ACCESS_TOKEN": "<your-token>"
-}
-```
-
-### Environment Variables Best Practices
-
-1. **For local development:**
-   - Use `.env` files (never commit these)
-   - Create `.env.example` with placeholders
-   - Add `.env` to `.gitignore`
-
-2. **For production:**
-   - Use secure vaults or secret management systems
-   - Never hardcode credentials in deployment configs
-   - Rotate credentials regularly
-
-3. **When writing code:**
-   - Always read from `process.env`
-   - Validate that required variables are set
-   - Provide clear error messages if variables are missing
-
-**Remember:** Never use real values, even in examples or test code. Always use placeholders or environment variables.
-
-### OpenL-Specific Features
-- Dual versioning (Git commits + dimension properties)
-- Table type awareness (Rules, Spreadsheet, Datatype, etc.)
-- Project ID format handling (current and legacy path formats)
-
-## Usage Examples
-
-### List Repositories
-```json
-{
-  "tool": "openl_list_repositories",
-  "arguments": {
-    "response_format": "markdown"
-  }
-}
-```
-
-### Get Project Details
-```json
-{
- "tool": "openl_get_project",
- "arguments": {
- "projectId": "<PROJECT_ID>",
- "response_format": "<RESPONSE_FORMAT>"
- }
-}
-```
-
-### Open Project
-```json
-{
- "tool": "openl_open_project",
- "arguments": {
- "projectId": "<PROJECT_ID>",
- "branch": "<BRANCH>"
- }
-}
-```
-
-### Save Project
-```json
-{
- "tool": "openl_save_project",
- "arguments": {
- "projectId": "<PROJECT_ID>",
- "comment": "<COMMENT>"
- }
-}
-```
-
-### Close Project
-```json
-{
- "tool": "openl_close_project",
- "arguments": {
- "projectId": "<PROJECT_ID>",
- "saveChanges": <SAVE_CHANGES>,
- "comment": "<COMMENT>"
- }
-}
-```
-
-### Run Project Tests
-```json
-{
-  "tool": "openl_start_project_tests",
-  "arguments": {
-    "projectId": "<PROJECT_ID>"
-  }
-}
-```
-
-## Technical Stack
-
-- **Language**: TypeScript (ES2020+)
-- **Runtime**: Node.js 24+
-- **MCP SDK**: @modelcontextprotocol/sdk v1.29.0
-- **HTTP Client**: axios
-- **Validation**: Zod
-- **Testing**: Jest
-- **Build**: TypeScript Compiler
-
-## Project Structure
-
-```text
-openl-mcp/
-├── src/                    # Source code
-│   ├── index.ts           # Binary entry point / transport dispatcher
-│   ├── stdio-server.ts    # stdio transport (Claude Desktop / Cursor)
-│   ├── http-server.ts     # HTTP server (Streamable HTTP transport at /mcp)
-│   ├── mcp-core.ts        # Shared MCP core (handlers) for both transports
-│   ├── client.ts          # OpenL API client
-│   ├── handlers/          # Per-category tool registry + register*Handlers/executeTool
-│   ├── auth.ts            # Authentication (Basic/PAT)
-│   ├── schemas.ts         # Zod validation schemas
-│   ├── prompts.ts         # Prompt definitions
-│   └── ...
-├── tests/                  # Test suites
-├── prompts/               # Prompt templates (markdown)
-├── docs/                  # Documentation
-└── dist/                  # Compiled output
-```
-
-## Development
-
-```bash
-# Install dependencies
-npm install
-
-# Build TypeScript
-npm run build
-
-# Run tests
-npm test
-
-# Run in development mode
-npm run watch
-```
-
-## Deployment
-
-The server ships only as the npm package `openl-mcp`. There is no custom
-Docker image — run it with Node.js via `npx`, or on the official Node image when
-Node.js isn't available.
-
-### With Node.js (stdio)
-```bash
-npx -y openl-mcp http://localhost:8080
-```
-
-### Without Node.js (Docker)
-```bash
-docker run --rm -i node:lts-alpine npx -y openl-mcp http://host.docker.internal:8080
-```
-
-### Shared HTTP server / full stack
-Add `--http` to serve MCP over HTTP at `/mcp`, or use [`compose.yaml`](compose.yaml)
-to run OpenL Studio + the MCP server together (`docker compose up -d`). See
-[docs/setup/docker.md](docs/setup/docker.md).
-
-## Version
-
-**Current Version**: 1.0.0  
-**MCP SDK**: 1.26.0  
-**Node.js**: 24+  
-**OpenL Studio**: 6.0.0+
-
-## License
-
-LGPL-3.0 (follows OpenL Studio project license)
+- **Dual versioning** — Git commits (temporal) and dimension properties (business context).
+- **Table types** — Rules, SimpleRules, SmartRules, Lookups, Spreadsheet, Datatype, Method, Test, and others.
+- **Project ID formats** — both the current and legacy path formats are handled.
 
 ## External Resources
 
 - [OpenL Studio](https://github.com/openl-tablets/openl-tablets)
 - [OpenL Documentation](https://openl-tablets.org/)
 - [Model Context Protocol](https://modelcontextprotocol.io/)
-- [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk)

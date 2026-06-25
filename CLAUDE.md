@@ -2,20 +2,19 @@
 
 This document provides instructions for configuring Claude AI to work with OpenL MCP Server.
 
-**👉 See [AGENTS.md](./AGENTS.md) for complete agent configuration guide.**
+**👉 See [AGENTS.md](./AGENTS.md) for the agent guide.**
 
-The AGENTS.md file contains:
-- Complete agent capabilities and tools
-- Security best practices for AI agents
-- Configuration instructions for Claude Desktop and Cursor IDE
-- Usage examples and workflows
-- All prompts and expert guidance templates
+AGENTS.md is the runtime reference an AI agent needs to use the server:
+- The full tool catalog (40 tools) and their nuances
+- Rules for `local` projects, response formats, and OpenL-specific behaviour
+- The 14 prompt templates
+
+How to connect a client and configure it lives in the Quick Start guide, not AGENTS.md.
 
 ## Quick Links
 
-- **[AGENTS.md](./AGENTS.md)** - Complete agent configuration guide
-- **[Setup Guide](docs/setup/mcp-connection-guide.md)** - Connect Claude Desktop to MCP server
-- **[Quick Start](docs/getting-started/quick-start.md)** - Get started quickly
+- **[AGENTS.md](./AGENTS.md)** - Agent guide (tools, prompts, behaviour)
+- **[Quick Start](docs/guides/quick-start.md)** - Connect your AI client to the MCP server
 
 ## Code Quality
 

@@ -45,7 +45,7 @@ OPENL_PERSONAL_ACCESS_TOKEN=<your-token>   # or --token
 OPENL_TIMEOUT=60000              # or --timeout
 ```
 
-Full auth guide: [Authentication](https://github.com/openl-tablets/openl-mcp/blob/main/docs/guides/authentication.md).
+Full auth guide: [Authentication](https://github.com/openl-tablets/openl-mcp/blob/main/docs/guides/advanced.md#authentication).
 
 ## Use with Claude Desktop
 
@@ -67,7 +67,7 @@ Add to `claude_desktop_config.json`:
 
 The base URL is passed as the positional argument. Alternatively, drop it from `args` and set `OPENL_BASE_URL` in `env`. The `env` block holds auth and is optional — omit it for single-user servers that don't require credentials.
 
-For Claude Code (`claude mcp add openl -- npx -y openl-mcp <url>`), Cursor, and VS Code, see the [MCP Connection Guide](https://github.com/openl-tablets/openl-mcp/blob/main/docs/setup/mcp-connection-guide.md).
+For Claude Code (`claude mcp add openl -- npx -y openl-mcp <url>`), Cursor, and VS Code, see the [Quick Start](https://github.com/openl-tablets/openl-mcp/blob/main/docs/guides/quick-start.md).
 
 ## Use as a CLI (direct API calls, no MCP client)
 
@@ -114,7 +114,7 @@ docker run --rm -i node:lts-alpine npx -y openl-mcp http://host.docker.internal:
 
 Use this as the `command`/`args` in your MCP client config (use `host.docker.internal`
 to reach an OpenL Studio on the host). For a one-command OpenL Studio + MCP stack, see
-the [Docker setup guide](https://github.com/openl-tablets/openl-mcp/blob/main/docs/setup/docker.md).
+the [Docker setup guide](https://github.com/openl-tablets/openl-mcp/blob/main/docs/guides/advanced.md#run-with-docker).
 
 ## Links
 

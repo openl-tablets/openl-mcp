@@ -1,777 +1,142 @@
-# OpenL MCP Server - Usage Examples
+# Usage Examples
 
-This document provides practical examples of using the OpenL MCP Server with AI assistants.
+Once your client is connected (see [Quick Start](quick-start.md)), you work with OpenL Studio by chatting in plain
+language. Claude calls the right OpenL tools for you. Below are things you can ask, grouped by task.
 
-## Table of Contents
-- [Getting Started](#getting-started)
-- [Repository Operations](#repository-operations)
-- [Project Management](#project-management)
-- [Working with Rules (Tables)](#working-with-rules-tables)
-- [Version Control](#version-control)
-- [Deployment](#deployment)
-- [Common Workflows](#common-workflows)
+> **Tip:** For Git-backed projects, ask Claude to **open** the project before editing its tables. Local projects
+> are always editable.
 
-## Getting Started
+## Explore repositories and projects
 
-### Initial Setup with Claude Desktop
+Ask Claude:
 
-1. Build the MCP server:
-```bash
-cd <path-to-project>
-npm install
-npm run build
-```
-
-2. Add to your Claude Desktop config (see [MCP Connection Guide](../setup/mcp-connection-guide.md#claude-desktop))
-
-3. Restart Claude Desktop
-
-4. Verify connection by asking Claude:
-   - "Can you list the OpenL Studio repositories?"
-   - "Show me all projects in OpenL Studio"
-
-## Repository Operations
-
-### List All Repositories
-
-**Prompt to Claude:**
 ```text
-List all OpenL Studio repositories and their features
-```
-
-**What happens:**
-- MCP server calls `openl_list_repositories` tool
-- Returns list of design repositories with their capabilities (branches, search, etc.)
-
-**Example Response (JSON format):**
-```json
-[
-  {
-    "id": "design",
-    "name": "Design Repository",
-    "type": "git",
-    "features": {
-      "branches": true,
-      "mappedFolders": false,
-      "searchable": true
-    }
-  }
-]
-```
-
-**With Markdown formatting:**
-You can request the response in Markdown format for better readability:
-```text
-List all OpenL Studio repositories in markdown format
-```
-
-**Tool call with response_format:**
-```json
-{
-  "name": "openl_list_repositories",
-  "arguments": {
-    "response_format": "markdown"
-  }
-}
-```
-
-**Example Response (Markdown format):**
-```markdown
-# OpenL Studio Repositories
-
-## Design Repository
-- **ID:** design
-- **Type:** git
-- **Features:**
-  - Branches: ✓
-  - Mapped Folders: ✗
-  - Searchable: ✓
-```
-
-### Check Repository Features
-
-**Prompt to Claude:**
-```text
-What features does the 'design' repository support?
-```
-
-**Response includes:**
-- Branch support
-- Search capabilities
-- Folder mapping
-
-## Project Management
-
-### List All Projects
-
-**Prompt to Claude:**
-```text
+List all OpenL Studio repositories
 Show me all projects in OpenL Studio
-```
-
-**With filters:**
-```text
-Show me all OPENED projects in the 'design' repository
-```
-```text
-Show me projects tagged with 'production'
-```
-
-**With pagination:**
-```text
+Show me OPENED projects in the 'design' repository
+Show me projects tagged 'production'
 Show me the first 10 projects in the 'design' repository
+Get details about the 'insurance-rules' project
+Show the structure of 'insurance-rules' — modules and dependencies
 ```
 
-**Tool call with pagination:**
-```json
-{
-  "name": "openl_list_projects",
-  "arguments": {
-    "repository": "design",
-    "limit": 10,
-    "offset": 0
-  }
-}
-```
+A project list comes back like this:
 
-**To get the next page:**
-```json
-{
-  "name": "openl_list_projects",
-  "arguments": {
-    "repository": "design",
-    "limit": 10,
-    "offset": 10
-  }
-}
-```
-
-**With response_format:**
-```json
-{
-  "name": "openl_list_projects",
-  "arguments": {
-    "repository": "design",
-    "response_format": "markdown"
-  }
-}
-```
-
-**Example Response (Markdown format):**
 ```markdown
-# Projects in Repository: design
+# Projects in repository: design
 
 ## insurance-rules
-- **Status:** OPENED
-- **Modified:** 2025-11-15 14:30:00 by john.doe
-- **Branch:** main
-- **Tags:** production, v2.3.1
-
-## fleet-management
-- **Status:** CLOSED
-- **Modified:** 2025-11-14 09:15:00 by jane.smith
-- **Branch:** develop
-- **Tags:** staging
+- Status: OPENED
+- Modified: 2025-11-15 14:30 by john.doe
+- Branch: main
+- Tags: production, v2.3.1
 ```
 
-### Get Project Details
+Ask for any answer "in JSON" or "in markdown" — Claude passes the format to the tool.
 
-**Prompt to Claude:**
+## Work with rules and tables
+
 ```text
-Get detailed information about the project 'insurance-rules' in the 'design' repository
+List all tables in the 'insurance-rules' project
+Show me the 'CalculatePremium' table
+What does the 'Policy' datatype contain?
+Add a rule to 'CalculatePremium' for motorcycles with a $900 premium
 ```
 
-**Response includes:**
-- Project name and status
-- Last modification time and user
-- Lock information
-- Branch (if applicable)
-- Tags
-- Latest commit comment
+A table list shows each table's id, type, and name:
 
-### Open a Project for Editing
-
-**Prompt to Claude:**
-```text
-Open the project 'design-insurance-rules' for editing
-```
-
-**Important:** Projects must be opened before you can view or modify their tables.
-
-### Get Project Structure
-
-**Prompt to Claude:**
-```text
-Show me the structure of project 'insurance-rules' including modules and dependencies
-```
-
-**Response includes:**
-- Modules and their Excel files
-- Project dependencies
-- Classpath entries
-- Tags
-
-## Working with Rules (Tables)
-
-### List Tables in a Project
-
-**Prompt to Claude:**
-```text
-List all tables in the project 'design-insurance-rules'
-```
-
-**Example Response:**
 ```json
 [
-  {
-    "id": "Rules.xls_1234",
-    "tableType": "simplerules",
-    "kind": "Rules",
-    "name": "CalculatePremium",
-    "returnType": "Double",
-    "signature": "Double CalculatePremium(String vehicleType, Integer age)",
-    "file": "Rules.xlsx"
-  },
-  {
-    "id": "Rules.xls_5678",
-    "tableType": "datatype",
-    "kind": "Datatype",
-    "name": "Policy",
-    "file": "Datatypes.xlsx"
-  }
+  { "id": "Rules.xls_1234", "kind": "Rules", "name": "CalculatePremium",
+    "signature": "Double CalculatePremium(String vehicleType, Integer age)" },
+  { "id": "Rules.xls_5678", "kind": "Datatype", "name": "Policy" }
 ]
 ```
 
-### Get Table Details
+A decision table renders like this:
 
-**Prompt to Claude:**
-```text
-Show me the details of the table 'CalculatePremium' in project 'design-insurance-rules'
-```
-
-**For Decision Tables (JSON format):**
-```json
-{
-  "id": "Rules.xls_1234",
-  "tableType": "simplerules",
-  "name": "CalculatePremium",
-  "properties": [
-    {"name": "category", "value": "Premium Calculation"}
-  ],
-  "rules": [
-    {
-      "conditions": {"vehicleType": "Car", "age": "<25"},
-      "actions": {"premium": "1200"}
-    }
-  ]
-}
-```
-
-**Tool call with response_format:**
-```json
-{
-  "name": "openl_get_table",
-  "arguments": {
-    "repository": "design",
-    "project": "insurance-rules",
-    "table_id": "Rules.xls_1234",
-    "response_format": "markdown"
-  }
-}
-```
-
-**Example Response (Markdown format):**
 ```markdown
-# Decision Table: CalculatePremium
+# CalculatePremium
 
-**Type:** simplerules
-**ID:** Rules.xls_1234
-**Category:** Premium Calculation
-
-## Rules
-
-| Vehicle Type | Age   | Premium |
-|-------------|-------|---------|
-| Car         | <25   | 1200    |
-| Car         | ≥25   | 800     |
-| Motorcycle  | <25   | 900     |
-| Motorcycle  | ≥25   | 600     |
+| Vehicle Type | Age  | Premium |
+|--------------|------|---------|
+| Car          | <25  | 1200    |
+| Car          | ≥25  | 800     |
+| Motorcycle   | <25  | 900     |
 ```
 
-**For Datatypes:**
-```json
-{
-  "id": "Rules.xls_5678",
-  "tableType": "datatype",
-  "name": "Policy",
-  "fields": [
-    {"name": "policyNumber", "type": "String"},
-    {"name": "holderName", "type": "String"},
-    {"name": "premium", "type": "Double"}
-  ]
-}
-```
+**Table types you may see:** decision tables (Rules, SimpleRules, SmartRules, Lookups), Spreadsheets, Datatypes,
+Methods, Test tables, and Data tables.
 
-### Understanding Table Types
+When you ask for a change, Claude reads the current table, edits it, and saves it with a commit comment.
 
-Different table types serve different purposes:
+## Run tests
 
-- **Decision Tables** (`simplerules`, `smartrules`) - Business rules with conditions and actions
-- **Datatypes** - Custom data structures
-- **Spreadsheets** - Calculation tables
-- **Vocabularies** - Enumeration definitions
-- **Method Tables** - Reusable methods
-- **Data Tables** - Test or reference data
-
-### Modify a Table
-
-**Prompt to Claude:**
 ```text
-Update the 'CalculatePremium' table in project 'design-insurance-rules' to add a new rule for motorcycles
+Run all tests for 'insurance-rules' and show the results
+Run tests for the 'CalculatePremium' table
+Show a brief test summary for 'insurance-rules'
+Run only the failed tests
+Run tests 1-3 and 5 for the 'Test_CalculatePremium' table
 ```
 
-**Claude will:**
-1. Get the current table structure
-2. Modify the appropriate fields
-3. Call `openl_update_table` with the changes
-4. Include a commit comment
+Notes:
 
-## Version Control
+- A brief summary gives pass/fail counts without per-test detail — good for a quick check.
+- Results are paged **by test table**, not by individual test case: one page lists several tables, each with its own
+  tests.
 
-### View Project History
+## Version control
 
-**Prompt to Claude:**
 ```text
-Show me the version history for project 'insurance-rules' in the 'design' repository
-```
-
-**Response includes:**
-- Version/revision IDs
-- Authors
-- Timestamps
-- Commit comments
-
-### List Branches
-
-**Prompt to Claude:**
-```text
+Show the version history of 'insurance-rules'
 What branches exist in the 'design' repository?
+Create a branch 'feature/new-premium-logic' for 'insurance-rules'
 ```
 
-### Create a New Branch
+## Deploy
 
-**Prompt to Claude:**
-```text
-Create a new branch called 'feature/new-premium-logic' for the project 'design-insurance-rules'
-```
-
-## Deployment
-
-### List Current Deployments
-
-**Prompt to Claude:**
 ```text
 Show me all deployed projects
+Deploy 'insurance-rules' from 'design' to the 'production' repository
+Deploy version 'v2.3.1' of 'insurance-rules' to production
 ```
 
-**Response includes:**
-- Deployment IDs
-- Project names and versions
-- Deployment repositories
-- Status and timestamps
+## Example conversations
 
-### Deploy a Project
-
-**Prompt to Claude:**
-```text
-Deploy the project 'insurance-rules' from the 'design' repository to the 'production' repository
-```
-
-**Claude will:**
-1. Call `openl_deploy_project` with the specified parameters
-2. Monitor the deployment status
-3. Confirm successful deployment
-
-### Deploy Specific Version
-
-**Prompt to Claude:**
-```text
-Deploy version 'v2.3.1' of project 'insurance-rules' to production
-```
-
-## Common Workflows
-
-### Workflow 1: Review and Modify a Rule
-
-**Conversation with Claude:**
+**Change a rule**
 
 ```text
-User: I need to update the premium calculation for young drivers
-
-Claude: I'll help you with that. First, let me list the projects and find the relevant one.
-[Calls openl_list_projects]
-
-Claude: I found the 'insurance-rules' project. Let me open it and see what tables it contains.
-[Calls openl_open_project to open the project, then openl_list_tables]
-
-Claude: I found a table called 'CalculatePremium' that likely contains the premium logic. Let me get its details.
-[Calls openl_get_table]
-
-Claude: Here's the current rule for young drivers (age < 25):
-- Vehicle: Car -> Premium: $1200
-- Vehicle: Motorcycle -> Premium: $900
-
-What changes would you like to make?
-
-User: Increase car premium to $1400 for drivers under 25
-
-Claude: I'll update that rule for you.
-[Calls openl_update_table with modified data]
-
-Claude: Done! The premium for cars with drivers under 25 is now $1400. The change has been committed with the comment "Updated premium for young drivers".
+You:    Increase the car premium to $1400 for drivers under 25.
+Claude: [opens the project, finds CalculatePremium, reads it]
+        The current rule is $1200 for cars, drivers under 25. I'll change it to $1400.
+        [updates the table and saves]
+        Done — committed with "Raise young-driver car premium to $1400".
 ```
 
-### Workflow 2: Create New Rule from Scratch
-
-**Conversation with Claude:**
+**Deploy with a check first**
 
 ```text
-User: Add a new discount rule for senior drivers over 60 years old
-
-Claude: I'll add that rule. First, let me open the project and locate the appropriate table.
-[Opens project, lists tables, gets current table structure]
-
-Claude: I'll add a new rule to the CalculatePremium table with a 15% discount for drivers over 60.
-[Updates table with new rule]
-
-Claude: The new senior discount rule has been added. Drivers over 60 will now receive a 15% discount on their premium.
+You:    Deploy the latest insurance-rules to production.
+Claude: [reads the project status and latest change]
+        Latest change: "Finalized Q4 premium updates", 2 hours ago by john.doe.
+        Deploy insurance-rules (design → production)?
+You:    Yes.
+Claude: [deploys] Done — insurance-rules is live in production.
 ```
 
-### Workflow 3: Compare Versions
-
-**Conversation with Claude:**
+## More things you can ask
 
 ```text
-User: What changed in the insurance-rules project over the last week?
-
-Claude: Let me check the version history for that project.
-[Calls openl_repository_project_revisions]
-
-Claude: Here are the changes from the last week:
-
-1. Version abc123 (2 days ago by john.doe)
-   - "Updated premium calculation for electric vehicles"
-
-2. Version def456 (5 days ago by jane.smith)
-   - "Added new discount rules for senior drivers"
-
-3. Version ghi789 (7 days ago by john.doe)
-   - "Fixed validation logic for policy numbers"
-
-Would you like to see the details of any specific version?
+List all decision tables across projects whose name contains 'premium'
+Compare the 'Vehicle' datatype between 'auto-insurance' and 'fleet-insurance'
+Add a 'discountPercentage' field to the 'Policy' datatype
+Generate documentation for all tables in 'insurance-rules'
 ```
 
-### Workflow 4: Deploy with Verification
-
-**Conversation with Claude:**
-
-```text
-User: Deploy the latest insurance-rules to production
-
-Claude: I'll help you deploy to production. Let me first verify the current state.
-[Calls openl_get_project, checks status and latest changes]
-
-Claude: The current version was modified 2 hours ago by john.doe with the comment "Finalized Q4 premium updates". The project is in OPENED status.
-
-Before deploying, here's what will be deployed:
-- Project: insurance-rules
-- Repository: design
-- Latest modification: Q4 premium updates
-
-Should I proceed with the deployment to production?
-
-User: Yes, proceed
-
-Claude: Deploying now...
-[Calls openl_deploy_project]
-
-Claude: Successfully deployed 'insurance-rules' to production. You can verify the deployment using the openl_list_deployments command if needed.
-```
-
-### Workflow 5: Troubleshooting Rule Issues
-
-**Conversation with Claude:**
-
-```text
-User: The premium calculation seems wrong for motorcycles
-
-Claude: Let me investigate. I'll check the relevant rules.
-[Calls openl_open_project to open project, openl_list_tables, then openl_get_table for CalculatePremium]
-
-Claude: I found the issue. The motorcycle rule has:
-- Condition: vehicleType = "Motorcycle"
-- Action: premium = 900
-
-But I notice there's a conflicting rule below it that overrides this value. The rule precedence is:
-1. Motorcycle base: $900
-2. Age < 25 override: +$300 (total $1200)
-
-Is this the expected behavior, or should young driver premium be calculated differently?
-
-User: Young drivers should get a percentage increase, not a flat amount
-
-Claude: I'll update the logic to use a percentage-based calculation.
-[Calls openl_update_table with percentage-based formula]
-
-Claude: Updated! Now the premium for young motorcycle riders is calculated as: base_premium * 1.33 (33% increase) instead of a flat addition.
-```
-
-## Tips for Working with Claude
-
-1. **Be Specific**: Mention exact project names, table names, and repositories
-2. **Open First**: Use `openl_open_project` to open projects before accessing tables
-3. **Save Regularly**: Use `openl_save_project` to save changes with meaningful commit comments
-4. **Close Safely**: Use `openl_close_project` with `saveChanges: true` to save and close, or `discardChanges: true` to discard unsaved changes
-5. **Check Status**: Ask Claude to verify project status before making changes
-6. **Review Changes**: Ask Claude to show you the changes before committing
-7. **Branch for Safety**: Create branches for experimental changes
-8. **Test Before Deploy**: Verify changes in a test environment first
-
-## New Project Management Tools
-
-The following tools provide clearer, more intuitive project management:
-
-### `openl_open_project`
-Opens a project for editing. Supports opening on specific branches or viewing historical revisions.
-
-**Example:**
-```text
-User: Open the {projectId} project on the {branch} branch
-
-Claude: Opening the project on the {branch} branch.
-[Calls openl_open_project with projectId: {projectId} and branch: {branch}]
-```
-
-### `openl_save_project`
-Saves project changes to Git with validation. Returns commit information.
-
-**Example:**
-```text
-User: Save my changes with the comment "{comment}"
-
-Claude: Saving your changes.
-[Calls openl_save_project with projectId: {projectId} and comment: {comment}]
-
-Claude: Changes saved successfully! Commit: abc123def456
-```
-
-### `openl_close_project`
-Closes a project with safety checks. If there are unsaved changes, you must either save them or explicitly discard them.
-
-**Example:**
-```text
-User: Close the project and save my changes
-
-Claude: Closing the project and saving changes.
-[Calls openl_close_project with projectId: {projectId}, saveChanges: {saveChanges}, comment: {comment}]
-
-Claude: Project saved and closed successfully!
-```
-
-**Note:** Use `openl_open_project`, `openl_save_project`, and `openl_close_project` for project management operations.
-
-## Testing
-
-### Run Project Tests
-
-**Prompt to Claude:**
-```text
-Run all tests for project 'design-insurance-rules' and show me the results
-```
-
-**What happens:**
-1. MCP server calls `openl_start_project_tests` to start test execution
-2. Project is automatically opened if closed
-3. MCP server calls `openl_get_test_results` to retrieve full results
-
-**Example Workflow:**
-```text
-# Step 1: Start test execution
-openl_start_project_tests(
-  projectId: "ZGVzaWduOTpJbnN1cmFuY2UgUnVsZXM6...",
-  tableId: "calculatePremium_1234"  # Optional: test specific table
-)
-
-# Step 2: Get full results
-openl_get_test_results(
-  projectId: "ZGVzaWduOTpJbnN1cmFuY2UgUnVsZXM6...",
-  failuresOnly: false,  # Optional: show only failures
-  page: 0,              # Optional: pagination (pagination applies to test tables, not individual test cases)
-  size: 10              # Optional: page size
-)
-
-# Or get brief summary
-openl_get_test_results_summary(
-  projectId: "ZGVzaWduOTpJbnN1cmFuY2UgUnVsZXM6..."
-)
-```
-
-**Note on Pagination:**
-- Pagination applies to test tables (not individual test cases)
-- Each page returns test results aggregated by table
-- Example: Page 1 might show 5 tables, where each table contains multiple tests (e.g., "TestTable1" with 7 tests, "TestTable2" with 8 tests)
-- ⚠️ **Important**: The 'unpaged' parameter may not work correctly on the backend - use pagination (page/offset/size) instead
-
-**Example Response:**
-```json
-{
-  "testCases": [
-    {
-      "name": "Test_calculatePremium",
-      "tableId": "Test_calculatePremium_1234",
-      "executionTimeMs": 45,
-      "numberOfTests": 5,
-      "numberOfFailures": 0,
-      "testUnits": [
-        {
-          "name": "Test 1",
-          "status": "PASSED",
-          "executionTimeMs": 8
-        }
-      ]
-    }
-  ],
-  "executionTimeMs": 45,
-  "numberOfTests": 5,
-  "numberOfFailures": 0
-}
-```
-
-### Run Tests for Specific Table
-
-**Prompt to Claude:**
-```text
-Run tests for the calculatePremium table in project 'design-insurance-rules'
-```
-
-**What happens:**
-- Uses `tableId` parameter to target specific table
-- Only tests related to that table are executed
-
-**Example:**
-```text
-# Start tests for specific table
-openl_start_project_tests(
-  projectId: "ZGVzaWduOTpJbnN1cmFuY2UgUnVsZXM6...",
-  tableId: "calculatePremium_1234"
-)
-
-# Get results filtered by table
-openl_get_test_results_by_table(
-  projectId: "ZGVzaWduOTpJbnN1cmFuY2UgUnVsZXM6...",
-  tableId: "calculatePremium_1234"
-)
-```
-
-### Get Brief Test Summary
-
-**Prompt to Claude:**
-```text
-Show me a brief summary of test results for project 'design-insurance-rules'
-```
-
-**What happens:**
-- Gets aggregated statistics without detailed test cases
-- Faster for quick status checks
-
-**Example:**
-```text
-# Start tests first
-openl_start_project_tests(
-  projectId: "ZGVzaWduOTpJbnN1cmFuY2UgUnVsZXM6..."
-)
-
-# Get brief summary
-openl_get_test_results_summary(
-  projectId: "ZGVzaWduOTpJbnN1cmFuY2UgUnVsZXM6..."
-)
-```
-
-### Run Specific Test Ranges
-
-**Prompt to Claude:**
-```text
-Run tests 1-3 and 5 for the Test_calculatePremium table
-```
-
-**What happens:**
-- Uses `testRanges` parameter to run specific test cases
-- Format: "1-3,5" runs tests 1, 2, 3, and 5
-
-**Example:**
-```text
-# Start tests with specific ranges
-openl_start_project_tests(
-  projectId: "ZGVzaWduOTpJbnN1cmFuY2UgUnVsZXM6...",
-  tableId: "Test_calculatePremium_1234",
-  testRanges: "1-3,5"
-)
-
-# Get results
-openl_get_test_results(projectId)
-```
-
-## Advanced Usage
-
-### Working with Complex Datatypes
-
-**Prompt:**
-```text
-Show me the structure of the 'Policy' datatype and create a new field for 'discountPercentage'
-```
-
-### Batch Operations
-
-**Prompt:**
-```text
-List all decision tables across all projects that contain the word 'premium' in their name
-```
-
-### Cross-Project Analysis
-
-**Prompt:**
-```text
-Compare the 'Vehicle' datatype between the 'auto-insurance' and 'fleet-insurance' projects
-```
-
-### Generating Documentation
-
-**Prompt:**
-```text
-Generate documentation for all tables in the 'insurance-rules' project, including their purpose and structure
-```
-
-## Troubleshooting with Claude
-
-If you encounter issues, ask Claude to help diagnose:
-
-```text
-Claude, I'm getting an error when trying to update a table. Can you check:
-1. Is the project opened?
-2. Do I have the correct table ID?
-3. Is there a lock on the project?
-```
-
-Claude can access the error messages and guide you through resolution.
-
-## Related Documentation
-
-- [Main README](../../README.md) - Installation and configuration
-- [Authentication Guide](authentication.md) - Authentication setup
-- [Troubleshooting Guide](troubleshooting.md) - Common issues and solutions
-- [MCP Connection Guide](../setup/mcp-connection-guide.md) - Connection setup
-
-## Resources
-
-- [OpenL Studio Documentation](https://openl-tablets.org/) - Rule syntax and OpenL concepts
-- Use Claude to explore the API capabilities: "What can you do with OpenL Studio?"
+## Tips
+
+- **Be specific** — name the project, table, and repository.
+- **Open before editing** Git-backed projects; **save** with a clear comment; **close** with save or discard.
+- **Review before deploy** — ask Claude to show the change and run tests first.
+- **Use branches** for experiments.

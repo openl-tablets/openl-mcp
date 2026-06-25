@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated all runtime and development dependencies to their latest versions, including the major bump of `@types/node` to v26 and bumps of the MCP SDK (v1.29), `zod` (v4.4), `axios` (v1.18), `eslint`, `jest`, and `ts-jest`.
 - The HTTP server now serves MCP over the Streamable HTTP transport (MCP spec 2025-11-25) at a single `/mcp` endpoint (`POST` to send messages, `GET` for the server stream, `DELETE` to end a session), replacing the previous `/mcp/sse` + `/mcp/messages` endpoints. Update client configs to `"url": ".../mcp"` with `"transport": "streamablehttp"`.
 - The server now has a single entry point: `dist/index.js` runs the stdio transport by default, or the Streamable HTTP transport when launched with `--http`. The standalone `dist/server.js` is gone — `npm run start:http` now uses `dist/index.js --http`.
+- Reworked the user documentation: one linear Quick Start (a step plan, prerequisites, copy-paste config for each client, and checkpoints); an Advanced Guide that consolidates server settings, authentication, Docker, and CLI mode; and shorter, plainer usage and troubleshooting guides (a stale "build the server" step was dropped from the examples). All user guides now live in `docs/guides/`, the per-directory index pages were replaced by a single documentation index, and `AGENTS.md` was trimmed to the agent-facing essentials.
 
 ### Removed
 

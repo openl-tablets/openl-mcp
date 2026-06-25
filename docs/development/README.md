@@ -49,5 +49,4 @@ npm run watch
 ## Related Documentation
 
 - [Main Documentation Index](../README.md)
-- [Usage Guides](../guides/README.md)
-- [Reference Materials](../reference/README.md)
+- [Usage Examples](../guides/examples.md)

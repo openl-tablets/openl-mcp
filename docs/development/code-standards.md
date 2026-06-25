@@ -50,11 +50,8 @@ openl-mcp/
 ├── dist/              # Compiled output (JavaScript)
 ├── tests/             # Test suites
 ├── docs/              # Documentation
-│   ├── getting-started/
-│   ├── setup/
-│   ├── guides/
-│   ├── development/
-│   └── reference/
+│   ├── guides/        # User guides (setup, usage, auth, troubleshooting, Docker)
+│   └── development/   # Developer documentation
 ├── prompts/           # AI assistant guidance templates
 └── config files       # TypeScript, Jest, ESLint configs
 ```
@@ -179,17 +176,12 @@ npm run test:coverage # With coverage
 ### Complete Documentation Set ✓
 
 **Getting Started:**
-- **[Quick Start Guide](../getting-started/quick-start.md)** - Get up and running quickly
-
-**Setup Guides:**
-- **[MCP Connection Guide](../setup/mcp-connection-guide.md)** - Connect Claude Code, Claude Desktop, Cursor, or VS Code
-- **[Docker Setup](../setup/docker.md)** - Run the server via Docker (no Node.js) and the compose demo
+- **[Quick Start Guide](../guides/quick-start.md)** - Get up and running quickly
 
 **Usage Guides:**
 - **[Usage Examples](../guides/examples.md)** - Real-world usage examples
-- **[Authentication Guide](../guides/authentication.md)** - Authentication setup (Personal Access Token)
+- **[Advanced Guide](../guides/advanced.md)** - Settings, authentication, Docker, and CLI mode
 - **[Troubleshooting Guide](../guides/troubleshooting.md)** - Common issues and solutions
-- **[Debug PAT Guide](../guides/debug-pat.md)** - Personal Access Token debugging
 
 **Development:**
 - **[Contributing Guide](contributing.md)** - Development guide

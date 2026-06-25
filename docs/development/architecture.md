@@ -77,7 +77,7 @@ Contains MCP server settings (command, arguments, environment variables)
 dist/index.js          # Compiled server
 src/                   # Source code
 src/handlers/          # Per-category tool registry (registerTool/getAllTools/executeTool in common.ts)
-docs/setup/mcp-connection-guide.md  # Complete configuration guide with examples
+docs/guides/quick-start.md  # Connect your AI client, step by step
 ```
 
 ### OpenL Studio
@@ -103,7 +103,7 @@ docker compose up
 cd DEMO && ./start
 ```
 
-Then configure your client (see the [Connection Guide](../setup/mcp-connection-guide.md));
+Then configure your client (see the [Quick Start](../guides/quick-start.md));
 it spawns the MCP server on demand.
 
 ## Authentication
@@ -137,7 +137,7 @@ In Claude: "List repositories in OpenL Studio"
 
 ### Issue: Claude doesn't see MCP server
 **Cause:** Invalid client config, or Node.js missing for `npx`
-**Solution:** Check the client's MCP config (valid JSON, correct package name and URL); confirm `node -v`, or use the [Docker option](../setup/mcp-connection-guide.md#running-without-nodejs-docker). Restart the client.
+**Solution:** Check the client's MCP config (valid JSON, correct package name and URL); confirm `node -v`, or use the [Docker option](../guides/advanced.md#run-with-docker). Restart the client.
 
 ### Issue: "Cannot connect to OpenL API"
 **Cause:** OpenL not running or inaccessible

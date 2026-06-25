@@ -559,6 +559,6 @@ The CLI defaults to **markdown**, not JSON. To get JSON (e.g. for `jq`), pass `r
 - [`README.npm.md`](README.npm.md) — short npm package description.
 - [`AGENTS.md`](AGENTS.md) — full agent capabilities reference, with tool list and prompts.
 - [Usage Examples (MCP mode)](docs/guides/examples.md) — prompt-based examples for Claude Desktop / Cursor.
-- [Authentication Guide](docs/guides/authentication.md) — PAT setup and SSO scenarios.
+- [Authentication Guide](docs/guides/advanced.md#authentication) — PAT setup and SSO scenarios.
 - [Troubleshooting](docs/guides/troubleshooting.md) — general troubleshooting (applies to both modes).
 - [CLI Audit Follow-ups](docs/development/cli-audit-followups.md) — backlog of deferred CLI improvements (P1/P2/P3) with rationale and effort estimates.

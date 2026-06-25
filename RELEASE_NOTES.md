@@ -193,7 +193,7 @@ If you were using development or beta versions:
 
 1. **Update dependencies**: Run `npm install` to get latest versions
 2. **Check environment variables**: Ensure `OPENL_BASE_URL` is configured correctly
-3. **Update client configurations**: Follow the [MCP Connection Guide](docs/setup/mcp-connection-guide.md) for your AI client
+3. **Update client configurations**: Follow the [Quick Start](docs/guides/quick-start.md) for your AI client
 4. **Review authentication**: Consider switching to Personal Access Tokens for production
 
 ### Breaking Changes
@@ -254,7 +254,7 @@ Instead of navigating complex interfaces, simply describe what you want:
 
 ### Quick Installation
 
-For complete setup instructions, see the [MCP Connection Guide](docs/setup/mcp-connection-guide.md).
+For complete setup instructions, see the [Quick Start](docs/guides/quick-start.md).
 
 
 ## What's Next
@@ -273,11 +273,11 @@ For complete setup instructions, see the [MCP Connection Guide](docs/setup/mcp-c
 ## Documentation & Resources
 
 ### Essential Guides
-- [Quick Start Guide](docs/getting-started/quick-start.md) - 5-minute setup
-- [MCP Connection Guide](docs/setup/mcp-connection-guide.md) - Cursor, Claude Desktop, VS Code setup
+- [Quick Start Guide](docs/guides/quick-start.md) - 5-minute setup
+- [Run with Docker](docs/guides/advanced.md#run-with-docker) - No Node.js, compose demo, or a shared server
 - [Usage Examples](docs/guides/examples.md) - Common workflows
 - [Troubleshooting Guide](docs/guides/troubleshooting.md) - Solutions to common issues
-- [Authentication Guide](docs/guides/authentication.md) - Security best practices
+- [Authentication Guide](docs/guides/advanced.md#authentication) - Security best practices
 
 ### Technical Documentation
 - [Architecture](docs/development/architecture.md) - System design

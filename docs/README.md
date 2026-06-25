@@ -1,55 +1,37 @@
 # Documentation Index
 
-Welcome to the OpenL MCP Server documentation. This index helps you navigate to the right guide based on your needs.
+Navigate to the right guide based on what you need.
 
-## Quick Navigation
+## Getting Started
 
-### 🚀 Getting Started
-New to the project? Start here:
-- **[Quick Start Guide](getting-started/quick-start.md)** - Get up and running in 5 minutes
+- **[Quick Start](guides/quick-start.md)** — connect Claude Code, Claude Desktop, Cursor, or VS Code in ~5 minutes
 
-### ⚙️ Setup & Configuration
-Setting up the MCP server for your environment:
-- **[MCP Connection Guide](setup/mcp-connection-guide.md)** - Connect Claude Code, Claude Desktop, Cursor, or VS Code to MCP server
-- **[Docker Setup](setup/docker.md)** - Run the server via Docker (no Node.js) and the compose demo
-- **[Authentication Guide](guides/authentication.md)** - Configure authentication (Personal Access Token)
+## Guides
 
-### 📖 Usage Guides
-Learn how to use the MCP server:
-- **[Usage Examples](guides/examples.md)** - Practical examples of using MCP tools
-- **[Troubleshooting Guide](guides/troubleshooting.md)** - Common issues and solutions
+- **[Usage Examples](guides/examples.md)** — what you can ask the AI to do
+- **[Advanced Guide](guides/advanced.md)** — settings, authentication, Docker, and CLI mode
+- **[Troubleshooting](guides/troubleshooting.md)** — common issues and fixes
 
-### 👨‍💻 Development
-Contributing to the project:
-- **[Contributing Guide](development/contributing.md)** - How to contribute
-- **[Architecture](development/architecture.md)** - System architecture
-- **[WebSockets (STOMP)](development/websockets.md)** - Why and how the server waits for async studio work (compile & trace status) over WebSocket
-- **[Testing Guide](development/testing.md)** - Testing strategy
-- **[Code Standards](development/code-standards.md)** - Coding standards
+## Development
 
-## Documentation Structure
-
-```
-docs/
-├── getting-started/    # Quick start and installation guides
-├── setup/              # Client setup and configuration guides
-├── guides/             # Usage guides and examples
-├── development/        # Developer documentation
-└── reference/          # Reference materials
-```
+- **[Contributing](development/contributing.md)** — how to contribute
+- **[Architecture](development/architecture.md)** — system architecture
+- **[WebSockets (STOMP)](development/websockets.md)** — how the server waits for async studio work (compile & trace status)
+- **[Testing](development/testing.md)** — testing strategy
+- **[Code Standards](development/code-standards.md)** — coding standards
 
 ## Common Tasks
 
 **I want to...**
-- **Set up MCP server** → [Quick Start](getting-started/quick-start.md)
-- **Connect Cursor/Claude Desktop/VS Code** → [MCP Connection Guide](setup/mcp-connection-guide.md)
-- **Configure authentication** → [Authentication Guide](guides/authentication.md)
-- **Use MCP tools** → [Usage Examples](guides/examples.md)
-- **Troubleshoot issues** → [Troubleshooting Guide](guides/troubleshooting.md)
-- **Contribute code** → [Contributing Guide](development/contributing.md)
-- **Understand architecture** → [Architecture](development/architecture.md)
+- **Connect my AI client** → [Quick Start](guides/quick-start.md)
+- **Run without Node.js, or share one server** → [Advanced Guide](guides/advanced.md#run-with-docker)
+- **Configure authentication** → [Advanced Guide](guides/advanced.md#authentication)
+- **Run the binary from a shell** → [Advanced Guide](guides/advanced.md#cli-mode)
+- **Use the MCP tools** → [Usage Examples](guides/examples.md)
+- **Fix a problem** → [Troubleshooting](guides/troubleshooting.md)
+- **Contribute code** → [Contributing](development/contributing.md)
 
-## Related Documentation
+## Related
 
-- **[Main README](../README.md)** - Project overview
-- **[Prompts](../prompts/)** - AI assistant guidance templates
+- **[Main README](../README.md)** — project overview
+- **[Prompts](../prompts/)** — AI assistant guidance templates
