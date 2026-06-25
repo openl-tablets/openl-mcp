@@ -1771,6 +1771,22 @@ export class OpenLClient {
     return this.parseWrittenTableId(response);
   }
 
+  /**
+   * Delete a table from the currently opened project. The whole table area is
+   * cleared from the sheet regardless of table type, so the table no longer
+   * exists once the project is recompiled.
+   *
+   * @param projectId - Opaque project ID returned by backend.
+   * @param tableId - Table identifier
+   * @returns nothing (204 No Content on success)
+   */
+  async deleteTable(projectId: string, tableId: string): Promise<void> {
+    const projectPath = this.buildProjectPath(projectId);
+    await this.axiosInstance.delete(
+      `${projectPath}/tables/${encodeURIComponent(tableId)}`
+    );
+  }
+
   // =============================================================================
   // Deployment Management
   // =============================================================================

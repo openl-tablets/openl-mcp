@@ -459,6 +459,33 @@ describe("Tool Handler Integration Tests", () => {
       expect(postBody.tableType).toBe("Spreadsheet");
       expect(Array.isArray(postBody.cells)).toBe(true);
     });
+
+    it("openl_delete_table DELETEs the table and reports success", async () => {
+      let url = "";
+      mockAxios.onDelete(/\/tables\/t1$/).reply((config) => {
+        url = config.url || "";
+        return [204];
+      });
+
+      const result = await executeTool("delete_table", { projectId: "p1", tableId: "t1" }, client);
+
+      expect(url).toMatch(/\/projects\/p1\/tables\/t1$/);
+      expect(result.content[0].text).toContain("Successfully deleted table t1");
+      expect(result.content[0].text).toContain("openl_project_status");
+    });
+
+    it("openl_delete_table requires projectId and tableId (no request sent)", async () => {
+      let called = false;
+      mockAxios.onDelete(/\/tables\//).reply(() => {
+        called = true;
+        return [204];
+      });
+
+      await expect(
+        executeTool("delete_table", { projectId: "p1" }, client),
+      ).rejects.toThrow(/Missing required arguments/);
+      expect(called).toBe(false);
+    });
   });
 
   describe("Table Action Tools (raw source)", () => {

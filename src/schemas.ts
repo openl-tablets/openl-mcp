@@ -111,6 +111,12 @@ export const getTableSchema = z.object({
   response_format: ResponseFormat.optional(),
 }).strict();
 
+export const deleteTableSchema = z.object({
+  projectId: projectIdSchema,
+  tableId: tableIdSchema,
+  response_format: ResponseFormat.optional(),
+}).strict();
+
 export const updateTableSchema = z.object({
   projectId: projectIdSchema,
   tableId: tableIdSchema,
