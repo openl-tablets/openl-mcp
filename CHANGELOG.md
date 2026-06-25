@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed the standalone REST tool endpoints (`GET /tools`, `GET /tools/:name`, `POST /tools/:name/execute`, `POST /execute`); use the MCP protocol over `/mcp` instead. The unauthenticated `GET /health` liveness probe is retained.
 - The HTTP transport no longer accepts credentials via URL query parameters (e.g. `?OPENL_PERSONAL_ACCESS_TOKEN=…`); pass them in the `Authorization` header (`Token`/`Bearer`). Query strings leak into proxy/access logs, browser history, and `Referer` headers.
 - Removed HTTP Basic Authentication — the server now authenticates only with a Personal Access Token. The `OPENL_USERNAME`/`OPENL_PASSWORD` environment variables and the `--user`/`--password` CLI flags are gone, and the HTTP transport no longer accepts `Authorization: Basic`. Use `OPENL_PERSONAL_ACCESS_TOKEN` (or `--token`, or `Authorization: Token`/`Bearer`), or run unauthenticated against an OpenL Studio in single-user mode.
+- Removed the CLI `--anonymous` flag — it was the redundant opposite of `--token`. The CLI now treats a missing token (no `--token` / `OPENL_PERSONAL_ACCESS_TOKEN`) as an unauthenticated request instead of failing fast, matching the stdio server; pass `--token` (or set the env var) to authenticate.
 
 ### Fixed
 

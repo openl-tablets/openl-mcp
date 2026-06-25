@@ -137,7 +137,9 @@ export class AuthenticationManager {
     const shouldLogAuth = !authHeaderAlreadySet && !loggedAuthConfigs.has(authConfigKey) && !quietMode;
 
     // Add authentication when a Personal Access Token is configured; otherwise
-    // send no Authorization header (OpenL Studio single-user mode).
+    // send no Authorization header. Running without a token is a normal,
+    // supported configuration (OpenL Studio single-user mode / anonymous
+    // access), so the no-token case is deliberately not logged or warned about.
     if (this.config.personalAccessToken) {
       // Build authorization header
       const pat = this.config.personalAccessToken;
@@ -153,12 +155,6 @@ export class AuthenticationManager {
         if (!isValidFormat) {
           console.error(`[Auth]   ⚠️  WARNING: PAT should start with 'openl_pat_'`);
         }
-      }
-    } else {
-      // Log only once per unique config
-      if (shouldLogAuth) {
-        loggedAuthConfigs.add(authConfigKey);
-        console.error(`[Auth] ⚠️  No authentication method configured`);
       }
     }
 

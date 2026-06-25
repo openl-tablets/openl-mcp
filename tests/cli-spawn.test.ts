@@ -157,25 +157,25 @@ describe("built binary (dist/index.js)", () => {
       expect(stderr).not.toContain("Failed to start OpenL MCP server");
     });
 
-    it("warns that --cookie-jar / --anonymous are ignored on the server path", async () => {
-      // These flags only apply to single CLI tool calls. With no tool name
-      // they route to the server launch; the binary warns, then still reports
+    it("warns that --cookie-jar is ignored on the server path", async () => {
+      // --cookie-jar only applies to single CLI tool calls. With no tool name
+      // it routes to the server launch; the binary warns, then still reports
       // the missing URL and exits 1 (no hang, no silent no-op).
-      const { code, stderr } = await run(["--cookie-jar", "/tmp/jar.json", "--anonymous"], envWithoutOpenl());
+      const { code, stderr } = await run(["--cookie-jar", "/tmp/jar.json"], envWithoutOpenl());
       expect(code).toBe(1);
       expect(stderr).toContain("--cookie-jar is ignored");
-      expect(stderr).toContain("--anonymous is ignored");
     });
   });
 
   describe("positional <url> argument", () => {
     it("accepts a positional URL as the base URL in tool mode (no env needed)", async () => {
-      // `<url> <tool> --anonymous` with the URL pointing at a closed port:
-      // the positional URL is accepted as the base URL (no usage/config error),
-      // and the call then fails to connect. This proves the URL flowed through
-      // to the client rather than being mistaken for a tool name.
+      // `<url> <tool>` with the URL pointing at a closed port: the positional
+      // URL is accepted as the base URL (no usage/config error), and the call
+      // then fails to connect. This proves the URL flowed through to the client
+      // rather than being mistaken for a tool name. No token is configured, so
+      // the request is made unauthenticated.
       const { code, stderr } = await run(
-        ["http://127.0.0.1:59999", "list_repositories", "--anonymous"],
+        ["http://127.0.0.1:59999", "list_repositories"],
         envWithoutOpenl(),
       );
       // ECONNREFUSED on the closed port maps to EX_UNAVAILABLE (69). Pinning

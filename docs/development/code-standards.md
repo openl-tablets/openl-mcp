@@ -111,8 +111,7 @@ All tools have Zod schemas with:
 - Safe defaults on invalid input
 
 **Configuration validation**:
-- Personal Access Token is optional (single-user mode sends no Authorization header)
-- The CLI requires a token unless `--anonymous` is passed
+- Personal Access Token is optional in every mode (stdio, HTTP, CLI); without one, requests are sent with no Authorization header (single-user mode)
 
 ### Circular Reference Protection ✓
 

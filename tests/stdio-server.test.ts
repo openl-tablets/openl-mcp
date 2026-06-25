@@ -83,21 +83,27 @@ describe("loadConfigFromEnv (stdio MCP transport)", () => {
     await expect(loadConfigFromEnv()).rejects.toThrow(/Invalid OPENL_TIMEOUT/);
   });
 
-  it("resolves with no auth (single-user mode)", async () => {
+  it("resolves with no auth and logs nothing about authentication (single-user mode)", async () => {
     process.env.OPENL_BASE_URL = "http://localhost:8080";
     const cfg = await loadConfigFromEnv();
     expect(cfg).toMatchObject({ baseUrl: "http://localhost:8080" });
     expect(cfg.personalAccessToken).toBeUndefined();
-    expect(errSpy).toHaveBeenCalledWith(expect.stringMatching(/No authentication configured/i));
+    // Running without a token is the normal single-user case: no auth status
+    // line and no "no authentication" notice are logged for it.
+    expect(errSpy).not.toHaveBeenCalledWith(expect.stringMatching(/Personal Access Token|No authentication/i));
   });
 
-  it("resolves with a PAT", async () => {
+  it("resolves with a PAT and logs that a token is configured", async () => {
     process.env.OPENL_BASE_URL = "http://localhost:8080";
     process.env.OPENL_PERSONAL_ACCESS_TOKEN = "openl_pat_x";
-    await expect(loadConfigFromEnv()).resolves.toMatchObject({
+    const cfg = await loadConfigFromEnv();
+    expect(cfg).toMatchObject({
       baseUrl: "http://localhost:8080",
       personalAccessToken: "openl_pat_x",
     });
+    // A configured token is confirmed (value hidden) — the complement of the
+    // no-auth case, which logs nothing.
+    expect(errSpy).toHaveBeenCalledWith(expect.stringMatching(/Personal Access Token: configured \(hidden\)/));
   });
 
   it("parses a valid OPENL_TIMEOUT from the environment", async () => {

@@ -111,12 +111,11 @@ export async function loadConfigFromEnv(
   };
 
   // Authentication is optional: OpenL Studio in single-user mode accepts
-  // unauthenticated requests. Report what was found.
-  const hasPat = !!config.personalAccessToken;
-  console.error(`[Config] Authentication:`);
-  console.error(`[Config]   - Personal Access Token: ${hasPat ? 'configured (hidden)' : 'not configured'}`);
-  if (!hasPat) {
-    console.error(`[Config]   ℹ️  No authentication configured — requests will be sent without an Authorization header (OpenL Studio single-user mode)`);
+  // unauthenticated requests, so running without a token is normal and is not
+  // reported. Confirm only when a token is present (its value stays hidden).
+  if (config.personalAccessToken) {
+    console.error(`[Config] Authentication:`);
+    console.error(`[Config]   - Personal Access Token: configured (hidden)`);
   }
 
   return config;
@@ -139,14 +138,11 @@ export async function startStdioServer(parsed: ParsedArgs): Promise<void> {
   if (parsed.overrides.clientDocumentId !== undefined) {
     process.env.OPENL_CLIENT_DOCUMENT_ID = parsed.overrides.clientDocumentId;
   }
-  // --cookie-jar and --anonymous only apply to single CLI tool invocations;
-  // they have no effect on the long-lived server. Warn rather than ignore
-  // silently, so a misplaced flag doesn't look like it took effect.
+  // --cookie-jar only applies to single CLI tool invocations; it has no effect
+  // on the long-lived server. Warn rather than ignore silently, so a misplaced
+  // flag doesn't look like it took effect.
   if (parsed.cookieJarPath !== undefined) {
     console.error("Warning: --cookie-jar is ignored when launching the MCP server (it applies only to single tool invocations).");
-  }
-  if (parsed.anonymous) {
-    console.error("Warning: --anonymous is ignored when launching the MCP server (authentication is already optional).");
   }
 
   let config: Types.OpenLConfig;

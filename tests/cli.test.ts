@@ -571,29 +571,16 @@ describe("CLI", () => {
       expect(h.getStderr()).toContain("OPENL_BASE_URL");
     });
 
-    it("returns EX_CONFIG (78) when no auth method is configured", async () => {
-      const h = createHarness();
-      const code = await runCli({
-        argv: ["list_repositories", "{}"],
-        env: { OPENL_BASE_URL: "http://localhost:8080" },
-        stdin: h.stdin,
-        stdout: h.stdout,
-        stderr: h.stderr,
-      });
-      expect(code).toBe(EXIT_CODES.CONFIG);
-      expect(h.getStderr()).toContain("Authentication required");
-      // The error should point users at the escape hatch.
-      expect(h.getStderr()).toContain("--anonymous");
-    });
-
-    it("--anonymous bypasses the auth gate (no creds → request proceeds)", async () => {
+    it("runs unauthenticated when no token is configured (no creds → request proceeds)", async () => {
+      // Authentication is optional: with a base URL but no token, the CLI does
+      // not fail fast — it sends the request without an Authorization header.
       const { client, mock: m } = createMockClient();
       mock = m;
       m.onGet("/repos").reply(200, mockRepositories);
 
       const h = createHarness();
       const code = await runCli({
-        argv: ["list_repositories", "--anonymous"],
+        argv: ["list_repositories"],
         env: { OPENL_BASE_URL: "http://localhost:8080" }, // base URL only, no auth
         stdin: h.stdin,
         stdout: h.stdout,
@@ -602,19 +589,6 @@ describe("CLI", () => {
       });
       expect(code).toBe(EXIT_CODES.OK);
       expect(h.getStdout()).toContain("Design Repository");
-    });
-
-    it("still requires OPENL_BASE_URL even with --anonymous", async () => {
-      const h = createHarness();
-      const code = await runCli({
-        argv: ["list_repositories", "--anonymous"],
-        env: {}, // no base URL
-        stdin: h.stdin,
-        stdout: h.stdout,
-        stderr: h.stderr,
-      });
-      expect(code).toBe(EXIT_CODES.CONFIG);
-      expect(h.getStderr()).toContain("OPENL_BASE_URL");
     });
 
     it("returns EX_USAGE (64) on unknown flag", async () => {
@@ -1029,7 +1003,7 @@ describe("CLI", () => {
       let seenBaseUrl: string | undefined;
       const h = createHarness();
       const code = await runCli({
-        argv: ["http://localhost:8080", "list_repositories", "--anonymous"],
+        argv: ["http://localhost:8080", "list_repositories"],
         env: { OPENL_BASE_URL: "http://env-host:1234" }, // positional must win
         stdin: h.stdin,
         stdout: h.stdout,
@@ -1058,7 +1032,6 @@ describe("CLI", () => {
           "list_repositories",
           "--base-url",
           "http://flag-host:5555",
-          "--anonymous",
         ],
         env: {},
         stdin: h.stdin,

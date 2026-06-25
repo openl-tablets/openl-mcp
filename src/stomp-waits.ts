@@ -56,28 +56,6 @@ function makeAbortError(operation: string): Error {
 }
 
 /**
- * Warn when a wait subscribes without credentials. The WS upgrade is
- * authenticated by the Authorization header (the session cookie alone is
- * rejected for user-routed `/user/topic/...` destinations), so an anonymous
- * subscription connects but never receives frames — surface that rather than
- * silently hang until the timeout.
- */
-function warnIfUnauthenticated(
-  authorizationHeader: string | undefined,
-  topicName: string,
-  missedThing: string,
-): void {
-  if (authorizationHeader) {
-    return;
-  }
-  console.error(
-    `[wait] ⚠️  Subscribing to the ${topicName} WebSocket without credentials; ` +
-      `the studio rejects anonymous subscriptions to user-routed topics, so ${missedThing} ` +
-      `may never arrive. Provide authentication to enable wait mode.`,
-  );
-}
-
-/**
  * Await a single terminal value delivered out-of-band by a STOMP frame handler,
  * with a bounded timeout and abort support. Centralises the timer (unref'd so it
  * never keeps the event loop alive), abort wiring, and listener/timer cleanup on
@@ -255,8 +233,6 @@ export async function waitForCompilation(
       options.onProgress?.(status);
     }
   };
-
-  warnIfUnauthenticated(client.getAuthorizationHeader(), "project-status", "live status updates");
 
   let subscription: Subscription | null = null;
   try {
@@ -481,8 +457,6 @@ export async function executeTraceReadWithWait<T>(
       initial409,
     );
   }
-
-  warnIfUnauthenticated(client.getAuthorizationHeader(), "trace-status", "the completion event");
 
   let terminalResolve: ((frame: TraceStatusFrame) => void) | null = null;
   const handleFrame = (body: string): void => {

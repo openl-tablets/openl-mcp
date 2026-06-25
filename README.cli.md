@@ -151,11 +151,10 @@ The CLI reads configuration from environment variables. Every variable has a mat
 | Env var | Flag | Required | Default | Notes |
 |---|---|---|---|---|
 | `OPENL_BASE_URL` | positional `<url>` or `--base-url <url>` | yes | — | OpenL Studio root URL, e.g. `http://localhost:8080` |
-| `OPENL_PERSONAL_ACCESS_TOKEN` | `--token <pat>` | unless `--anonymous` | — | PAT starting with `openl_pat_` |
+| `OPENL_PERSONAL_ACCESS_TOKEN` | `--token <pat>` | no | — | PAT starting with `openl_pat_`; omit to send unauthenticated requests |
 | `OPENL_TIMEOUT` | `--timeout <ms>` | no | `30000` | Per-request HTTP timeout |
 | `OPENL_CLIENT_DOCUMENT_ID` | `--client-document-id <id>` | no | — | Request tracking header (audit) |
 | — | `--cookie-jar <path>` | no | — | Persist JSESSIONID between calls (trace) |
-| — | `--anonymous` | no | off | Skip the auth requirement for servers that permit unauthenticated access |
 
 Precedence: **CLI flag > environment variable > default**. The base URL is special — it also accepts a **positional `<url>`** that takes precedence over `--base-url`, so the full order is **positional `<url>` > `--base-url` > `OPENL_BASE_URL`**. The positional may appear before or after the tool name (`openl-mcp <url> <tool>` or `openl-mcp <tool> <url>`); a bareword that parses as an `http(s)` URL is always treated as the base URL, never as a tool name.
 
@@ -163,7 +162,7 @@ Precedence: **CLI flag > environment variable > default**. The base URL is speci
 
 ## Authentication
 
-The CLI authenticates with a Personal Access Token.
+Authentication is **optional**: supply a Personal Access Token to authenticate, or omit it to send unauthenticated requests — for an OpenL Studio in single-user mode, or any server that permits anonymous access.
 
 ### Personal Access Token
 
@@ -180,28 +179,17 @@ Generate a PAT in OpenL Studio under **User Settings → Personal Access Tokens*
 
 > **Security note.** When you pass `--token` on the command line, the value is visible in process listings (`ps aux`). Prefer env vars for shared/multi-user hosts.
 
-### Anonymous access (`--anonymous`)
+### Anonymous access
 
-By default the CLI treats each invocation as one principal that must authenticate, and **fails fast** if no credentials are configured — this catches the common "forgot to set creds" mistake with a clear message instead of a later `401`.
-
-If your OpenL Studio server permits unauthenticated access, pass `--anonymous` to skip that gate. The client then sends no `Authorization` header (any credentials that *are* present are still used):
+Omit `--token` (and `OPENL_PERSONAL_ACCESS_TOKEN`) to run anonymously — the client then sends no `Authorization` header:
 
 ```bash
 # Server allows anonymous reads — no creds needed
 OPENL_BASE_URL=https://studio.example.com \
-  npx -y openl-mcp list_repositories --anonymous
+  npx -y openl-mcp list_repositories
 ```
 
-`--anonymous` only relaxes the credential requirement; `OPENL_BASE_URL` is still required. A server that *does* require auth will respond `401`, which the CLI reports with exit code `77` (`EX_NOPERM`).
-
-### Validation
-
-If no token is configured (and `--anonymous` is not passed), the CLI fails fast with a clear message before making any HTTP request:
-
-```text
-Error: Authentication required: set OPENL_PERSONAL_ACCESS_TOKEN (or --token).
-Pass --anonymous if the server allows unauthenticated access.
-```
+`OPENL_BASE_URL` is still required. A server that *does* require auth will respond `401`, which the CLI reports with exit code `77` (`EX_NOPERM`).
 
 ---
 
@@ -510,10 +498,6 @@ The `--stdin` flag is the most portable option for piping payloads.
 ### `Error: OPENL_BASE_URL is required`
 
 Set the env var or pass `--base-url`. `--help` and `--list-tools` don't require it.
-
-### `Error: Authentication required …`
-
-Set `OPENL_PERSONAL_ACCESS_TOKEN` (or `--token`). If your server permits unauthenticated access, pass `--anonymous` to skip the credential requirement — see [Anonymous access](#anonymous-access---anonymous).
 
 ### `Error: Failed to parse tool arguments as JSON: …`
 
