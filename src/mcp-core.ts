@@ -65,8 +65,27 @@ export function registerMcpHandlers(
   // per-session sendNotification, AbortSignal) that long-running tools need.
   // Strip the wire prefix back to the bare registry name before dispatching.
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
-    const result = await executeTool(stripToolPrefix(request.params.name), request.params.arguments, client, extra);
-    return result as any; // Type cast needed due to MCP SDK generic return type
+    try {
+      const result = await executeTool(stripToolPrefix(request.params.name), request.params.arguments, client, extra);
+      return result as any; // Type cast needed due to MCP SDK generic return type
+    } catch (error) {
+      // A tool's own failure (backend 4xx/5xx, argument validation) must reach the
+      // calling agent as an `isError` RESULT, not a thrown JSON-RPC protocol error.
+      // A throw is surfaced by clients as a generic "tool execution failed" with the
+      // detail dropped; an isError result carries the message into the model's
+      // context so it can self-correct (e.g. "column height 6 exceeds table height
+      // 5"). executeTool already wrapped the cause into an McpError with a detailed,
+      // sanitized message. Only a genuinely unknown tool (MethodNotFound) stays a
+      // protocol error — that is a client/protocol fault, not a tool result.
+      if (error instanceof McpError && error.code === ErrorCode.MethodNotFound) {
+        throw error;
+      }
+      const message = error instanceof McpError ? error.message : sanitizeError(error);
+      return {
+        content: [{ type: "text" as const, text: message }],
+        isError: true,
+      };
+    }
   });
 
   // List available resources — concrete (non-parameterized) URIs only.
