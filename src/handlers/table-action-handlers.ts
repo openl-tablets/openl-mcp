@@ -17,13 +17,8 @@ import * as schemas from "../schemas.js";
 import type * as Types from "../types.js";
 import { formatResponse } from "../formatters.js";
 import { validateResponseFormat } from "../validators.js";
-import { isNotFoundError } from "../utils.js";
 import { registerTool, type ToolResponse } from "./common.js";
-import {
-  recordTableIdAlias,
-  resolveTableIdAlias,
-  triggerTableRecompile,
-} from "./table-id-tracking.js";
+import { finalizeTableEdit, withStaleIdRetry } from "./table-id-tracking.js";
 import type { OpenLClient } from "../client.js";
 
 /**
@@ -58,53 +53,26 @@ async function runTableSourceAction(
   pastTenseEdit: string,
   format: ReturnType<typeof validateResponseFormat>,
 ): Promise<ToolResponse> {
-  const notes: string[] = [];
-
-  let tableId = requestedId;
-  let reportedNewId: string | undefined;
-  try {
-    reportedNewId = await client.editTableSource(projectId, tableId, action);
-  } catch (error) {
-    // A 404 writes nothing, so retrying with a known rename is safe.
-    const aliased = isNotFoundError(error) ? resolveTableIdAlias(projectId, tableId) : undefined;
-    if (aliased === undefined) {
-      throw error;
-    }
-    reportedNewId = await client.editTableSource(projectId, aliased, action);
-    notes.push(
-      `The provided tableId '${requestedId}' was stale (the table was edited after that id was issued) and was automatically resolved to '${aliased}'.`,
-    );
-    tableId = aliased;
-  }
-
   // The studio reports the new id directly (200 + { id }) when the edit relocated
-  // the table; an in-place edit answers 204 and the id is unchanged.
-  const currentId = reportedNewId ?? tableId;
-  if (currentId !== tableId) {
-    recordTableIdAlias(projectId, tableId, currentId);
-    notes.push(
-      `This edit changed the table's id from '${tableId}' to '${currentId}' (ids are derived from table content/position). Use 'tableId' from this response for subsequent calls.`,
-    );
-  }
+  // the table; an in-place edit answers 204 and the id is unchanged. So unlike
+  // update/append there is no identity-snapshot fallback to re-resolve the id.
+  const { value: reportedNewId, tableId, staleNote } = await withStaleIdRetry(
+    projectId,
+    requestedId,
+    (id) => client.editTableSource(projectId, id, action),
+  );
 
-  // The studio resets (does not recompile) compile status on edit; reading the
-  // table back triggers its recompile so openl_project_status reflects the change.
-  const recompileTriggered = await triggerTableRecompile(client, projectId, currentId);
-  if (!recompileTriggered) {
-    notes.push(
-      `The post-edit read could not locate the table under id '${currentId}' — the edit WAS applied, but the table's id likely changed. Refresh ids with openl_list_tables().`,
-    );
-  }
-
-  const idChanged = currentId !== requestedId;
-  const result = {
-    success: true,
-    message: `Successfully ${pastTenseEdit} table ${requestedId}`,
-    recompileTriggered,
-    tableId: currentId,
-    ...(idChanged ? { tableIdChanged: true, previousTableId: requestedId } : {}),
-    ...(notes.length > 0 ? { note: notes.join(" ") } : {}),
-  };
+  const notes = staleNote ? [staleNote] : [];
+  const { result } = await finalizeTableEdit(
+    client,
+    projectId,
+    requestedId,
+    tableId,
+    reportedNewId ?? tableId,
+    `Successfully ${pastTenseEdit} table ${requestedId}`,
+    "edit",
+    notes,
+  );
 
   return { content: [{ type: "text", text: formatResponse(result, format) }] };
 }
@@ -255,17 +223,16 @@ const ACTION_TOOLS: ActionToolSpec[] = [
     description:
       "Update the value of a single existing cell at ('row','column') in a table's raw source. Pass 'value' (null clears the cell)." +
       ACTION_SUFFIX,
-    buildAction: (a) => {
-      const target: Types.RawTableActionTarget = {
+    buildAction: (a) => ({
+      operation: "update",
+      target: {
         type: "cell",
         row: a.row as number,
         column: a.column as number,
-      };
-      if ("value" in a) {
-        target.value = a.value;
-      }
-      return { operation: "update", target };
-    },
+        // `value: null` is meaningful (clears the cell), so forward it only when supplied.
+        ...("value" in a ? { value: a.value } : {}),
+      },
+    }),
   },
   {
     name: "merge_table_cells",
