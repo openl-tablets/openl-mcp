@@ -82,6 +82,17 @@ export function registerTool(tool: ToolDefinition): void {
 }
 
 /**
+ * Whether a tool with this bare (un-prefixed) name is registered. Lets the
+ * transport layer tell a genuinely unknown tool (a protocol fault) apart from a
+ * registered tool that failed at runtime — the two are otherwise indistinguishable
+ * once both surface as an `McpError` (e.g. a backend HTTP 405 also maps to
+ * `ErrorCode.MethodNotFound`).
+ */
+export function hasTool(name: string): boolean {
+  return toolHandlers.has(name);
+}
+
+/**
  * Get all registered tools (for ListTools handler)
  *
  * @returns Array of tool definitions without the handler or validation callbacks
@@ -242,15 +253,16 @@ function handleToolError(error: unknown, toolName: string, toolArgs?: unknown): 
       errorMessage = axiosCode ? `${axiosCode}: ${sanitized}` : sanitized;
     }
 
-    // Build final error message
+    // Build final error message. The studio's REST method/endpoint are kept in
+    // errorDetails for the server-side log only — they are deliberately NOT put in
+    // the message, which reaches the calling agent (as an isError result): the
+    // agent acts on tools, not raw API paths, so exposing the backend endpoint adds
+    // noise and leaks internal API shape.
     let finalMessage = `OpenL Studio API error`;
     if (status) {
       finalMessage += ` (${status})`;
     }
     finalMessage += `: ${errorMessage}`;
-    if (method && endpoint) {
-      finalMessage += ` [${method} ${endpoint}]`;
-    }
 
     // EPBDS-16086: a bare "The table is not found" after an edit reads as a
     // rollback. Explain that table ids go stale on every edit and how to recover.

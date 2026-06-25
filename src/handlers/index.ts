@@ -18,7 +18,7 @@ import { registerProjectHandlers } from "./project-handlers.js";
 import { registerTraceHandlers } from "./trace-handlers.js";
 import { registerTableHandlers } from "./table-handlers.js";
 
-export { getAllTools, executeTool } from "./common.js";
+export { getAllTools, executeTool, hasTool } from "./common.js";
 
 /**
  * Register every OpenL Studio tool into the shared registry by delegating to the
