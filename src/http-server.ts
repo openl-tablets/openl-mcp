@@ -35,7 +35,8 @@ let defaultClient: OpenLClient | null = null;
 // Store clients by session ID (for per-session configuration)
 const clientsBySession: Record<string, OpenLClient> = {};
 const NO_DEFAULT_CLIENT_ERROR =
-  "No OpenL client available. Configure OPENL_BASE_URL in server environment variables or Docker configuration.";
+  "No OpenL client available. Provide the OpenL Studio base URL as a positional " +
+  "argument (openl-mcp <url> --http) or via the OPENL_BASE_URL environment variable.";
 
 function getDefaultClientOrThrow(): OpenLClient {
   if (!defaultClient) {
@@ -44,23 +45,43 @@ function getDefaultClientOrThrow(): OpenLClient {
   return defaultClient;
 }
 
+/**
+ * Resolve the OpenL base URL for the HTTP transport.
+ *
+ * An explicit `override` — the positional `<url>` / `--base-url` forwarded by
+ * the binary's dispatcher (`index.ts`) — wins over the `OPENL_BASE_URL`
+ * environment variable, matching the stdio transport and the documented
+ * precedence (positional `<url>` > `--base-url` > `OPENL_BASE_URL`).
+ *
+ * Returns `undefined` when no base URL is configured, or when the configured
+ * value is not a valid absolute URL (logging a warning in that case). The
+ * server still starts; tool calls then report {@link NO_DEFAULT_CLIENT_ERROR}
+ * until a base URL is supplied.
+ */
+export function resolveHttpBaseUrl(override?: string): string | undefined {
+  const baseUrl = override ?? process.env.OPENL_BASE_URL;
+  if (!baseUrl) {
+    return undefined;
+  }
+  try {
+    new URL(baseUrl);
+  } catch {
+    console.error(`⚠️  Invalid OpenL base URL: ${baseUrl}`);
+    return undefined;
+  }
+  return baseUrl;
+}
+
 // Initialize default OpenL client (async - will be awaited before server starts)
 // NOTE: Authentication credentials should NOT be set in Docker/environment variables.
 // They must be provided per session via the MCP client's Authorization header.
-async function initializeDefaultClient(): Promise<void> {
+async function initializeDefaultClient(baseUrlOverride?: string): Promise<void> {
   try {
-    // Try to get base URL from env, but don't require authentication
-    // This allows the server to start without auth, and auth will be provided per-session
-    const baseUrl = process.env.OPENL_BASE_URL;
+    // Resolve the base URL (override wins over OPENL_BASE_URL) but don't require
+    // authentication: the server starts without auth, which is provided per
+    // session via the Authorization header.
+    const baseUrl = resolveHttpBaseUrl(baseUrlOverride);
     if (!baseUrl) {
-      return;
-    }
-
-    // Validate base URL format
-    try {
-      new URL(baseUrl);
-    } catch {
-      console.error(`⚠️  Invalid OPENL_BASE_URL format: ${baseUrl}`);
       return;
     }
 
@@ -289,14 +310,22 @@ app.use((req: Request, res: Response) => {
   });
 });
 
+/** Configuration overrides forwarded to the HTTP transport by the dispatcher. */
+export interface HttpServerOverrides {
+  /** Base URL from the positional `<url>` / `--base-url`; wins over the env var. */
+  baseUrl?: string;
+}
+
 /**
  * Start the Express HTTP transport. Called by the binary entry point
- * (`index.ts`) when launched with `--http`. Startup errors propagate to the
+ * (`index.ts`) when launched with `--http`. The base URL is resolved from
+ * `overrides.baseUrl` (the positional `<url>` / `--base-url`) first, then the
+ * `OPENL_BASE_URL` environment variable. Startup errors propagate to the
  * caller, which logs them and exits non-zero.
  */
-export async function startHttpServer(): Promise<void> {
+export async function startHttpServer(overrides: HttpServerOverrides = {}): Promise<void> {
   // Initialize default client before starting server (optional - auth is per-session)
-  await initializeDefaultClient();
+  await initializeDefaultClient(overrides.baseUrl);
 
   app.listen(PORT, () => {
     console.log(`OpenL MCP Server listening on port ${PORT}`);

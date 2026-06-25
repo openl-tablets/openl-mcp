@@ -15,6 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from "@jest/globals";
 import { execFile, spawn } from "node:child_process";
 import { execSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, statSync, symlinkSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,10 +58,42 @@ function envWithoutOpenl(): NodeJS.ProcessEnv {
   return env;
 }
 
+/** Reserve an ephemeral TCP port, then release it for the child to bind. */
+function getFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = createServer();
+    srv.once("error", reject);
+    srv.listen(0, "127.0.0.1", () => {
+      const addr = srv.address();
+      if (addr && typeof addr === "object") {
+        srv.close(() => resolve(addr.port));
+      } else {
+        srv.close(() => reject(new Error("could not determine a free port")));
+      }
+    });
+  });
+}
+
+/** Poll the HTTP server's /health endpoint until it accepts connections. */
+async function waitForHealth(port: number, timeoutMs = 6000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let lastErr: unknown;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/health`);
+      if (res.ok) return;
+    } catch (err) {
+      lastErr = err;
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`HTTP server on port ${port} never became healthy: ${String(lastErr)}`);
+}
+
 describe("built binary (dist/index.js)", () => {
   beforeAll(() => {
     // Rebuild only if dist is missing or older than the entry/dispatch sources.
-    const srcs = ["src/index.ts", "src/cli.ts", "src/stdio-server.ts"].map((p) => join(root, p));
+    const srcs = ["src/index.ts", "src/cli.ts", "src/stdio-server.ts", "src/http-server.ts"].map((p) => join(root, p));
     const distMtime = existsSync(distEntry) ? statSync(distEntry).mtimeMs : 0;
     const newestSrc = Math.max(...srcs.map((s) => statSync(s).mtimeMs));
     if (distMtime < newestSrc) {
@@ -259,7 +292,50 @@ describe("built binary (dist/index.js)", () => {
     }, 20000);
   });
 
-  // No persistent processes are spawned (every command terminates), so there's
-  // nothing to tear down — present for symmetry / future additions.
+  describe("HTTP-mode dispatch (--http)", () => {
+    it("wires the positional <url> into the HTTP server (no OPENL_BASE_URL needed)", async () => {
+      // Regression for the compose.yaml form `openl-mcp <url> --http`: the
+      // dispatcher must forward the positional URL to the HTTP transport.
+      // Before the fix it dropped it and the server only read OPENL_BASE_URL,
+      // so every request failed with "No OpenL client available". `initialize`
+      // makes no upstream call, so an unreachable host still proves the URL
+      // flowed through and the default client was created.
+      const port = await getFreePort();
+      const child = spawn(
+        process.execPath,
+        [distEntry, "http://studio.invalid:8080", "--http"],
+        { cwd: root, env: { ...envWithoutOpenl(), PORT: String(port) } },
+      );
+      let stderr = "";
+      child.stderr.on("data", (d) => (stderr += d.toString()));
+      try {
+        await waitForHealth(port);
+        const res = await fetch(`http://127.0.0.1:${port}/mcp`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json, text/event-stream",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "initialize",
+            params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } },
+          }),
+        });
+        const body = await res.text();
+        expect(res.status).toBe(200);
+        expect(body).toContain('"serverInfo"'); // a real initialize result
+        expect(body).not.toContain("No OpenL client available");
+        expect(stderr).not.toContain("No OpenL client available");
+      } finally {
+        child.kill();
+      }
+    }, 20000);
+  });
+
+  // Every command terminates on its own except the `--http` server above, which
+  // is killed in that test's own `finally` — so there's nothing left to tear
+  // down here; present for symmetry / future additions.
   afterAll(() => {});
 });

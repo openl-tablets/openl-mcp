@@ -26,9 +26,9 @@ import { sanitizeError } from "./utils.js";
  *
  * Dispatches based on how the binary was invoked:
  * - `--http` flag → start the Express Streamable HTTP transport (Docker /
- *   `npm run start:http`). Config comes from the environment (PORT,
- *   OPENL_BASE_URL); auth is per-session via the Authorization header.
- *   See `src/http-server.ts`.
+ *   `npm run start:http`). The base URL comes from the positional `<url>` /
+ *   `--base-url`, falling back to `OPENL_BASE_URL`; the port comes from `PORT`;
+ *   auth is per-session via the Authorization header. See `src/http-server.ts`.
  * - A tool name or discovery flag → CLI mode (direct API invocation via
  *   `executeTool`). See `src/cli.ts`.
  * - Otherwise (no args, or just a positional `<url>` / server flags) → start
@@ -39,15 +39,22 @@ async function main(): Promise<void> {
   try {
     const cliArgs = process.argv.slice(2);
 
-    // HTTP transport. Intercept before CLI parsing — `--http` is not a tool
-    // flag — and lazy-import so a stdio/CLI launch never loads Express.
+    const { parseArgs, isCliInvocation, runCli } = await import("./cli.js");
+
+    // HTTP transport. `--http` is not a tool flag, so strip it before parsing,
+    // then forward the resolved base URL (positional `<url>` / `--base-url`) so
+    // `openl-mcp <url> --http` works — matching stdio and the documented
+    // precedence (positional `<url>` > `--base-url` > `OPENL_BASE_URL`).
+    // Lazy-import so a stdio/CLI launch never loads Express.
     if (cliArgs.includes("--http")) {
+      const httpArgs = parseArgs(cliArgs.filter((arg) => arg !== "--http"));
       const { startHttpServer } = await import("./http-server.js");
-      await startHttpServer();
+      await startHttpServer({
+        baseUrl: httpArgs.baseUrlPositional ?? httpArgs.overrides.baseUrl,
+      });
       return;
     }
 
-    const { parseArgs, isCliInvocation, runCli } = await import("./cli.js");
     const parsed = parseArgs(cliArgs);
 
     if (isCliInvocation(parsed)) {
