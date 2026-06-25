@@ -459,6 +459,200 @@ describe("Tool Handler Integration Tests", () => {
       expect(postBody.tableType).toBe("Spreadsheet");
       expect(Array.isArray(postBody.cells)).toBe(true);
     });
+
+    it("openl_delete_table DELETEs the table and reports success", async () => {
+      let url = "";
+      mockAxios.onDelete(/\/tables\/t1$/).reply((config) => {
+        url = config.url || "";
+        return [204];
+      });
+
+      const result = await executeTool("delete_table", { projectId: "p1", tableId: "t1" }, client);
+
+      expect(url).toMatch(/\/projects\/p1\/tables\/t1$/);
+      expect(result.content[0].text).toContain("Successfully deleted table t1");
+      expect(result.content[0].text).toContain("openl_project_status");
+    });
+
+    it("openl_delete_table requires projectId and tableId (no request sent)", async () => {
+      let called = false;
+      mockAxios.onDelete(/\/tables\//).reply(() => {
+        called = true;
+        return [204];
+      });
+
+      await expect(
+        executeTool("delete_table", { projectId: "p1" }, client),
+      ).rejects.toThrow(/Missing required arguments/);
+      expect(called).toBe(false);
+    });
+  });
+
+  describe("Table Action Tools (raw source)", () => {
+    it("registers a narrow tool per operation×orientation", () => {
+      const names = getAllTools().map((t) => t.name);
+      for (const name of [
+        "append_table_row", "append_table_column",
+        "insert_table_row", "insert_table_column",
+        "delete_table_row", "delete_table_column",
+        "update_table_row", "update_table_column", "update_table_cell",
+        "merge_table_cells", "unmerge_table_cells",
+      ]) {
+        expect(names).toContain(name);
+      }
+    });
+
+    it("openl_insert_table_row POSTs an insert/row action carrying position and cells", async () => {
+      let postBody: Record<string, any> = {};
+      mockAxios.onPost(/\/tables\/t1\/actions$/).reply((config) => {
+        postBody = JSON.parse(config.data);
+        return [204];
+      });
+      mockAxios.onGet(/\/tables\/t1$/).reply(200, { id: "t1", name: "T", tableType: "RawSource", kind: "Other" });
+
+      const result = await executeTool("insert_table_row", {
+        projectId: "p1",
+        tableId: "t1",
+        position: 3,
+        cells: [{ value: "A" }, { value: "B" }],
+      }, client);
+
+      expect(postBody).toEqual({
+        operation: "insert",
+        target: { type: "row", position: 3, cells: [{ value: "A" }, { value: "B" }] },
+      });
+      expect(result.content[0].text).toContain("Successfully inserted a row into table t1");
+      // 204 in-place edit: the id is unchanged.
+      expect(result.content[0].text).not.toContain("tableIdChanged");
+    });
+
+    it("openl_append_table_column omits cells from the action when none are supplied", async () => {
+      let postBody: Record<string, any> = {};
+      mockAxios.onPost(/\/tables\/t1\/actions$/).reply((config) => {
+        postBody = JSON.parse(config.data);
+        return [204];
+      });
+      mockAxios.onGet(/\/tables\/t1$/).reply(200, { id: "t1", name: "T", tableType: "RawSource", kind: "Other" });
+
+      await executeTool("append_table_column", { projectId: "p1", tableId: "t1" }, client);
+
+      expect(postBody).toEqual({ operation: "append", target: { type: "column" } });
+    });
+
+    it("openl_update_table_cell sends an explicit null value so the cell is cleared", async () => {
+      let postBody: Record<string, any> = {};
+      mockAxios.onPost(/\/tables\/t1\/actions$/).reply((config) => {
+        postBody = JSON.parse(config.data);
+        return [204];
+      });
+      mockAxios.onGet(/\/tables\/t1$/).reply(200, { id: "t1", name: "T", tableType: "RawSource", kind: "Other" });
+
+      await executeTool("update_table_cell", {
+        projectId: "p1", tableId: "t1", row: 2, column: 1, value: null,
+      }, client);
+
+      expect(postBody).toEqual({
+        operation: "update",
+        target: { type: "cell", row: 2, column: 1, value: null },
+      });
+    });
+
+    it("openl_update_table_cell requires value (omitting it is rejected, no request sent)", async () => {
+      let called = false;
+      mockAxios.onPost(/\/actions$/).reply(() => {
+        called = true;
+        return [204];
+      });
+
+      await expect(
+        executeTool("update_table_cell", { projectId: "p1", tableId: "t1", row: 2, column: 1 }, client),
+      ).rejects.toThrow(/Invalid arguments for update_table_cell/);
+      expect(called).toBe(false);
+    });
+
+    it("openl_merge_table_cells POSTs a merge/cells action with the span", async () => {
+      let postBody: Record<string, any> = {};
+      mockAxios.onPost(/\/tables\/t1\/actions$/).reply((config) => {
+        postBody = JSON.parse(config.data);
+        return [204];
+      });
+      mockAxios.onGet(/\/tables\/t1$/).reply(200, { id: "t1", name: "T", tableType: "RawSource", kind: "Other" });
+
+      await executeTool("merge_table_cells", {
+        projectId: "p1", tableId: "t1", row: 1, column: 0, rowspan: 2, colspan: 3,
+      }, client);
+
+      expect(postBody).toEqual({
+        operation: "merge",
+        target: { type: "cells", row: 1, column: 0, rowspan: 2, colspan: 3 },
+      });
+    });
+
+    it("reports the new table id and previousTableId when an edit relocates the table", async () => {
+      mockAxios.onPost(/\/tables\/t1\/actions$/).reply(200, { id: "t1_moved" });
+      mockAxios.onGet(/\/tables\/t1_moved$/).reply(200, { id: "t1_moved", name: "T", tableType: "RawSource", kind: "Other" });
+
+      const result = await executeTool("delete_table_row", {
+        projectId: "p1", tableId: "t1", position: 5,
+      }, client);
+
+      const text = result.content[0].text;
+      expect(text).toContain("t1_moved");
+      expect(text).toContain("previousTableId");
+      expect(text).toContain("t1");
+    });
+
+    it("rejects insert_table_row without a position (no request sent)", async () => {
+      let called = false;
+      mockAxios.onPost(/\/actions$/).reply(() => {
+        called = true;
+        return [204];
+      });
+
+      await expect(
+        executeTool("insert_table_row", { projectId: "p1", tableId: "t1" }, client),
+      ).rejects.toThrow(/Invalid arguments for insert_table_row/);
+      expect(called).toBe(false);
+    });
+
+    it("rejects a negative position before reaching the backend", async () => {
+      let called = false;
+      mockAxios.onPost(/\/actions$/).reply(() => {
+        called = true;
+        return [204];
+      });
+
+      await expect(
+        executeTool("delete_table_row", { projectId: "p1", tableId: "t1", position: -1 }, client),
+      ).rejects.toThrow(/Invalid arguments for delete_table_row/);
+      expect(called).toBe(false);
+    });
+
+    it("rejects a 1x1 (no-op) merge before reaching the backend", async () => {
+      let called = false;
+      mockAxios.onPost(/\/actions$/).reply(() => {
+        called = true;
+        return [204];
+      });
+
+      await expect(
+        executeTool("merge_table_cells", { projectId: "p1", tableId: "t1", row: 0, column: 0, rowspan: 1, colspan: 1 }, client),
+      ).rejects.toThrow(/more than one cell/);
+      expect(called).toBe(false);
+    });
+
+    it("rejects a cell with a zero/negative colspan before reaching the backend", async () => {
+      let called = false;
+      mockAxios.onPost(/\/actions$/).reply(() => {
+        called = true;
+        return [204];
+      });
+
+      await expect(
+        executeTool("append_table_row", { projectId: "p1", tableId: "t1", cells: [{ value: "a", colspan: 0 }] }, client),
+      ).rejects.toThrow(/Invalid arguments for append_table_row/);
+      expect(called).toBe(false);
+    });
   });
 
   describe("AGENTS.md Tool", () => {

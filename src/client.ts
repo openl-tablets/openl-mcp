@@ -1746,6 +1746,47 @@ export class OpenLClient {
     return this.parseWrittenTableId(response);
   }
 
+  /**
+   * Apply a single in-place edit to a table's raw source (append, insert,
+   * delete, update, merge or unmerge a row/column/cell). The table is handled
+   * in raw format regardless of its type.
+   *
+   * @param projectId - Opaque project ID returned by backend.
+   * @param tableId - Table identifier
+   * @param action - The edit to apply (operation + target)
+   * @returns the table's id after the edit when the studio relocated it (id
+   *   changed), otherwise undefined (204 — id unchanged)
+   */
+  async editTableSource(
+    projectId: string,
+    tableId: string,
+    action: Types.RawTableSourceAction
+  ): Promise<string | undefined> {
+    const projectPath = this.buildProjectPath(projectId);
+    const response = await this.axiosInstance.post(
+      `${projectPath}/tables/${encodeURIComponent(tableId)}/actions`,
+      action
+    );
+    // 204 No Content when the id is unchanged; 200 + { id } + Location when relocated.
+    return this.parseWrittenTableId(response);
+  }
+
+  /**
+   * Delete a table from the currently opened project. The whole table area is
+   * cleared from the sheet regardless of table type, so the table no longer
+   * exists once the project is recompiled.
+   *
+   * @param projectId - Opaque project ID returned by backend.
+   * @param tableId - Table identifier
+   * @returns nothing (204 No Content on success)
+   */
+  async deleteTable(projectId: string, tableId: string): Promise<void> {
+    const projectPath = this.buildProjectPath(projectId);
+    await this.axiosInstance.delete(
+      `${projectPath}/tables/${encodeURIComponent(tableId)}`
+    );
+  }
+
   // =============================================================================
   // Deployment Management
   // =============================================================================

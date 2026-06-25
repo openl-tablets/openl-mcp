@@ -482,6 +482,50 @@ export interface RawTableView extends EditableTableView {
   source: RawTableCell[][];
 }
 
+/**
+ * A cell to write via a raw table-source edit (POST .../tables/{id}/actions).
+ * Mirrors `RawCellInput` in the studio OpenAPI — the input counterpart of
+ * {@link RawTableCell} (no read-only `cell` address). A cell may set
+ * colspan/rowspan to merge; `covered` marks a cell masked by another's span.
+ */
+export interface RawCellInput {
+  value?: unknown;
+  colspan?: number;
+  rowspan?: number;
+  covered?: boolean;
+}
+
+/**
+ * The `target` of a {@link RawTableSourceAction}: a row, a column, a single
+ * cell, or a rectangular range of cells, plus the operation's coordinates and
+ * payload. `type` is the CASE-SENSITIVE discriminator the backend reads; the
+ * other fields are populated per operation (e.g. `position` for row/column
+ * insert/delete/update, `cells` for the new contents, `row`/`column` for a
+ * single cell, `rowspan`/`colspan` for a merge).
+ */
+export interface RawTableActionTarget {
+  type: "row" | "column" | "cell" | "cells";
+  position?: number;
+  cells?: RawCellInput[];
+  row?: number;
+  column?: number;
+  value?: unknown;
+  rowspan?: number;
+  colspan?: number;
+}
+
+/**
+ * A single in-place edit of a table's raw source (POST
+ * .../tables/{id}/actions). `operation` is the CASE-SENSITIVE discriminator —
+ * append, insert, delete, update, merge or unmerge — and `target` carries the
+ * resource it acts on. The table is always handled in raw format regardless of
+ * its type. Mirrors `RawTableSourceAction` in the studio OpenAPI.
+ */
+export interface RawTableSourceAction {
+  operation: "append" | "insert" | "delete" | "update" | "merge" | "unmerge";
+  target: RawTableActionTarget;
+}
+
 /** Filters for listing projects (OpenAPI 3.0.1) */
 export interface ProjectFilters {
   /** Repository ID */
