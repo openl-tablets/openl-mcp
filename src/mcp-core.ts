@@ -20,7 +20,8 @@ import {
 
 import { SERVER_INFO, mcpToolName, stripToolPrefix } from "./constants.js";
 import { PROMPTS, loadPromptContent, getPromptDefinition } from "./prompts-registry.js";
-import { registerAllTools, getAllTools, executeTool } from "./handlers/index.js";
+import { registerAllTools, getAllTools, executeTool, hasTool } from "./handlers/index.js";
+import { sanitizeError } from "./utils.js";
 import type { OpenLClient } from "./client.js";
 
 /**
@@ -43,8 +44,30 @@ export function registerMcpHandlers(server: Server, client: OpenLClient): void {
   // per-session sendNotification, AbortSignal) that long-running tools need.
   // Strip the wire prefix back to the bare registry name before dispatching.
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
-    const result = await executeTool(stripToolPrefix(request.params.name), request.params.arguments, client, extra);
-    return result as any; // Type cast needed due to MCP SDK generic return type
+    const toolName = stripToolPrefix(request.params.name);
+    try {
+      const result = await executeTool(toolName, request.params.arguments, client, extra);
+      return result as any; // Type cast needed due to MCP SDK generic return type
+    } catch (error) {
+      // A tool's own failure (backend 4xx/5xx, argument validation) must reach the
+      // calling agent as an `isError` RESULT, not a thrown JSON-RPC protocol error.
+      // A throw is surfaced by clients as a generic "tool execution failed" with the
+      // detail dropped; an isError result carries the message into the model's
+      // context so it can self-correct (e.g. "column height 6 exceeds table height
+      // 5"). executeTool already wrapped the cause into an McpError with a detailed,
+      // sanitized message. Only a genuinely unknown tool stays a protocol error —
+      // distinguished by the registry, NOT by the error code: a backend HTTP 405
+      // also maps to ErrorCode.MethodNotFound, so a code check would wrongly re-throw
+      // a real tool failure as a protocol error.
+      if (!hasTool(toolName)) {
+        throw error;
+      }
+      const message = error instanceof McpError ? error.message : sanitizeError(error);
+      return {
+        content: [{ type: "text" as const, text: message }],
+        isError: true,
+      };
+    }
   });
 
   // List available prompts
