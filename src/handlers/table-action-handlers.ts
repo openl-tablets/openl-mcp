@@ -221,7 +221,7 @@ const ACTION_TOOLS: ActionToolSpec[] = [
     pastTenseEdit: "updated a cell of",
     annotations: { idempotentHint: true, openWorldHint: true },
     description:
-      "Update the value of a single existing cell at ('row','column') in a table's raw source. Pass 'value' (null clears the cell)." +
+      "Update the value of a single existing cell at ('row','column') in a table's raw source. 'value' is required: pass a string/number/boolean to set the cell, or null to clear it." +
       ACTION_SUFFIX,
     buildAction: (a) => ({
       operation: "update",
@@ -229,8 +229,9 @@ const ACTION_TOOLS: ActionToolSpec[] = [
         type: "cell",
         row: a.row as number,
         column: a.column as number,
-        // `value: null` is meaningful (clears the cell), so forward it only when supplied.
-        ...("value" in a ? { value: a.value } : {}),
+        // `value` is required by the schema (nullable), so it is always present and
+        // sent explicitly: a non-null value sets the cell, null clears it.
+        value: a.value,
       },
     }),
   },
