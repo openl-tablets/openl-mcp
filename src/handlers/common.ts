@@ -82,6 +82,17 @@ export function registerTool(tool: ToolDefinition): void {
 }
 
 /**
+ * Whether a tool with this bare (un-prefixed) name is registered. Lets the
+ * transport layer tell a genuinely unknown tool (a protocol fault) apart from a
+ * registered tool that failed at runtime — the two are otherwise indistinguishable
+ * once both surface as an `McpError` (e.g. a backend HTTP 405 also maps to
+ * `ErrorCode.MethodNotFound`).
+ */
+export function hasTool(name: string): boolean {
+  return toolHandlers.has(name);
+}
+
+/**
  * Get all registered tools (for ListTools handler)
  *
  * @returns Array of tool definitions without the handler or validation callbacks

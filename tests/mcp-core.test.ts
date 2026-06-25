@@ -98,6 +98,22 @@ describe("MCP core — tool-call error channel", () => {
     expect(text).toContain("Successfully deleted a row from table t1");
   });
 
+  it("surfaces a backend HTTP 405 as an isError result, not a protocol error", async () => {
+    // handleToolError maps HTTP 405 to ErrorCode.MethodNotFound — the same code an
+    // unknown tool produces. A registered tool that gets a 405 is still a tool
+    // failure, so it must reach the agent as an isError result, not a throw.
+    mockAxios.onDelete(/\/tables\/t1$/).reply(405, { code: "METHOD_NOT_ALLOWED", message: "Delete not allowed here" });
+
+    const result = await client.callTool({
+      name: "openl_delete_table",
+      arguments: { projectId: "p1", tableId: "t1" },
+    });
+
+    expect(result.isError).toBe(true);
+    const text = (result.content as Array<{ type: string; text: string }>)[0].text;
+    expect(text).toContain("405");
+  });
+
   it("keeps a genuinely unknown tool a thrown protocol error, not an isError result", async () => {
     await expect(
       client.callTool({ name: "openl_does_not_exist", arguments: {} }),
