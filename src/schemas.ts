@@ -198,6 +198,103 @@ export const appendTableSchema = z.object({
   response_format: ResponseFormat.optional(),
 }).strict();
 
+// =============================================================================
+// Raw table-source actions (POST /projects/{projectId}/tables/{tableId}/actions)
+//
+// One narrow tool per operation×orientation. Each applies a SINGLE in-place edit
+// to the table's RAW source (any table type), unlike openl_update_table /
+// openl_append_table which take the parsed, per-type structure. Positions are
+// 0-based; row 0 is the header row and column 0 carries the leading labels, so
+// insert positions start at 1. An edit that relocates the table changes its id —
+// the tools surface the new id the same way update/append do.
+// =============================================================================
+
+/** A cell value for a raw table-source edit. */
+const rawCellInputSchema = z.object({
+  value: z.any().optional().describe("Cell value (string, number, boolean, …). Null or omitted is an empty cell."),
+  colspan: z.number().int().optional().describe("Number of columns this cell spans (>= 2 to merge; omit or 1 for a single column)."),
+  rowspan: z.number().int().optional().describe("Number of rows this cell spans (>= 2 to merge; omit or 1 for a single row)."),
+  covered: z.boolean().optional().describe("Marks a cell covered by another cell's span; its value is ignored."),
+}).strict();
+
+const rowCellsSchema = z.array(rawCellInputSchema).optional().describe(
+  "Row cells, left to right. A cell may set colspan/rowspan to merge. Must not be wider than the table. Omit to add blank cells.",
+);
+const columnCellsSchema = z.array(rawCellInputSchema).optional().describe(
+  "Column cells, top to bottom. A cell may set colspan/rowspan to merge. Must not be taller than the table. Omit to add blank cells.",
+);
+
+const tableActionBase = {
+  projectId: projectIdSchema,
+  tableId: tableIdSchema,
+  response_format: ResponseFormat.optional(),
+};
+
+export const appendTableRowSchema = z.object({
+  ...tableActionBase,
+  cells: rowCellsSchema,
+}).strict();
+
+export const appendTableColumnSchema = z.object({
+  ...tableActionBase,
+  cells: columnCellsSchema,
+}).strict();
+
+export const insertTableRowSchema = z.object({
+  ...tableActionBase,
+  position: z.number().int().describe("0-based index the new row will occupy. Row 0 is the header, so this must be between 1 and the table height (height appends to the end)."),
+  cells: rowCellsSchema,
+}).strict();
+
+export const insertTableColumnSchema = z.object({
+  ...tableActionBase,
+  position: z.number().int().describe("0-based index the new column will occupy. Column 0 carries the leading labels, so this must be between 1 and the table width (width appends to the end)."),
+  cells: columnCellsSchema,
+}).strict();
+
+export const deleteTableRowSchema = z.object({
+  ...tableActionBase,
+  position: z.number().int().describe("0-based index of the row to delete (0..height-1). Rows below it shift up."),
+}).strict();
+
+export const deleteTableColumnSchema = z.object({
+  ...tableActionBase,
+  position: z.number().int().describe("0-based index of the column to delete (0..width-1). Columns to its right shift left."),
+}).strict();
+
+export const updateTableRowSchema = z.object({
+  ...tableActionBase,
+  position: z.number().int().describe("0-based index of the row to overwrite (0..height-1). The table is not resized."),
+  cells: rowCellsSchema,
+}).strict();
+
+export const updateTableColumnSchema = z.object({
+  ...tableActionBase,
+  position: z.number().int().describe("0-based index of the column to overwrite (0..width-1). The table is not resized."),
+  cells: columnCellsSchema,
+}).strict();
+
+export const updateTableCellSchema = z.object({
+  ...tableActionBase,
+  row: z.number().int().describe("0-based row index of the cell (0..height-1)."),
+  column: z.number().int().describe("0-based column index of the cell (0..width-1)."),
+  value: z.any().optional().describe("New cell value. Null or omitted clears the cell."),
+}).strict();
+
+export const mergeTableCellsSchema = z.object({
+  ...tableActionBase,
+  row: z.number().int().describe("0-based row index of the top-left cell of the range (0..height-1)."),
+  column: z.number().int().describe("0-based column index of the top-left cell of the range (0..width-1)."),
+  rowspan: z.number().int().min(1).describe("Number of rows the merged cell spans (>= 1)."),
+  colspan: z.number().int().min(1).describe("Number of columns the merged cell spans (>= 1)."),
+}).strict();
+
+export const unmergeTableCellsSchema = z.object({
+  ...tableActionBase,
+  row: z.number().int().describe("0-based row index of any cell in the merged region (0..height-1)."),
+  column: z.number().int().describe("0-based column index of any cell in the merged region (0..width-1)."),
+}).strict();
+
 export const listBranchesSchema = z.object({
   repository: repositoryNameSchema,
   response_format: ResponseFormat.optional(),

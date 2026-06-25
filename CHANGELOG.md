@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- 11 raw table-source action tools that apply a single in-place edit to a table (any type): `openl_append_table_row`/`_column`, `openl_insert_table_row`/`_column`, `openl_delete_table_row`/`_column`, `openl_update_table_row`/`_column`/`_cell`, and `openl_merge_table_cells`/`openl_unmerge_table_cells`. Each returns the table's current id (table ids change when an edit relocates the table) and triggers a recompile.
+
 ### Changed
 
 - Simplified how the server is delivered: run it with `npx -y openl-mcp <openl-url>` when Node.js is installed, or on the official `node:lts-alpine` image (`docker run --rm -i node:lts-alpine npx -y openl-mcp <openl-url>`) when it isn't — there is no longer a custom Docker image to pull. Setup docs now cover Claude Code, Claude Desktop, Cursor, and VS Code (GitHub Copilot) connecting over stdio.

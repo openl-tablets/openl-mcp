@@ -17,6 +17,7 @@ import { registerFileHandlers } from "./file-handlers.js";
 import { registerProjectHandlers } from "./project-handlers.js";
 import { registerTraceHandlers } from "./trace-handlers.js";
 import { registerTableHandlers } from "./table-handlers.js";
+import { registerTableActionHandlers } from "./table-action-handlers.js";
 
 export { getAllTools, executeTool } from "./common.js";
 
@@ -35,4 +36,5 @@ export function registerAllTools(): void {
   registerProjectHandlers();
   registerTraceHandlers();
   registerTableHandlers();
+  registerTableActionHandlers();
 }
