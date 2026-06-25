@@ -172,6 +172,7 @@ export function createConfiguredServer(client: OpenLClient): {
     {
       name: SERVER_INFO.NAME,
       version: SERVER_INFO.VERSION,
+      description: SERVER_INFO.DESCRIPTION,
     },
     {
       capabilities: {

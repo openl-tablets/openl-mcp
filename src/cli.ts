@@ -18,33 +18,12 @@
  */
 
 import { readFile, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 
 import { OpenLClient } from "./client.js";
 import { SERVER_INFO, TOOL_CATEGORIES } from "./constants.js";
 import { executeTool, getAllTools, registerAllTools } from "./handlers/index.js";
 import { hashFingerprint, sanitizeError } from "./utils.js";
 import type * as Types from "./types.js";
-
-/**
- * Package version read from the npm package's `package.json` at module load.
- * `SERVER_INFO.VERSION` advertises the MCP protocol/server capability version
- * (semantically distinct from the npm release number), so `--version` reads
- * the package.json value to match what `npm view openl-mcp version`
- * and the installed tarball will report.
- *
- * Falls back to `SERVER_INFO.VERSION` if package.json can't be resolved
- * (e.g. during certain test runs or unusual install layouts).
- */
-const PACKAGE_VERSION: string = (() => {
-  try {
-    const req = createRequire(import.meta.url);
-    const pkg = req("../package.json") as { version?: string };
-    return pkg.version ?? SERVER_INFO.VERSION;
-  } catch {
-    return SERVER_INFO.VERSION;
-  }
-})();
 
 /**
  * Exit codes following BSD `sysexits.h` conventions. Lets CI/CD pipelines
@@ -770,11 +749,11 @@ export async function runCli(options: RunCliOptions): Promise<number> {
     return EXIT_CODES.USAGE;
   }
 
-  // --version — single line, parseable, no config needed.
-  // Uses the npm package.json version (not SERVER_INFO.VERSION which is the
-  // MCP protocol version) so users see the actual installed release.
+  // --version — single line, parseable, no config needed. SERVER_INFO is read
+  // from package.json, so this matches what `npm view openl-mcp version` and
+  // the installed tarball report.
   if (parsed.showVersion) {
-    stdout.write(`${SERVER_INFO.NAME} ${PACKAGE_VERSION}\n`);
+    stdout.write(`${SERVER_INFO.NAME} ${SERVER_INFO.VERSION}\n`);
     return EXIT_CODES.OK;
   }
 

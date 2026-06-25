@@ -7,8 +7,11 @@
  * the registry, CLI, and REST paths agreeing on bare names.
  */
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { describe, it, expect } from "@jest/globals";
-import { TOOL_PREFIX, mcpToolName, stripToolPrefix } from "../src/constants.js";
+import { SERVER_INFO, TOOL_PREFIX, mcpToolName, stripToolPrefix } from "../src/constants.js";
 
 describe("MCP tool-name prefix mapping", () => {
   it("mcpToolName prepends the openl_ namespace to a bare registry name", () => {
@@ -33,5 +36,24 @@ describe("MCP tool-name prefix mapping", () => {
     // intact — exactly one prefix is added and exactly one is removed.
     expect(stripToolPrefix("openl_openl_x")).toBe("openl_x");
     expect(stripToolPrefix(mcpToolName("export_openl_trace"))).toBe("export_openl_trace");
+  });
+});
+
+describe("SERVER_INFO", () => {
+  // Cross-validate the two independent sources: SERVER_INFO must be derived from
+  // package.json, not re-hardcoded. This fails the moment someone copies literal
+  // name/version/description back into constants.ts and lets it drift from the
+  // package the server is actually published as.
+  it("is sourced from package.json (name, version, description)", () => {
+    const pkgPath = fileURLToPath(new URL("../package.json", import.meta.url));
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as {
+      name: string;
+      version: string;
+      description: string;
+    };
+
+    expect(SERVER_INFO.NAME).toBe(pkg.name);
+    expect(SERVER_INFO.VERSION).toBe(pkg.version);
+    expect(SERVER_INFO.DESCRIPTION).toBe(pkg.description);
   });
 });

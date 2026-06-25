@@ -2,6 +2,8 @@
  * Constants and configuration defaults for the OpenL MCP Server
  */
 
+import { createRequire } from "node:module";
+
 /**
  * Default configuration values
  */
@@ -78,12 +80,32 @@ export const TOOL_CATEGORIES = [
 export type ToolCategory = (typeof TOOL_CATEGORIES)[number];
 
 /**
- * Server information
+ * Server identity — name, version, and description — sourced from the package's
+ * own package.json so there is a single source of truth. `npm view`, the
+ * published tarball, the MCP `initialize` handshake, the HTTP `/health` probe,
+ * and the CLI banner/`--version` then all report identical values.
+ *
+ * Read once at load via `createRequire`, not a static `import ... from
+ * "../package.json"`: `rootDir` is `src/`, so a static import would pull a file
+ * outside the root and scramble the emitted `dist/` layout. The relative path
+ * resolves to the package root from both `dist/constants.js` (production) and
+ * `src/constants.ts` (ts-jest), since each sits one level below the root.
+ *
+ * The fallbacks apply only when package.json can't be resolved (unusual install
+ * layouts); MCP requires a non-empty `version`, so it is never left undefined.
  */
+const pkg: { name?: string; version?: string; description?: string } = (() => {
+  try {
+    return createRequire(import.meta.url)("../package.json");
+  } catch {
+    return {};
+  }
+})();
+
 export const SERVER_INFO = {
-  NAME: "openl-mcp",
-  VERSION: "1.0.0",
-  DESCRIPTION: "Model Context Protocol server for OpenL Studio",
+  NAME: pkg.name ?? "openl-mcp",
+  VERSION: pkg.version ?? "0.0.0",
+  DESCRIPTION: pkg.description ?? "MCP Server for OpenL Studio Rules Management System",
 } as const;
 
 /**
