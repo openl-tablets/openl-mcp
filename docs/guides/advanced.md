@@ -68,6 +68,24 @@ You create a PAT in the OpenL Studio UI; your Studio must use **OAuth2, SAML, or
 - Shown **once** — copy it right away.
 - Revoke or expire it any time from the UI.
 
+### Sign in from the browser (`openl-mcp login`)
+
+For OAuth2 deployments you can skip the manual copy/paste and let the CLI sign you in:
+
+```bash
+openl-mcp login <openl-url> --issuer <idp-realm-url> [--client-id openl-cli]
+```
+
+This runs an OAuth 2.0 Authorization Code + PKCE flow (RFC 7636) over a loopback
+redirect (RFC 8252): your browser opens, you approve, and the CLI mints a PAT and
+caches it at `~/.config/openl-mcp/credentials.json` (mode `0600`), keyed per Studio
+URL. The server then picks it up automatically — no `env` token needed.
+
+- `--issuer` is your identity provider's realm URL (e.g. `https://idp.example.com/realms/openlstudio`); also settable via `OPENL_OAUTH_ISSUER`. `--client-id` defaults to `openl-cli` (`OPENL_OAUTH_CLIENT_ID`). Your IdP must register that client as a public client with PKCE and a loopback redirect (`http://127.0.0.1/*`), and issue tokens whose audience Studio accepts.
+- Precedence when the server starts: an explicit `OPENL_PERSONAL_ACCESS_TOKEN` / `--token` wins; otherwise a cached login token is used; otherwise the request is anonymous.
+- `openl-mcp logout [<openl-url>]` removes the cached token (all servers if the URL is omitted).
+- Run `openl-mcp login --no-browser` on a headless host to print the URL instead of opening a browser.
+
 ### Where the token goes
 
 **stdio clients** — in the `env` block that launches the server:

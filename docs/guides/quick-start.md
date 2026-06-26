@@ -42,6 +42,10 @@ You need three things:
 
 The token looks like this: `openl_pat_AbC123.dEf456`.
 
+> **Prefer the browser?** On OAuth2 deployments you can skip the copy/paste and run
+> `openl-mcp login <openl-url> --issuer <idp-realm-url>` — it signs you in, mints a token, and
+> caches it so the server authenticates automatically. See [Advanced → Sign in from the browser](advanced.md#sign-in-from-the-browser-openl-mcp-login).
+
 ✅ **Checkpoint:** you have a token that starts with `openl_pat_`. Keep it for Step 2.
 
 ## Step 2: Add the server to your client

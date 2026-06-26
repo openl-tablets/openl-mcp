@@ -16,6 +16,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 import { OpenLClient } from "./client.js";
 import { createConfiguredServer } from "./mcp-core.js";
+import { getCachedToken } from "./token-cache.js";
 import { sanitizeError } from "./utils.js";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { ParsedArgs } from "./cli.js";
@@ -104,9 +105,13 @@ export async function loadConfigFromEnv(
     timeout = parsedTimeout;
   }
 
+  // Token precedence: an explicit token (flag/env) always wins; otherwise fall
+  // back to a credential cached by `openl-mcp login`; otherwise anonymous.
+  const explicitToken = overrides.personalAccessToken ?? process.env.OPENL_PERSONAL_ACCESS_TOKEN;
+  const cachedToken = explicitToken ? undefined : await getCachedToken(baseUrl);
   const config: Types.OpenLConfig = {
     baseUrl,
-    personalAccessToken: overrides.personalAccessToken ?? process.env.OPENL_PERSONAL_ACCESS_TOKEN,
+    personalAccessToken: explicitToken ?? cachedToken,
     timeout,
   };
 
@@ -115,7 +120,7 @@ export async function loadConfigFromEnv(
   // reported. Confirm only when a token is present (its value stays hidden).
   if (config.personalAccessToken) {
     console.error(`[Config] Authentication:`);
-    console.error(`[Config]   - Personal Access Token: configured (hidden)`);
+    console.error(`[Config]   - Personal Access Token: configured (hidden${cachedToken ? ", from saved login" : ""})`);
   }
 
   return config;

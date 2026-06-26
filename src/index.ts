@@ -39,6 +39,14 @@ async function main(): Promise<void> {
   try {
     const cliArgs = process.argv.slice(2);
 
+    // Browser-auth subcommands. `login` / `logout` are handled before tool/CLI
+    // routing (otherwise `login` would be misread as a tool name). Lazy-imported
+    // so a normal server/CLI launch never loads the OAuth/loopback code.
+    if (cliArgs[0] === "login" || cliArgs[0] === "logout") {
+      const { runLoginCli } = await import("./login.js");
+      process.exit(await runLoginCli(cliArgs));
+    }
+
     const { parseArgs, isCliInvocation, runCli } = await import("./cli.js");
 
     // HTTP transport. `--http` is not a tool flag, so strip it before parsing,
