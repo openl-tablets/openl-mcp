@@ -14,6 +14,7 @@ import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sd
 
 import type { OpenLClient } from "../client.js";
 import type { ToolCategory } from "../constants.js";
+import type { ExtractedErrorInfo } from "../types.js";
 import { logger } from "../logger.js";
 import { isAxiosError, sanitizeError, extractApiErrorInfo, sanitizeJson } from "../utils.js";
 
@@ -160,6 +161,63 @@ export function rethrowConflictAsActionable(error: unknown, conflictMessage: str
   throw error;
 }
 
+/** Caps how many field/global error lines are folded into one error message. */
+const MAX_ERROR_LINES = 20;
+
+/** Short, single-line preview of a rejected field value for the error message. */
+function previewRejectedValue(value: unknown): string {
+  // `value` always comes from a parsed JSON response (the caller only passes a
+  // defined `rejectedValue`), so JSON.stringify yields a string here.
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  // Collapse whitespace on a bounded slice so a large rejected value (e.g. a big
+  // cells block echoed back) isn't regex-scanned in full just to keep ~80 chars.
+  const preview = text.slice(0, 80).replace(/\s+/g, " ").trim();
+  return text.length > 80 ? `${preview}…` : preview;
+}
+
+/** Cap a list of error lines, appending a "… and N more" line when it overflows. */
+function capErrorLines(lines: string[]): string[] {
+  if (lines.length <= MAX_ERROR_LINES) {
+    return lines;
+  }
+  return [...lines.slice(0, MAX_ERROR_LINES), `  - … and ${lines.length - MAX_ERROR_LINES} more`];
+}
+
+/**
+ * Render a backend `ValidationError`'s per-field (`fields`) and additional global
+ * (`errors`) entries as readable, indented lines for the agent-facing message.
+ *
+ * The studio returns these alongside a generic top-level message (e.g.
+ * "Validation failed"); without them the agent only sees the generic line and
+ * can't tell WHICH field failed or why. Returns "" when there is nothing to add.
+ */
+function formatApiErrorDetails(info: ExtractedErrorInfo): string {
+  const sections: string[] = [];
+
+  if (info.fields && info.fields.length > 0) {
+    const lines = info.fields.map((f) => {
+      const where = f.field ? `${f.field}: ` : "";
+      const what = f.message || f.code || "invalid value";
+      const rejected =
+        f.rejectedValue !== undefined ? ` (rejected: ${previewRejectedValue(sanitizeJson(f.rejectedValue))})` : "";
+      return `  - ${where}${what}${rejected}`;
+    });
+    sections.push(`Field errors:\n${capErrorLines(lines).join("\n")}`);
+  }
+
+  if (info.errors && info.errors.length > 0) {
+    const lines = info.errors
+      .map((e) => e.message || e.code)
+      .filter((m): m is string => Boolean(m))
+      .map((m) => `  - ${m}`);
+    if (lines.length > 0) {
+      sections.push(`Additional errors:\n${capErrorLines(lines).join("\n")}`);
+    }
+  }
+
+  return sections.join("\n");
+}
+
 function handleToolError(error: unknown, toolName: string, toolArgs?: unknown): McpError {
   // Enhanced error handling with context
   if (isAxiosError(error)) {
@@ -220,26 +278,26 @@ function handleToolError(error: unknown, toolName: string, toolArgs?: unknown): 
     if (apiErrorInfo.code) {
       errorDetails.apiErrorCode = apiErrorInfo.code;
     }
+    // Headline: the localized top-level message when present.
     if (apiErrorInfo.message) {
       errorMessage = apiErrorInfo.message;
     }
+    // Keep the structured field/global errors for the server-side log, sanitized
+    // the same way as toolArgs/requestData so a backend-echoed rejectedValue can't
+    // leak a sensitive value into the log.
     if (apiErrorInfo.errors && apiErrorInfo.errors.length > 0) {
-      errorDetails.errors = apiErrorInfo.errors;
-      if (!errorMessage && apiErrorInfo.errors[0]?.message) {
-        errorMessage = apiErrorInfo.errors[0].message;
-      }
+      errorDetails.errors = sanitizeJson(apiErrorInfo.errors);
     }
     if (apiErrorInfo.fields && apiErrorInfo.fields.length > 0) {
-      errorDetails.fields = apiErrorInfo.fields;
-      // Build field error message if no main message
-      if (!errorMessage && apiErrorInfo.fields.length > 0) {
-        const fieldMessages = apiErrorInfo.fields
-          .map((f) => f.field && f.message ? `${f.field}: ${f.message}` : f.message)
-          .filter(Boolean);
-        if (fieldMessages.length > 0) {
-          errorMessage = fieldMessages.join("; ");
-        }
-      }
+      errorDetails.fields = sanitizeJson(apiErrorInfo.fields);
+    }
+    // ...and ALWAYS fold them into the agent-facing message (not only when there
+    // is no top-level message), so a ValidationError's specifics — which field
+    // failed, why, and the rejected value — survive instead of being hidden
+    // behind a generic "Validation failed".
+    const validationDetails = formatApiErrorDetails(apiErrorInfo);
+    if (validationDetails) {
+      errorMessage = errorMessage ? `${errorMessage}\n${validationDetails}` : validationDetails;
     }
     if (apiErrorInfo.rawResponse && !apiErrorInfo.code && !apiErrorInfo.message) {
       // Unknown format - include raw response in details

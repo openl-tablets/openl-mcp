@@ -768,6 +768,59 @@ describe("Tool Handler Integration Tests", () => {
     });
   });
 
+  describe("Backend error parsing", () => {
+    const callAndCatch = async (): Promise<Error> => {
+      try {
+        await executeTool("update_table_cell", { projectId: "p1", tableId: "t1", row: 0, column: 0, value: "x" }, client);
+      } catch (e) {
+        return e as Error;
+      }
+      throw new Error("expected the tool to throw");
+    };
+
+    it("surfaces a ValidationError's field and global errors in the message", async () => {
+      mockAxios.onPost(/\/tables\/t1\/actions$/).reply(400, {
+        code: "VALIDATION_ERROR",
+        message: "Validation failed",
+        fields: [
+          { field: "cells", code: "TOO_TALL", message: "column height 6 exceeds table height 5", rejectedValue: [[{ value: "a" }]] },
+          { field: "position", message: "must be >= 1", rejectedValue: 0 },
+        ],
+        errors: [{ code: "G1", message: "the table has no room to grow" }],
+      });
+
+      const msg = (await callAndCatch()).message;
+      // Top-level message kept as the headline.
+      expect(msg).toContain("Validation failed");
+      // Each field error surfaces with its field, reason, and rejected value.
+      expect(msg).toContain("Field errors:");
+      expect(msg).toContain("cells: column height 6 exceeds table height 5");
+      expect(msg).toContain("position: must be >= 1 (rejected: 0)");
+      // Additional global errors surface too.
+      expect(msg).toContain("Additional errors:");
+      expect(msg).toContain("the table has no room to grow");
+    });
+
+    it("uses the field errors as the headline when the ValidationError has no top-level message", async () => {
+      mockAxios.onPost(/\/tables\/t1\/actions$/).reply(400, {
+        code: "VALIDATION_ERROR",
+        fields: [{ field: "row", message: "must be within the table" }],
+      });
+
+      const msg = (await callAndCatch()).message;
+      expect(msg).toContain("Field errors:");
+      expect(msg).toContain("row: must be within the table");
+    });
+
+    it("leaves a simple BaseError message intact (no field section)", async () => {
+      mockAxios.onPost(/\/tables\/t1\/actions$/).reply(409, { code: "LOCKED", message: "Project is locked" });
+
+      const msg = (await callAndCatch()).message;
+      expect(msg).toContain("Project is locked");
+      expect(msg).not.toContain("Field errors");
+    });
+  });
+
   describe("AGENTS.md Tool", () => {
     it("should execute openl_get_project_agents_md (aggregated document, root-first)", async () => {
       mockAxios.onPost(/\/projects\/.*\/file-search/).reply(200, [
