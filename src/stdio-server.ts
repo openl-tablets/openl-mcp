@@ -133,11 +133,6 @@ export async function loadConfigFromEnv(
  * @param parsed - The parsed command-line arguments.
  */
 export async function startStdioServer(parsed: ParsedArgs): Promise<void> {
-  // Honor --client-document-id here too: the client reads it from
-  // OPENL_CLIENT_DOCUMENT_ID per request, so set it for the process lifetime.
-  if (parsed.overrides.clientDocumentId !== undefined) {
-    process.env.OPENL_CLIENT_DOCUMENT_ID = parsed.overrides.clientDocumentId;
-  }
   // --cookie-jar only applies to single CLI tool invocations; it has no effect
   // on the long-lived server. Warn rather than ignore silently, so a misplaced
   // flag doesn't look like it took effect.

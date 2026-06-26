@@ -86,7 +86,7 @@ Tracks items identified in the `EPBDS-16027` CLI audit (May 2026) that were **no
 **Sketch.**
 - New `--config <path>` flag.
 - Default lookup: `$XDG_CONFIG_HOME/openl-mcp/config.json`, fallback `~/.config/openl-mcp/config.json` on Linux, `~/Library/Preferences/openl-mcp/config.json` on macOS, `%APPDATA%/openl-mcp/config.json` on Windows (`env-paths` handles this).
-- Schema: `{ baseUrl, token, timeout, clientDocumentId }` — same keys as overrides.
+- Schema: `{ baseUrl, token, timeout }` — same keys as overrides.
 - Precedence: CLI flag > env > config file > defaults.
 
 **Estimate.** ~80 lines + tests + README update + 1 dependency (`env-paths`). **~3 hours.**

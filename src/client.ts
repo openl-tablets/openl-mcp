@@ -9,7 +9,7 @@ import axios, { AxiosInstance, AxiosResponse } from "axios";
 import FormData from "form-data";
 import type * as Types from "./types.js";
 import { AuthenticationManager } from "./auth.js";
-import { DEFAULTS, ERROR_LOCAL_REPOSITORY, HEADERS, REPOSITORY_LOCAL } from "./constants.js";
+import { DEFAULTS, ERROR_LOCAL_REPOSITORY, REPOSITORY_LOCAL } from "./constants.js";
 import {
   validateTimeout,
   sanitizeError,
@@ -73,28 +73,8 @@ export class OpenLClient {
     this.authManager = new AuthenticationManager(config);
     this.authManager.setupInterceptors(this.axiosInstance);
 
-    // Setup Client Document ID for request tracking (audit/debug)
-    this.setupClientDocumentIdInterceptor();
-
     // Setup cookie management: extract JSESSIONID from responses and add to requests
     this.setupCookieInterceptors();
-  }
-
-  /**
-   * Add Client-Document-Id header from OPENL_CLIENT_DOCUMENT_ID when set.
-   * Used for request tracking in audit and debugging.
-   */
-  private setupClientDocumentIdInterceptor(): void {
-    this.axiosInstance.interceptors.request.use(
-      (config) => {
-        const clientDocumentId = process.env.OPENL_CLIENT_DOCUMENT_ID;
-        if (clientDocumentId && config.headers) {
-          config.headers[HEADERS.CLIENT_DOCUMENT_ID] = clientDocumentId;
-        }
-        return config;
-      },
-      (error) => Promise.reject(error)
-    );
   }
 
   /**

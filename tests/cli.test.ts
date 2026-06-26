@@ -249,38 +249,6 @@ describe("CLI", () => {
       expect(h.getStdout()).toContain("Design Repository");
     });
 
-    it("propagates --client-document-id to process.env for the interceptor", async () => {
-      const { client, mock: m } = createMockClient();
-      mock = m;
-      m.onGet("/repos").reply(200, mockRepositories);
-
-      const prev = process.env.OPENL_CLIENT_DOCUMENT_ID;
-      delete process.env.OPENL_CLIENT_DOCUMENT_ID;
-
-      // Capture the doc id seen inside the run via a custom factory.
-      let seenAtRun: string | undefined;
-      try {
-        const h = createHarness();
-        const code = await runCli({
-          argv: ["list_repositories", "--client-document-id", "ticket-42"],
-          env: ENV_OK,
-          stdin: h.stdin,
-          stdout: h.stdout,
-          stderr: h.stderr,
-          clientFactory: (config) => {
-            seenAtRun = process.env.OPENL_CLIENT_DOCUMENT_ID;
-            return client;
-          },
-        });
-        expect(code).toBe(0);
-        expect(seenAtRun).toBe("ticket-42");
-        // Restored after runCli completes
-        expect(process.env.OPENL_CLIENT_DOCUMENT_ID).toBeUndefined();
-      } finally {
-        if (prev !== undefined) process.env.OPENL_CLIENT_DOCUMENT_ID = prev;
-      }
-    });
-
     it("defaults to markdown when caller omits response_format (agent-first)", async () => {
       const { client, mock: m } = createMockClient();
       mock = m;

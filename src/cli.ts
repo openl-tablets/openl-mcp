@@ -130,7 +130,6 @@ export interface ParsedArgs {
     baseUrl?: string;
     token?: string;
     timeout?: number;
-    clientDocumentId?: string;
   };
   errors: string[];
 }
@@ -212,10 +211,6 @@ export function parseArgs(argv: string[]): ParsedArgs {
         }
         break;
       }
-      case "--client-document-id":
-        result.overrides.clientDocumentId = takeValue(i, arg);
-        i++;
-        break;
       case "--cookie-jar":
         result.cookieJarPath = takeValue(i, arg);
         i++;
@@ -538,21 +533,6 @@ function setQuietMode(): () => void {
 }
 
 /**
- * Apply CLI-flag overrides for env-driven config (`--client-document-id`).
- * Mutates `process.env` because downstream interceptors read it directly;
- * returns a restore function so callers can clean up after themselves.
- */
-function applyEnvOverrides(overrides: ParsedArgs["overrides"]): () => void {
-  if (overrides.clientDocumentId === undefined) return () => {};
-  const prev = process.env.OPENL_CLIENT_DOCUMENT_ID;
-  process.env.OPENL_CLIENT_DOCUMENT_ID = overrides.clientDocumentId;
-  return () => {
-    if (prev === undefined) delete process.env.OPENL_CLIENT_DOCUMENT_ID;
-    else process.env.OPENL_CLIENT_DOCUMENT_ID = prev;
-  };
-}
-
-/**
  * Resolve a user-typed CLI tool name to a registered name, or `undefined` when
  * nothing matches.
  *
@@ -674,7 +654,6 @@ function renderHelp(): string {
     `  --base-url <url>            OPENL_BASE_URL`,
     `  --token <pat>               OPENL_PERSONAL_ACCESS_TOKEN`,
     `  --timeout <ms>              OPENL_TIMEOUT (default 30000)`,
-    `  --client-document-id <id>   OPENL_CLIENT_DOCUMENT_ID (audit/tracking)`,
     `  --cookie-jar <path>         persist JSESSIONID between calls (needed`,
     `                              for trace flow across separate npx runs)`,
     ``,
@@ -802,7 +781,6 @@ export async function runCli(options: RunCliOptions): Promise<number> {
   }
 
   const restoreQuiet = setQuietMode();
-  const restoreEnv = applyEnvOverrides(parsed.overrides);
 
   try {
     let config: Types.OpenLConfig;
@@ -862,7 +840,6 @@ export async function runCli(options: RunCliOptions): Promise<number> {
     stderr.write(`Error: ${sanitizeError(error)}\n`);
     return classifyError(error);
   } finally {
-    restoreEnv();
     restoreQuiet();
   }
 }

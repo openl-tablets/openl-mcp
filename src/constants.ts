@@ -28,14 +28,8 @@ export const ERROR_LOCAL_REPOSITORY =
  * HTTP headers
  */
 export const HEADERS = {
-  /** Content type for JSON requests */
-  CONTENT_TYPE_JSON: "application/json",
-
   /** Authorization header */
   AUTHORIZATION: "Authorization",
-
-  /** Client Document ID for request tracking (audit/debug). Set via OPENL_CLIENT_DOCUMENT_ID env. */
-  CLIENT_DOCUMENT_ID: "Client-Document-Id",
 } as const;
 
 /**

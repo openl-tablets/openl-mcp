@@ -20,7 +20,6 @@ Internally, CLI mode reuses the same tool registry, Zod input validation, respon
 - [Output format](#output-format)
 - [Scripting & JSON extraction](#scripting--json-extraction)
 - [Session-coupled flows: `--cookie-jar`](#session-coupled-flows---cookie-jar)
-- [Request tracking: `--client-document-id`](#request-tracking---client-document-id)
 - [Recipes](#recipes)
 - [Exit codes](#exit-codes)
 - [Cross-platform notes](#cross-platform-notes)
@@ -153,7 +152,6 @@ The CLI reads configuration from environment variables. Every variable has a mat
 | `OPENL_BASE_URL` | positional `<url>` or `--base-url <url>` | yes | — | OpenL Studio root URL, e.g. `http://localhost:8080` |
 | `OPENL_PERSONAL_ACCESS_TOKEN` | `--token <pat>` | no | — | PAT starting with `openl_pat_`; omit to send unauthenticated requests |
 | `OPENL_TIMEOUT` | `--timeout <ms>` | no | `30000` | Per-request HTTP timeout |
-| `OPENL_CLIENT_DOCUMENT_ID` | `--client-document-id <id>` | no | — | Request tracking header (audit) |
 | — | `--cookie-jar <path>` | no | — | Persist JSESSIONID between calls (trace) |
 
 Precedence: **CLI flag > environment variable > default**. The base URL is special — it also accepts a **positional `<url>`** that takes precedence over `--base-url`, so the full order is **positional `<url>` > `--base-url` > `OPENL_BASE_URL`**. The positional may appear before or after the tool name (`openl-mcp <url> <tool>` or `openl-mcp <tool> <url>`); a bareword that parses as an `http(s)` URL is always treated as the base URL, never as a tool name.
@@ -334,25 +332,6 @@ rm $JAR   # optional — the next start_trace will overwrite
 - **Write failures** emit a warning but don't fail the tool call — the API response has already arrived.
 
 > **Tip.** Use one jar per flow (e.g. `/tmp/openl-trace-$$.jar` with `$$` = shell PID) to avoid clashes between parallel scripts.
-
----
-
-## Request tracking: `--client-document-id`
-
-OpenL Studio honors the `Client-Document-Id` header for audit/correlation. Pass it per-call or set globally:
-
-```bash
-# Per-call
-npx -y openl-mcp save_project \
-  --client-document-id ticket-EPBDS-12345 \
-  '{"projectId":"…", "comment":"Fix CA premium rates"}'
-
-# Or via env
-export OPENL_CLIENT_DOCUMENT_ID=$(uuidgen)
-npx -y openl-mcp deploy_project '…'
-```
-
-The value is added as a header to every HTTP request the CLI makes during that invocation.
 
 ---
 
