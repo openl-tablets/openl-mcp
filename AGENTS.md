@@ -22,7 +22,7 @@ call can wait for the result instead of polling — project compilation
 (`openl_get_trace_nodes` / `openl_export_trace` while a trace runs). Details:
 [docs/development/websockets.md](docs/development/websockets.md).
 
-## Tools (52 Total)
+## Tools (53 Total)
 
 All tools are prefixed with `openl_` and versioned (v1.0.0+).
 
@@ -56,17 +56,18 @@ All tools are prefixed with `openl_` and versioned (v1.0.0+).
 - `openl_create_project_table` - Create new table
 - `openl_delete_table` - Delete an entire table (to remove a row/column WITHIN a table, use the raw action tools below)
 
-### Raw Table-Source Action Tools (11)
-Apply a SINGLE in-place edit to a table's raw source (any table type). Positions are 0-based (row 0 is the header, column 0 the leading labels). An edit that relocates the table changes its id; each tool returns the table's CURRENT `tableId` (plus `previousTableId` when it changed) and reads the table back to trigger a recompile.
-- `openl_append_table_row` - Add a row to the end (optional `cells`)
-- `openl_append_table_column` - Add a column to the end (optional `cells`)
-- `openl_insert_table_row` - Insert a row at `position` (optional `cells`)
-- `openl_insert_table_column` - Insert a column at `position` (optional `cells`)
-- `openl_delete_table_row` - Delete the row at `position`
-- `openl_delete_table_column` - Delete the column at `position`
-- `openl_update_table_row` - Overwrite the row at `position` (optional `cells`)
-- `openl_update_table_column` - Overwrite the column at `position` (optional `cells`)
+### Raw Table-Source Action Tools (12)
+In-place edits to a table's raw source (any table type). One tool per operation×orientation handles **one OR more** rows/columns — pass a single row/column or several; the studio takes a single `rows`/`columns` block target (one row/column is just a one-element block), so there is no separate "row" vs "rows" tool. Positions are 0-based (row 0 is the header, column 0 the leading labels). `cells` is required and non-empty (one cell per column/row; use `{ value: null }` for a blank cell). An edit that relocates the table changes its id; each tool returns the table's CURRENT `tableId` (plus `previousTableId` when it changed) and reads the table back to trigger a recompile.
+
+Rows / columns (one or many):
+- `openl_append_table_rows` / `openl_append_table_columns` - Add one or more rows/columns to the end (`cells` is a 2D array, one inner list per row/column)
+- `openl_insert_table_rows` / `openl_insert_table_columns` - Insert one or more rows/columns at `position` 1..
+- `openl_delete_table_rows` / `openl_delete_table_columns` - Delete `count` (default 1) rows/columns from `position` 1.. (the header row / label column 0 cannot be deleted)
+
+Cells / ranges:
+- `openl_update_table_row` / `openl_update_table_column` - Overwrite the cells of the row/column at `position`
 - `openl_update_table_cell` - Set a single cell's value at (`row`, `column`)
+- `openl_update_table_range` - Overwrite a rectangular range (> 1 cell) anchored at (`row`, `column`)
 - `openl_merge_table_cells` - Merge a `rowspan`×`colspan` range from (`row`, `column`)
 - `openl_unmerge_table_cells` - Unmerge the cell covering (`row`, `column`)
 
@@ -100,7 +101,7 @@ Projects with `repository: 'local'` are stored on disk without Git; **OPENED/EDI
 
 **For local, these work:**
 - `openl_list_projects` (call without repository filter, then filter by `repository: "local"` in the response; the `repository: "local"` filter may fail because the "local" repository is often not returned by `openl_list_repositories`), `openl_get_project`;
-- Table tools: `openl_list_tables`, `openl_get_table`, `openl_update_table`, `openl_append_table`, `openl_create_project_table`, `openl_delete_table`, and the raw table-source action tools (`openl_insert_table_row`/`openl_delete_table_row`/`openl_update_table_cell`/`openl_merge_table_cells`/…);
+- Table tools: `openl_list_tables`, `openl_get_table`, `openl_update_table`, `openl_append_table`, `openl_create_project_table`, `openl_delete_table`, and the raw table-source action tools (`openl_insert_table_rows`/`openl_delete_table_rows`/`openl_update_table_cell`/`openl_merge_table_cells`/…);
 - Test execution and results: `openl_start_project_tests`, `openl_get_test_results_summary`, `openl_get_test_results`, `openl_get_test_results_by_table` (the project is not opened before running tests for local).
 
 **For local, do not use:**

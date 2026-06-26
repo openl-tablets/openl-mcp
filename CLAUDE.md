@@ -5,7 +5,7 @@ This document provides instructions for configuring Claude AI to work with OpenL
 **👉 See [AGENTS.md](./AGENTS.md) for the agent guide.**
 
 AGENTS.md is the runtime reference an AI agent needs to use the server:
-- The full tool catalog (40 tools) and their nuances
+- The full tool catalog (53 tools) and their nuances
 - Rules for `local` projects, response formats, and OpenL-specific behaviour
 - The 14 prompt templates
 

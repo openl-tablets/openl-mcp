@@ -1,13 +1,14 @@
 /**
  * Raw table-source action tools (POST /projects/{id}/tables/{tableId}/actions).
  *
- * One narrow tool per operation×orientation — append/insert/delete/update a
- * row or column, update/merge/unmerge cells. Each applies a SINGLE in-place edit
- * to the table's RAW source regardless of table type, unlike openl_update_table
- * / openl_append_table which take the parsed, per-type structure. All share one
- * runner that handles the stale-id retry, the post-edit id change, and the
- * recompile-on-read — the same machinery the full update/append tools use
- * (see `table-id-tracking.ts`).
+ * One tool per operation×orientation — append/insert/delete one OR more rows or
+ * columns (the studio takes a single `rows`/`columns` block target; one row is a
+ * one-element block), update a row/column/cell/range, and merge/unmerge cells.
+ * Each edits the table's RAW source regardless of table type, unlike
+ * openl_update_table / openl_append_table which take the parsed, per-type
+ * structure. All share one runner that handles the stale-id retry, the post-edit
+ * id change, and the recompile-on-read — the same machinery the full
+ * update/append tools use (see `table-id-tracking.ts`).
  */
 
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
@@ -105,86 +106,113 @@ interface ActionToolSpec {
   buildAction: (args: BaseActionArgs & Record<string, unknown>) => Types.RawTableSourceAction;
 }
 
-/** Copy `cells` into a target only when the caller supplied it. */
-function withCells(
-  target: Types.RawTableActionTarget,
+/**
+ * Append/insert one or more rows/columns. The studio takes a single block target
+ * (`rows`/`columns`, accepting one or more) — there is no singular row/column
+ * target — so `cells` (a 2D array, one inner list per row/column) is always sent
+ * as-is; a single row is just a one-element block.
+ */
+function buildRowColumnEdit(
+  operation: "append" | "insert",
+  orientation: "rows" | "columns",
   cells: unknown,
-): Types.RawTableActionTarget {
-  return Array.isArray(cells) ? { ...target, cells: cells as Types.RawCellInput[] } : target;
+  position?: number,
+): Types.RawTableSourceAction {
+  const target: Types.RawTableActionTarget = {
+    type: orientation,
+    cells: cells as Types.RawCellInput[][],
+  };
+  if (position !== undefined) {
+    target.position = position;
+  }
+  return { operation, target };
+}
+
+/**
+ * Delete one or more rows/columns. The studio takes a single block target
+ * (`rows`/`columns`) with a required `count`, so `count` defaults to 1 (delete a
+ * single row/column) when the caller omits it.
+ */
+function buildRowColumnDelete(
+  orientation: "rows" | "columns",
+  position: number,
+  count: number | undefined,
+): Types.RawTableSourceAction {
+  return {
+    operation: "delete",
+    target: { type: orientation, position, count: count ?? 1 },
+  };
 }
 
 const ACTION_TOOLS: ActionToolSpec[] = [
+  // --- Rows / columns: ONE OR MORE, one tool per operation×orientation. The
+  //     studio takes a single `rows`/`columns` block target (a single row/column
+  //     is a one-element block), so there is no "row" vs "rows" tool to choose. ---
   {
-    name: "append_table_row",
-    title: "Append Table Row (raw)",
-    schema: schemas.appendTableRowSchema,
-    pastTenseEdit: "appended a row to",
+    name: "append_table_rows",
+    title: "Append Table Rows (raw)",
+    schema: schemas.appendTableRowsSchema,
+    pastTenseEdit: "appended rows to",
     annotations: { openWorldHint: true },
     description:
-      "Add a row to the END of a table's raw source. Provide the new row's 'cells' left to right (omit for a blank row)." +
+      "Add ONE OR MORE rows to the END of a table's raw source. 'cells' is a 2D array: outer = rows top to bottom, inner = that row's cells left to right (one per column; use { value: null } for blanks). Pass a single row to add one, several for a block." +
       ACTION_SUFFIX,
-    buildAction: (a) => ({ operation: "append", target: withCells({ type: "row" }, a.cells) }),
+    buildAction: (a) => buildRowColumnEdit("append", "rows", a.cells),
   },
   {
-    name: "append_table_column",
-    title: "Append Table Column (raw)",
-    schema: schemas.appendTableColumnSchema,
-    pastTenseEdit: "appended a column to",
+    name: "append_table_columns",
+    title: "Append Table Columns (raw)",
+    schema: schemas.appendTableColumnsSchema,
+    pastTenseEdit: "appended columns to",
     annotations: { openWorldHint: true },
     description:
-      "Add a column to the END of a table's raw source. Provide the new column's 'cells' top to bottom (omit for a blank column)." +
+      "Add ONE OR MORE columns to the END of a table's raw source. 'cells' is a 2D array: outer = columns left to right, inner = that column's cells top to bottom (one per row). Pass a single column to add one, several for a block." +
       ACTION_SUFFIX,
-    buildAction: (a) => ({ operation: "append", target: withCells({ type: "column" }, a.cells) }),
+    buildAction: (a) => buildRowColumnEdit("append", "columns", a.cells),
   },
   {
-    name: "insert_table_row",
-    title: "Insert Table Row (raw)",
-    schema: schemas.insertTableRowSchema,
-    pastTenseEdit: "inserted a row into",
+    name: "insert_table_rows",
+    title: "Insert Table Rows (raw)",
+    schema: schemas.insertTableRowsSchema,
+    pastTenseEdit: "inserted rows into",
     annotations: { openWorldHint: true },
     description:
-      "Insert a row at 'position' in a table's raw source, shifting the rows at and below it down. 'position' must be between 1 and the table height (height appends to the end). Provide the new row's 'cells' left to right (omit for a blank row)." +
+      "Insert ONE OR MORE rows at 'position' in a table's raw source, shifting the rows at and below it down. 'position' is 1..height (height appends to the end). 'cells' is a 2D array (rows × that row's cells)." +
       ACTION_SUFFIX,
-    buildAction: (a) => ({
-      operation: "insert",
-      target: withCells({ type: "row", position: a.position as number }, a.cells),
-    }),
+    buildAction: (a) => buildRowColumnEdit("insert", "rows", a.cells, a.position as number),
   },
   {
-    name: "insert_table_column",
-    title: "Insert Table Column (raw)",
-    schema: schemas.insertTableColumnSchema,
-    pastTenseEdit: "inserted a column into",
+    name: "insert_table_columns",
+    title: "Insert Table Columns (raw)",
+    schema: schemas.insertTableColumnsSchema,
+    pastTenseEdit: "inserted columns into",
     annotations: { openWorldHint: true },
     description:
-      "Insert a column at 'position' in a table's raw source, shifting the columns at and to the right of it. 'position' must be between 1 and the table width (width appends to the end). Provide the new column's 'cells' top to bottom (omit for a blank column)." +
+      "Insert ONE OR MORE columns at 'position' in a table's raw source, shifting the columns at and to the right of it. 'position' is 1..width (width appends to the end). 'cells' is a 2D array (columns × that column's cells)." +
       ACTION_SUFFIX,
-    buildAction: (a) => ({
-      operation: "insert",
-      target: withCells({ type: "column", position: a.position as number }, a.cells),
-    }),
+    buildAction: (a) => buildRowColumnEdit("insert", "columns", a.cells, a.position as number),
   },
   {
-    name: "delete_table_row",
-    title: "Delete Table Row (raw)",
-    schema: schemas.deleteTableRowSchema,
-    pastTenseEdit: "deleted a row from",
+    name: "delete_table_rows",
+    title: "Delete Table Rows (raw)",
+    schema: schemas.deleteTableRowsSchema,
+    pastTenseEdit: "deleted rows from",
     annotations: { destructiveHint: true, openWorldHint: true },
     description:
-      "Delete the row at 'position' (0..height-1) from a table's raw source, shifting the rows below it up." +
+      "Delete ONE OR MORE rows starting at 'position' (1..height-1) from a table's raw source, shifting the rows below up. 'count' defaults to 1. The header row (0) cannot be deleted." +
       ACTION_SUFFIX,
-    buildAction: (a) => ({ operation: "delete", target: { type: "row", position: a.position as number } }),
+    buildAction: (a) => buildRowColumnDelete("rows", a.position as number, a.count as number | undefined),
   },
   {
-    name: "delete_table_column",
-    title: "Delete Table Column (raw)",
-    schema: schemas.deleteTableColumnSchema,
-    pastTenseEdit: "deleted a column from",
+    name: "delete_table_columns",
+    title: "Delete Table Columns (raw)",
+    schema: schemas.deleteTableColumnsSchema,
+    pastTenseEdit: "deleted columns from",
     annotations: { destructiveHint: true, openWorldHint: true },
     description:
-      "Delete the column at 'position' (0..width-1) from a table's raw source, shifting the columns to its right left." +
+      "Delete ONE OR MORE columns starting at 'position' (1..width-1) from a table's raw source, shifting the columns to the right left. 'count' defaults to 1. The leading-label column (0) cannot be deleted." +
       ACTION_SUFFIX,
-    buildAction: (a) => ({ operation: "delete", target: { type: "column", position: a.position as number } }),
+    buildAction: (a) => buildRowColumnDelete("columns", a.position as number, a.count as number | undefined),
   },
   {
     name: "update_table_row",
@@ -197,7 +225,7 @@ const ACTION_TOOLS: ActionToolSpec[] = [
       ACTION_SUFFIX,
     buildAction: (a) => ({
       operation: "update",
-      target: withCells({ type: "row", position: a.position as number }, a.cells),
+      target: { type: "row", position: a.position as number, cells: a.cells as Types.RawCellInput[] },
     }),
   },
   {
@@ -211,7 +239,7 @@ const ACTION_TOOLS: ActionToolSpec[] = [
       ACTION_SUFFIX,
     buildAction: (a) => ({
       operation: "update",
-      target: withCells({ type: "column", position: a.position as number }, a.cells),
+      target: { type: "column", position: a.position as number, cells: a.cells as Types.RawCellInput[] },
     }),
   },
   {
@@ -267,6 +295,25 @@ const ACTION_TOOLS: ActionToolSpec[] = [
     buildAction: (a) => ({
       operation: "unmerge",
       target: { type: "cells", row: a.row as number, column: a.column as number },
+    }),
+  },
+  {
+    name: "update_table_range",
+    title: "Update Table Range (raw)",
+    schema: schemas.updateTableRangeSchema,
+    pastTenseEdit: "updated a range of",
+    annotations: { idempotentHint: true, openWorldHint: true },
+    description:
+      "Overwrite a rectangular RANGE of cells in place, anchored at the top-left ('row','column'), in a table's raw source. 'cells' is a 2D array (rows × that row's cells); the range must cover more than one cell and fit within the table (not resized). For a single cell use openl_update_table_cell." +
+      ACTION_SUFFIX,
+    buildAction: (a) => ({
+      operation: "update",
+      target: {
+        type: "range",
+        row: a.row as number,
+        column: a.column as number,
+        cells: a.cells as Types.RawCellInput[][],
+      },
     }),
   },
 ];

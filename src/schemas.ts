@@ -215,19 +215,33 @@ export const appendTableSchema = z.object({
 // the tools surface the new id the same way update/append do.
 // =============================================================================
 
+/** A cell value the studio accepts (`oneOf` string/number/boolean, or null for an empty/cleared cell). */
+const cellValueSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+
 /** A cell value for a raw table-source edit. */
 const rawCellInputSchema = z.object({
-  value: z.any().optional().describe("Cell value (string, number, boolean, …). Null or omitted is an empty cell."),
+  value: cellValueSchema.optional().describe("Cell value: a string, number, or boolean. Null or omitted is an empty cell."),
   colspan: z.number().int().min(1).optional().describe("Number of columns this cell spans (>= 2 to merge; omit or 1 for a single column)."),
   rowspan: z.number().int().min(1).optional().describe("Number of rows this cell spans (>= 2 to merge; omit or 1 for a single row)."),
   covered: z.boolean().optional().describe("Marks a cell covered by another cell's span; its value is ignored."),
 }).strict();
 
-const rowCellsSchema = z.array(rawCellInputSchema).optional().describe(
-  "Row cells, left to right. A cell may set colspan/rowspan to merge. Must not be wider than the table. Omit to add blank cells.",
+const rowCellsSchema = z.array(rawCellInputSchema).min(1).describe(
+  "Row cells, left to right. Required and non-empty — provide one cell per column (use { value: null } for a blank cell). A cell may set colspan/rowspan to merge. Must not be wider than the table.",
 );
-const columnCellsSchema = z.array(rawCellInputSchema).optional().describe(
-  "Column cells, top to bottom. A cell may set colspan/rowspan to merge. Must not be taller than the table. Omit to add blank cells.",
+const columnCellsSchema = z.array(rawCellInputSchema).min(1).describe(
+  "Column cells, top to bottom. Required and non-empty — provide one cell per row (use { value: null } for a blank cell). A cell may set colspan/rowspan to merge. Must not be taller than the table.",
+);
+
+/** One or more lines (rows or columns), each a non-empty list of cells — the 2D block shared by the rows/columns/range tools. */
+const cellBlockSchema = z.array(z.array(rawCellInputSchema).min(1)).min(1);
+/** One or more rows: outer = rows (top to bottom), inner = cells in that row (left to right). */
+const rowsBlockSchema = cellBlockSchema.describe(
+  "Rows top to bottom, each a non-empty list of cells left to right (one cell per column; use { value: null } for a blank cell). Pass one row to add/insert a single row, several for a block. Each row as wide as the table.",
+);
+/** One or more columns: outer = columns (left to right), inner = cells in that column (top to bottom). */
+const columnsBlockSchema = cellBlockSchema.describe(
+  "Columns left to right, each a non-empty list of cells top to bottom (one cell per row; use { value: null } for a blank cell). Pass one column to add/insert a single column, several for a block. Each column as tall as the table.",
 );
 
 const tableActionBase = {
@@ -235,38 +249,6 @@ const tableActionBase = {
   tableId: tableIdSchema,
   response_format: ResponseFormat.optional(),
 };
-
-export const appendTableRowSchema = z.object({
-  ...tableActionBase,
-  cells: rowCellsSchema,
-}).strict();
-
-export const appendTableColumnSchema = z.object({
-  ...tableActionBase,
-  cells: columnCellsSchema,
-}).strict();
-
-export const insertTableRowSchema = z.object({
-  ...tableActionBase,
-  position: z.number().int().min(1).describe("0-based index the new row will occupy. Row 0 is the header, so this must be between 1 and the table height (height appends to the end)."),
-  cells: rowCellsSchema,
-}).strict();
-
-export const insertTableColumnSchema = z.object({
-  ...tableActionBase,
-  position: z.number().int().min(1).describe("0-based index the new column will occupy. Column 0 carries the leading labels, so this must be between 1 and the table width (width appends to the end)."),
-  cells: columnCellsSchema,
-}).strict();
-
-export const deleteTableRowSchema = z.object({
-  ...tableActionBase,
-  position: z.number().int().min(0).describe("0-based index of the row to delete (0..height-1). Rows below it shift up."),
-}).strict();
-
-export const deleteTableColumnSchema = z.object({
-  ...tableActionBase,
-  position: z.number().int().min(0).describe("0-based index of the column to delete (0..width-1). Columns to its right shift left."),
-}).strict();
 
 export const updateTableRowSchema = z.object({
   ...tableActionBase,
@@ -284,7 +266,7 @@ export const updateTableCellSchema = z.object({
   ...tableActionBase,
   row: z.number().int().min(0).describe("0-based row index of the cell (0..height-1)."),
   column: z.number().int().min(0).describe("0-based column index of the cell (0..width-1)."),
-  value: z.union([z.string(), z.number(), z.boolean(), z.null()]).describe("New cell value (string, number, or boolean) to set, or null to clear the cell. Required — pass null explicitly to clear so the intent is unambiguous."),
+  value: cellValueSchema.describe("New cell value (string, number, or boolean) to set, or null to clear the cell. Required — pass null explicitly to clear so the intent is unambiguous."),
 }).strict();
 
 export const mergeTableCellsSchema = z.object({
@@ -304,6 +286,68 @@ export const unmergeTableCellsSchema = z.object({
   row: z.number().int().min(0).describe("0-based row index of any cell in the merged region (0..height-1)."),
   column: z.number().int().min(0).describe("0-based column index of any cell in the merged region (0..width-1)."),
 }).strict();
+
+// -----------------------------------------------------------------------------
+// Row / column table-source actions — append/insert/delete ONE OR MORE rows or
+// columns with a single tool per operation. The studio takes one block target
+// (`rows`/`columns`, accepting one or more), so a single row/column is just a
+// one-element block. (Cell- and range-level edits stay separate below: they are
+// different shapes, not a one-vs-many choice.)
+// -----------------------------------------------------------------------------
+
+export const appendTableRowsSchema = z.object({
+  ...tableActionBase,
+  cells: rowsBlockSchema,
+}).strict();
+
+export const appendTableColumnsSchema = z.object({
+  ...tableActionBase,
+  cells: columnsBlockSchema,
+}).strict();
+
+export const insertTableRowsSchema = z.object({
+  ...tableActionBase,
+  position: z.number().int().min(1).describe("0-based index the first new row will occupy (1..height; height appends to the end). Rows at and below it shift down."),
+  cells: rowsBlockSchema,
+}).strict();
+
+export const insertTableColumnsSchema = z.object({
+  ...tableActionBase,
+  position: z.number().int().min(1).describe("0-based index the first new column will occupy (1..width; width appends to the end). Columns at and to the right of it shift right."),
+  cells: columnsBlockSchema,
+}).strict();
+
+export const deleteTableRowsSchema = z.object({
+  ...tableActionBase,
+  position: z.number().int().min(1).describe("0-based index of the first body row to delete (1..height-1). The header row (0) cannot be deleted. Rows below the deleted block shift up."),
+  count: z.number().int().min(1).optional().describe("Number of rows to delete starting at 'position' (default 1)."),
+}).strict();
+
+export const deleteTableColumnsSchema = z.object({
+  ...tableActionBase,
+  position: z.number().int().min(1).describe("0-based index of the first column to delete (1..width-1). The leading-label column (0) cannot be deleted. Columns to the right of the deleted block shift left."),
+  count: z.number().int().min(1).optional().describe("Number of columns to delete starting at 'position' (default 1)."),
+}).strict();
+
+export const updateTableRangeSchema = z.object({
+  ...tableActionBase,
+  row: z.number().int().min(0).describe("0-based row index of the top-left cell of the range (0..height-1)."),
+  column: z.number().int().min(0).describe("0-based column index of the top-left cell of the range (0..width-1)."),
+  cells: cellBlockSchema.describe(
+    "Block rows top to bottom, each a non-empty list of cells left to right. Anchored at ('row','column'); must cover more than one cell and fit within the table (the table is not resized).",
+  ),
+}).strict().refine((d) => {
+  // The range must cover more than one cell. Only a single un-spanned cell fails
+  // that — a lone cell with colspan/rowspan still covers more than one cell (the
+  // studio's UpdateRange allows colspan/rowspan), so don't reject it locally.
+  const only = d.cells.length === 1 && d.cells[0].length === 1 ? d.cells[0][0] : undefined;
+  if (!only) return true; // 2+ input cells already cover more than one cell
+  return (only.colspan ?? 1) > 1 || (only.rowspan ?? 1) > 1;
+}, {
+  // A single un-spanned cell — use openl_update_table_cell instead.
+  error: "An update range must cover more than one cell. For a single cell use openl_update_table_cell.",
+  path: ["cells"],
+});
 
 export const listBranchesSchema = z.object({
   repository: repositoryNameSchema,

@@ -489,20 +489,28 @@ describe("Tool Handler Integration Tests", () => {
   });
 
   describe("Table Action Tools (raw source)", () => {
-    it("registers a narrow tool per operation×orientation", () => {
+    it("registers one tool per operation×orientation (one-or-many), plus the update/merge tools", () => {
       const names = getAllTools().map((t) => t.name);
       for (const name of [
-        "append_table_row", "append_table_column",
-        "insert_table_row", "insert_table_column",
-        "delete_table_row", "delete_table_column",
+        "append_table_rows", "append_table_columns",
+        "insert_table_rows", "insert_table_columns",
+        "delete_table_rows", "delete_table_columns",
         "update_table_row", "update_table_column", "update_table_cell",
-        "merge_table_cells", "unmerge_table_cells",
+        "update_table_range", "merge_table_cells", "unmerge_table_cells",
       ]) {
         expect(names).toContain(name);
       }
+      // The old singular row/column tools were folded into the *_rows/*_columns tools.
+      for (const gone of [
+        "append_table_row", "append_table_column",
+        "insert_table_row", "insert_table_column",
+        "delete_table_row", "delete_table_column",
+      ]) {
+        expect(names).not.toContain(gone);
+      }
     });
 
-    it("openl_insert_table_row POSTs an insert/row action carrying position and cells", async () => {
+    it("openl_insert_table_rows sends the rows block target even for ONE row", async () => {
       let postBody: Record<string, any> = {};
       mockAxios.onPost(/\/tables\/t1\/actions$/).reply((config) => {
         postBody = JSON.parse(config.data);
@@ -510,23 +518,23 @@ describe("Tool Handler Integration Tests", () => {
       });
       mockAxios.onGet(/\/tables\/t1$/).reply(200, { id: "t1", name: "T", tableType: "RawSource", kind: "Other" });
 
-      const result = await executeTool("insert_table_row", {
+      const result = await executeTool("insert_table_rows", {
         projectId: "p1",
         tableId: "t1",
         position: 3,
-        cells: [{ value: "A" }, { value: "B" }],
+        cells: [[{ value: "A" }, { value: "B" }]],
       }, client);
 
+      // The studio has only a `rows` block target — one row is a one-element block.
       expect(postBody).toEqual({
         operation: "insert",
-        target: { type: "row", position: 3, cells: [{ value: "A" }, { value: "B" }] },
+        target: { type: "rows", position: 3, cells: [[{ value: "A" }, { value: "B" }]] },
       });
-      expect(result.content[0].text).toContain("Successfully inserted a row into table t1");
-      // 204 in-place edit: the id is unchanged.
+      expect(result.content[0].text).toContain("Successfully inserted rows into table t1");
       expect(result.content[0].text).not.toContain("tableIdChanged");
     });
 
-    it("openl_append_table_column omits cells from the action when none are supplied", async () => {
+    it("openl_insert_table_rows sends the block insert/rows target for SEVERAL rows", async () => {
       let postBody: Record<string, any> = {};
       mockAxios.onPost(/\/tables\/t1\/actions$/).reply((config) => {
         postBody = JSON.parse(config.data);
@@ -534,9 +542,42 @@ describe("Tool Handler Integration Tests", () => {
       });
       mockAxios.onGet(/\/tables\/t1$/).reply(200, { id: "t1", name: "T", tableType: "RawSource", kind: "Other" });
 
-      await executeTool("append_table_column", { projectId: "p1", tableId: "t1" }, client);
+      await executeTool("insert_table_rows", {
+        projectId: "p1", tableId: "t1", position: 2,
+        cells: [[{ value: "a" }, { value: "b" }], [{ value: "c" }, { value: "d" }]],
+      }, client);
 
-      expect(postBody).toEqual({ operation: "append", target: { type: "column" } });
+      // Two rows → block `rows` target with the 2D cells array.
+      expect(postBody).toEqual({
+        operation: "insert",
+        target: { type: "rows", position: 2, cells: [[{ value: "a" }, { value: "b" }], [{ value: "c" }, { value: "d" }]] },
+      });
+    });
+
+    it("openl_append_table_columns requires non-empty cells (omitting them is rejected, no request sent)", async () => {
+      let called = false;
+      mockAxios.onPost(/\/actions$/).reply(() => {
+        called = true;
+        return [204];
+      });
+
+      await expect(
+        executeTool("append_table_columns", { projectId: "p1", tableId: "t1" }, client),
+      ).rejects.toThrow(/Invalid arguments for append_table_columns/);
+      expect(called).toBe(false);
+    });
+
+    it("openl_append_table_columns sends the columns block target even for ONE column", async () => {
+      let postBody: Record<string, any> = {};
+      mockAxios.onPost(/\/tables\/t1\/actions$/).reply((config) => {
+        postBody = JSON.parse(config.data);
+        return [204];
+      });
+      mockAxios.onGet(/\/tables\/t1$/).reply(200, { id: "t1", name: "T", tableType: "RawSource", kind: "Other" });
+
+      await executeTool("append_table_columns", { projectId: "p1", tableId: "t1", cells: [[{ value: "a" }, { value: "b" }]] }, client);
+
+      expect(postBody).toEqual({ operation: "append", target: { type: "columns", cells: [[{ value: "a" }, { value: "b" }]] } });
     });
 
     it("openl_update_table_cell sends an explicit null value so the cell is cleared", async () => {
@@ -592,7 +633,7 @@ describe("Tool Handler Integration Tests", () => {
       mockAxios.onPost(/\/tables\/t1\/actions$/).reply(200, { id: "t1_moved" });
       mockAxios.onGet(/\/tables\/t1_moved$/).reply(200, { id: "t1_moved", name: "T", tableType: "RawSource", kind: "Other" });
 
-      const result = await executeTool("delete_table_row", {
+      const result = await executeTool("delete_table_rows", {
         projectId: "p1", tableId: "t1", position: 5,
       }, client);
 
@@ -602,7 +643,21 @@ describe("Tool Handler Integration Tests", () => {
       expect(text).toContain("t1");
     });
 
-    it("rejects insert_table_row without a position (no request sent)", async () => {
+    it("openl_delete_table_rows defaults count to 1 on the rows block target", async () => {
+      let postBody: Record<string, any> = {};
+      mockAxios.onPost(/\/tables\/t1\/actions$/).reply((config) => {
+        postBody = JSON.parse(config.data);
+        return [204];
+      });
+      mockAxios.onGet(/\/tables\/t1$/).reply(200, { id: "t1", name: "T", tableType: "RawSource", kind: "Other" });
+
+      await executeTool("delete_table_rows", { projectId: "p1", tableId: "t1", position: 4 }, client);
+
+      // count omitted → defaults to 1; the studio has only the `rows` block target.
+      expect(postBody).toEqual({ operation: "delete", target: { type: "rows", position: 4, count: 1 } });
+    });
+
+    it("rejects insert_table_rows without a position (no request sent)", async () => {
       let called = false;
       mockAxios.onPost(/\/actions$/).reply(() => {
         called = true;
@@ -610,8 +665,8 @@ describe("Tool Handler Integration Tests", () => {
       });
 
       await expect(
-        executeTool("insert_table_row", { projectId: "p1", tableId: "t1" }, client),
-      ).rejects.toThrow(/Invalid arguments for insert_table_row/);
+        executeTool("insert_table_rows", { projectId: "p1", tableId: "t1", cells: [[{ value: "a" }]] }, client),
+      ).rejects.toThrow(/Invalid arguments for insert_table_rows/);
       expect(called).toBe(false);
     });
 
@@ -623,8 +678,8 @@ describe("Tool Handler Integration Tests", () => {
       });
 
       await expect(
-        executeTool("delete_table_row", { projectId: "p1", tableId: "t1", position: -1 }, client),
-      ).rejects.toThrow(/Invalid arguments for delete_table_row/);
+        executeTool("delete_table_rows", { projectId: "p1", tableId: "t1", position: -1 }, client),
+      ).rejects.toThrow(/Invalid arguments for delete_table_rows/);
       expect(called).toBe(false);
     });
 
@@ -649,8 +704,66 @@ describe("Tool Handler Integration Tests", () => {
       });
 
       await expect(
-        executeTool("append_table_row", { projectId: "p1", tableId: "t1", cells: [{ value: "a", colspan: 0 }] }, client),
-      ).rejects.toThrow(/Invalid arguments for append_table_row/);
+        executeTool("append_table_rows", { projectId: "p1", tableId: "t1", cells: [[{ value: "a", colspan: 0 }]] }, client),
+      ).rejects.toThrow(/Invalid arguments for append_table_rows/);
+      expect(called).toBe(false);
+    });
+
+    it("rejects deleting the header row at position 0 (backend constraint, no request sent)", async () => {
+      let called = false;
+      mockAxios.onPost(/\/actions$/).reply(() => {
+        called = true;
+        return [204];
+      });
+
+      await expect(
+        executeTool("delete_table_rows", { projectId: "p1", tableId: "t1", position: 0 }, client),
+      ).rejects.toThrow(/Invalid arguments for delete_table_rows/);
+      expect(called).toBe(false);
+    });
+
+    it("openl_delete_table_rows POSTs a delete/rows block action when count >= 2", async () => {
+      let postBody: Record<string, any> = {};
+      mockAxios.onPost(/\/tables\/t1\/actions$/).reply((config) => {
+        postBody = JSON.parse(config.data);
+        return [204];
+      });
+      mockAxios.onGet(/\/tables\/t1$/).reply(200, { id: "t1", name: "T", tableType: "RawSource", kind: "Other" });
+
+      await executeTool("delete_table_rows", { projectId: "p1", tableId: "t1", position: 3, count: 4 }, client);
+
+      expect(postBody).toEqual({ operation: "delete", target: { type: "rows", position: 3, count: 4 } });
+    });
+
+    it("openl_update_table_range POSTs an update/range block action anchored at row/column", async () => {
+      let postBody: Record<string, any> = {};
+      mockAxios.onPost(/\/tables\/t1\/actions$/).reply((config) => {
+        postBody = JSON.parse(config.data);
+        return [204];
+      });
+      mockAxios.onGet(/\/tables\/t1$/).reply(200, { id: "t1", name: "T", tableType: "RawSource", kind: "Other" });
+
+      await executeTool("update_table_range", {
+        projectId: "p1", tableId: "t1", row: 1, column: 2,
+        cells: [[{ value: "x" }, { value: "y" }]],
+      }, client);
+
+      expect(postBody).toEqual({
+        operation: "update",
+        target: { type: "range", row: 1, column: 2, cells: [[{ value: "x" }, { value: "y" }]] },
+      });
+    });
+
+    it("rejects a 1x1 update range (use update_table_cell)", async () => {
+      let called = false;
+      mockAxios.onPost(/\/actions$/).reply(() => {
+        called = true;
+        return [204];
+      });
+
+      await expect(
+        executeTool("update_table_range", { projectId: "p1", tableId: "t1", row: 0, column: 0, cells: [[{ value: "x" }]] }, client),
+      ).rejects.toThrow(/more than one cell/);
       expect(called).toBe(false);
     });
   });

@@ -209,7 +209,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 
 ### FR-1: Tool Execution
 
-**Requirement**: MCP server provides 52 tools.
+**Requirement**: MCP server provides 53 tools.
 
 **Repository Tools**:
 - `openl_list_repositories` - List all design repositories
@@ -246,12 +246,13 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - `openl_create_project_table` - Create new table/rule
 - `openl_delete_table` - Delete an entire table from the project
 
-**Raw Table-Source Action Tools** (single in-place edit of a table's raw source):
-- `openl_append_table_row` / `openl_append_table_column` - Append a row/column
-- `openl_insert_table_row` / `openl_insert_table_column` - Insert a row/column at a position
-- `openl_delete_table_row` / `openl_delete_table_column` - Delete a row/column at a position
+**Raw Table-Source Action Tools** (in-place edit of a table's raw source; one tool per operation×orientation accepts one OR more rows/columns):
+- `openl_append_table_rows` / `openl_append_table_columns` - Append one or more rows/columns
+- `openl_insert_table_rows` / `openl_insert_table_columns` - Insert one or more rows/columns at a position
+- `openl_delete_table_rows` / `openl_delete_table_columns` - Delete one or more rows/columns from a position (count default 1)
 - `openl_update_table_row` / `openl_update_table_column` - Overwrite a row/column at a position
 - `openl_update_table_cell` - Set a single cell's value
+- `openl_update_table_range` - Overwrite a rectangular range of cells
 - `openl_merge_table_cells` / `openl_unmerge_table_cells` - Merge/unmerge cells
 
 **Testing Tools**:
@@ -576,7 +577,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 
 The MCP server is considered successful when:
 
-1. ✅ All 52 tools execute successfully
+1. ✅ All 53 tools execute successfully
 2. ✅ All tools support response_format parameter
 3. ✅ All list operations support pagination
 4. ✅ Character limits enforced on all responses
@@ -620,4 +621,4 @@ Potential enhancements for future versions:
 
 *Last Updated: 2026-01-28*
 *Version: 1.0.0*
-*Status: Production-ready (52 tools, 14 prompts)*
+*Status: Production-ready (53 tools, 14 prompts)*
