@@ -397,7 +397,7 @@ export function registerTableHandlers(): void {
     title: "Delete Table",
     version: "1.0.0",
     description:
-      "Delete an ENTIRE table from a project. The whole table area is cleared from the sheet regardless of table type, so the table no longer exists once the project is recompiled. To remove only a row or column WITHIN a table, use openl_delete_table_row / openl_delete_table_column instead. If the given id went stale through an edit made via this server, it is resolved to the current id automatically. The studio does not auto-compile after the delete — run openl_project_status afterward to confirm the project still compiles (a dangling reference to the deleted table surfaces there).",
+      "Delete an ENTIRE table from a project. The whole table area is cleared from the sheet regardless of table type, so the table no longer exists once the project is recompiled. To remove only a row or column WITHIN a table, use openl_delete_table_rows / openl_delete_table_columns instead. If the given id went stale through an edit made via this server, it is resolved to the current id automatically. The studio does not auto-compile after the delete — run openl_project_status afterward to confirm the project still compiles (a dangling reference to the deleted table surfaces there).",
     inputSchema: schemas.z.toJSONSchema(schemas.deleteTableSchema) as Record<string, unknown>,
     annotations: {
       destructiveHint: true,

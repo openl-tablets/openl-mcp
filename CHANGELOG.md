@@ -9,11 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- 11 raw table-source action tools that apply a single in-place edit to a table (any type): `openl_append_table_row`/`_column`, `openl_insert_table_row`/`_column`, `openl_delete_table_row`/`_column`, `openl_update_table_row`/`_column`/`_cell`, and `openl_merge_table_cells`/`openl_unmerge_table_cells`. Each returns the table's current id (table ids change when an edit relocates the table) and triggers a recompile.
+- 12 raw table-source action tools that edit a table's raw source in place (any type). One tool per operation×orientation handles ONE OR MORE rows/columns — `openl_append_table_rows`/`_columns`, `openl_insert_table_rows`/`_columns`, `openl_delete_table_rows`/`_columns` — sending the studio's `rows`/`columns` block target (a single row/column is a one-element block), so there is no separate single-vs-block tool. Plus `openl_update_table_row`/`_column`/`_cell`, `openl_update_table_range` (overwrite a rectangular range), and `openl_merge_table_cells`/`openl_unmerge_table_cells`. Each returns the table's current id (table ids change when an edit relocates the table) and triggers a recompile.
 - `openl_delete_table` tool to delete an entire table from a project (`DELETE /projects/{projectId}/tables/{tableId}`).
 
 ### Changed
 
+- Tightened raw table-action validation to match the studio's constraints: `cells` is now required (non-empty) for the row/column edit tools, and the delete tools reject `position` 0 (the header row / leading-label column cannot be deleted) — both now fail locally with an actionable error instead of an opaque backend response.
 - Simplified how the server is delivered: run it with `npx -y openl-mcp <openl-url>` when Node.js is installed, or on the official `node:lts-alpine` image (`docker run --rm -i node:lts-alpine npx -y openl-mcp <openl-url>`) when it isn't — there is no longer a custom Docker image to pull. Setup docs now cover Claude Code, Claude Desktop, Cursor, and VS Code (GitHub Copilot) connecting over stdio.
 - `compose.yaml` now starts OpenL Studio together with the MCP server, with the MCP service running the latest nightly build (the `x` prerelease tarball) via `npx` on `node:lts-alpine`; the separate `compose.studio.yaml` was folded into it.
 - The prompt registry is now built by reading the `prompts/` directory and deriving each prompt's title, description, and arguments from its file's YAML frontmatter, instead of duplicating those definitions in a hardcoded array. A prompt's name comes from its filename, so the redundant `name` field was dropped from every prompt's frontmatter.

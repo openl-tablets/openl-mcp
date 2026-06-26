@@ -504,14 +504,17 @@ export interface RawCellInput {
  * single cell, `rowspan`/`colspan` for a merge).
  */
 export interface RawTableActionTarget {
-  type: "row" | "column" | "cell" | "cells";
+  type: "row" | "column" | "cell" | "cells" | "rows" | "columns" | "range";
   position?: number;
-  cells?: RawCellInput[];
+  /** A single row/column is `RawCellInput[]`; a block (rows/columns/range) is `RawCellInput[][]`. */
+  cells?: RawCellInput[] | RawCellInput[][];
   row?: number;
   column?: number;
   value?: unknown;
   rowspan?: number;
   colspan?: number;
+  /** Number of rows/columns to delete in a `rows`/`columns` delete (>= 1; defaults to 1). */
+  count?: number;
 }
 
 /**
