@@ -108,6 +108,9 @@ export const getTableSchema = z.object({
   projectId: projectIdSchema,
   tableId: tableIdSchema,
   raw: z.boolean().optional().describe("If true, returns the raw table view as a 2D matrix of cells without any parsing or structure interpretation. Useful for reading tables of unknown or custom types, preserving exact cell positioning and merge regions."),
+  startRow: z.number().int().min(0).optional().describe("Zero-based index of the first row of the raw view; omit to start at the top. Combine with maxRows to read a large table in slices. Requires raw=true."),
+  maxRows: z.number().int().min(1).optional().describe("Maximum number of rows of the raw view, counted from startRow; omit to read to the end. When the returned window omits rows, the response carries 'totalRows' (the table's total row count). Requires raw=true."),
+  styles: z.boolean().optional().describe("If true, each raw cell carries its Excel style (background/font colour, bold/italic/underline, alignment, indent, borders) in a 'style' field; a style field is absent for its default. Requires raw=true."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
