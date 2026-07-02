@@ -335,7 +335,7 @@ export function registerTableHandlers(): void {
     title: "Get Table Structure & Data",
     version: "1.0.0",
     description:
-      "Get detailed information about a specific table/rule. By default returns a parsed table structure with signature, conditions, actions, dimension properties, and row data. Set raw=true to get an unparsed 2D cell matrix (RawTableView) instead — useful for unknown/custom table types or preserving exact cell layout. Note: raw output cannot be passed directly to openl_update_table (which expects the parsed form). A table id changes when an edit relocates the table; if the given id went stale through an edit made via this server, it is resolved to the current id automatically — otherwise refresh ids with openl_list_tables().",
+      "Get detailed information about a specific table/rule. By default returns a parsed table structure with signature, conditions, actions, dimension properties, and row data. Set raw=true to get an unparsed 2D cell matrix (RawTableView) instead — useful for unknown/custom table types or preserving exact cell layout. Raw-only options: startRow/maxRows read a large table in row slices (when the returned window omits rows the response carries 'totalRows'), and styles=true adds each cell's Excel style (background/font colour, bold/italic/underline, alignment, indent, borders). Note: raw output cannot be passed directly to openl_update_table (which expects the parsed form). A table id changes when an edit relocates the table; if the given id went stale through an edit made via this server, it is resolved to the current id automatically — otherwise refresh ids with openl_list_tables().",
     inputSchema: schemas.z.toJSONSchema(schemas.getTableSchema) as Record<string, unknown>,
     annotations: {
       readOnlyHint: true,
@@ -347,6 +347,9 @@ export function registerTableHandlers(): void {
         projectId: string;
         tableId: string;
         raw?: boolean;
+        startRow?: number;
+        maxRows?: number;
+        styles?: boolean;
         response_format?: "json" | "markdown";
       };
 
@@ -354,11 +357,28 @@ export function registerTableHandlers(): void {
         throw new McpError(ErrorCode.InvalidParams, "Missing required arguments: projectId, tableId. Use openl_list_tables() to find valid table IDs");
       }
 
+      // styles: false is the default and treated as unset, so callers that
+      // always send boolean flags explicitly are not rejected.
+      const rawOnlyArgs: string[] = (["startRow", "maxRows"] as const).filter((name) => typedArgs[name] !== undefined);
+      if (typedArgs.styles) {
+        rawOnlyArgs.push("styles");
+      }
+      if (rawOnlyArgs.length > 0 && !typedArgs.raw) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `${rawOnlyArgs.join(", ")} only apply to the raw table view — set raw=true to use ${rawOnlyArgs.length > 1 ? "them" : "it"}.`,
+        );
+      }
+
       const format = validateResponseFormat(typedArgs.response_format);
 
       const fetchTable = (id: string): Promise<Types.TableView | Types.RawTableView> =>
         typedArgs.raw
-          ? client.getTable(typedArgs.projectId, id, true)
+          ? client.getTable(typedArgs.projectId, id, true, {
+              startRow: typedArgs.startRow,
+              maxRows: typedArgs.maxRows,
+              styles: typedArgs.styles,
+            })
           : client.getTable(typedArgs.projectId, id);
 
       // EPBDS-16084: a table's id changes after every edit. If this id went
