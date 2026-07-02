@@ -1,272 +1,52 @@
 # Release Notes - OpenL MCP Server
 
-## [Version 1.0.0](https://github.com/openl-tablets/openl-mcp/releases/tag/v1.0.0) - February 23, 2026
-
-The OpenL MCP Server enables **natural language interaction with OpenL Studio** through AI assistants like Claude Desktop, Cursor IDE, and VS Code Copilot. This initial release brings 40 production-ready tools, 14 expert guidance prompts, and comprehensive MCP protocol support to business rules management.
-
-Built on the Model Context Protocol (MCP) v1.26.0, the server acts as a bridge between AI assistants and OpenL Studio's REST API, transforming complex business rules operations into simple conversational commands. Business analysts, QA teams, and operations staff can now create rules, run tests, and deploy to production using plain English - no programming required.
+This document provides an overview of all OpenL MCP Server releases. For detailed release notes, see the version-specific files in the [docs/release-notes/](docs/release-notes/) folder.
 
 ---
 
-## New Features
+## Latest Release
 
-### 40 Production-Ready MCP Tools
+### [Version 1.1.0](docs/release-notes/v1.1.0.md) - July 2, 2026
 
-The server provides comprehensive OpenL Studio access through 40 tools organized into functional categories:
+**Highlights:**
+- 🚀 52 production-ready tools (up from 40) with 11 new raw table-source action tools
+- 🖥️ CLI mode for direct tool execution from shell without MCP client
+- 📦 Simplified deployment via `npx` - no custom Docker image required
+- 🔄 Streamable HTTP transport (MCP spec 2025-11-25) replaces legacy HTTP+SSE
+- 🎯 Automatic table ID resolution after relocating edits
+- ⏱️ Server-side trace waiting eliminates polling in agent workflows
+- 🛡️ Pre-write validation and detailed error messages for better agent recovery
+- 🔐 Removed Basic Auth and query-parameter credentials (PAT only)
+- 📊 Enhanced project creation with atomic clone mode
+- 🐛 Zero npm audit vulnerabilities
 
-**Repository Management (4 tools)**
-- `openl_list_repositories` - List all design repositories with metadata
-- `openl_list_branches` - List Git branches with current branch indicator
-- `openl_list_repository_features` - Get repository capabilities
-- `openl_repository_project_revisions` - Get committed project revision history
+Built on Model Context Protocol v1.29.0, this release focuses on improving the agent experience with automatic error recovery, seamless multi-step operations, and comprehensive table manipulation capabilities.
 
-**Project Management (11 tools)**
-- `openl_list_projects` - List and filter projects with pagination
-- `openl_get_project` - Get comprehensive project details
-- `openl_create_project` - Create a new project
-- `openl_open_project` - Open project for editing with branch/revision support
-- `openl_save_project` - Save changes to Git with validation
-- `openl_close_project` - Close project with save/discard safety checks
-- `openl_project_status` - Get compile state and diagnostics (errors/warnings with location)
-- `openl_create_project_branch` - Create new Git branches
-- `openl_list_project_local_changes` - View uncommitted workspace history
-- `openl_restore_project_local_change` - Restore previous workspace versions
-- `openl_get_project_agents_md` - Get AGENTS.md guidance for the project
-
-**Project Files (6 tools)**
-- `openl_read_project_file` - Read a file from the project
-- `openl_write_project_file` - Write or update a project file
-- `openl_copy_project_file` - Copy a file within the project
-- `openl_move_project_file` - Move or rename a project file
-- `openl_delete_project_file` - Delete a project file
-- `openl_search_project_files` - Search across project files
-
-**Rules & Tables Management (5 tools)**
-- `openl_list_tables` - List all tables with filtering
-- `openl_get_table` - Get table structure and data
-- `openl_update_table` - Replace entire table
-- `openl_append_table` - Add fields/rows incrementally
-- `openl_create_project_table` - Create new tables programmatically
-
-**Testing (4 tools)**
-- `openl_start_project_tests` - Execute project tests
-- `openl_get_test_results_summary` - Get brief test summary
-- `openl_get_test_results` - Get detailed test results with pagination
-- `openl_get_test_results_by_table` - Filter test results by table
-
-**Tracing (6 tools)**
-- `openl_start_trace` - Start a rule execution trace
-- `openl_cancel_trace` - Cancel a running trace
-- `openl_get_trace_nodes` - List nodes in a trace
-- `openl_get_trace_node_details` - Inspect a single trace node
-- `openl_get_trace_parameter` - Read a trace node parameter value
-- `openl_export_trace` - Export trace data
-
-**Deployment (4 tools)**
-- `openl_list_deploy_repositories` - List deployment repositories
-- `openl_list_deployments` - List active deployments
-- `openl_deploy_project` - Deploy to production
-- `openl_redeploy_project` - Redeploy with new version
-
-### 14 Expert Guidance Prompts
-
-Built-in templates provide contextual assistance for complex OpenL workflows:
-
-**Local Projects**
-- `local_projects` - Working with repository 'local' (no open/save/close; table/rule/test tools only)
-- `project_agents_md` - Surface AGENTS.md guidance for the active project
-
-**Table Creation & Management**
-- `create_rule` - Comprehensive guide for all table types
-- `create_rule_decision_tables` - Detailed decision table guide
-- `create_rule_spreadsheet` - Complete spreadsheet guide with formulas
-- `datatype_vocabulary` - Custom datatype definitions
-- `append_table` - Incremental table updates
-
-**Testing & Validation**
-- `create_test` - Test table creation guide
-- `update_test` - Test modification guide
-- `run_test` - Test execution workflow
-- `validate_after_edit` - Validate a project after editing tables
-
-**Advanced Features**
-- `dimension_properties` - Context-based versioning
-- `project_history` - Project audit trail
-
-**Deployment**
-- `deploy_project` - Deployment workflow
-
-### Multi-Client Support
-
-Seamless integration with three AI platforms:
-
-**Claude Desktop**
-- stdio transport for native integration
-- Remote access via `mcp-remote` proxy
-- Configuration via `claude_desktop_config.json`
-
-**Cursor IDE**
-- stdio, HTTP SSE, and streamablehttp transports
-- Direct HTTP SSE for remote servers
-- Configuration via MCP settings
-
-**VS Code Copilot**
-- HTTP transport with Agent mode requirement
-- Header or query parameter authentication
-- Configuration via `settings.json`
-
-### Flexible Authentication
-
-**Personal Access Token (PAT)** - Recommended for production
-- User-generated revocable tokens
-- Token format: `openl_pat_<publicId>.<secret>`
-- Header format: `Authorization: Token <pat-token>`
-
-### Response Formatting
-
-Four output formats for different use cases:
-- `json` - Structured data for programmatic processing
-- `markdown` - Human-readable formatted output (default)
-- `markdown_concise` - Brief 1-2 paragraph summaries
-- `markdown_detailed` - Comprehensive details with metadata
-
-### Security Features
-
-- **Automatic credential redaction** in logs and error messages
-- **Request tracking** via Client Document ID for audit trails
-- **Input validation** using Zod schemas with strict type checking
-- **Full TypeScript type safety** eliminating runtime type errors
-- **Environment variable storage** for secure credential management
-- **HTTPS/TLS support** for encrypted connections
+[Read Full Release Notes →](docs/release-notes/v1.1.0.md)
 
 ---
 
-## Improvements
+## All Releases
 
-*This is the initial release - no previous version to compare against.*
+### Version 1.1.0 - July 2, 2026
+Major update with 52 tools, CLI mode, simplified deployment, Streamable HTTP transport, and automatic table ID resolution.  
+[View Details →](docs/release-notes/v1.1.0.md)
 
----
-
-## Fixed Bugs
-
-*This is the initial release - no bugs to fix from previous versions.*
-
----
-
-## Updated Libraries
-
-### Core Runtime Dependencies
-
-- **@modelcontextprotocol/sdk** v1.26.0 - Model Context Protocol implementation
-- **TypeScript** 5.7.2 - Language and type system
-- **Node.js** ≥24.0.0 - JavaScript runtime (LTS version)
-- **axios** v1.13.5 - HTTP client with retry logic
-- **Zod** v4.3.5 - Runtime schema validation
-- **Express** v5.2.1 - HTTP server for SSE/streamablehttp
-
-### Testing & Development
-
-- **Jest** v30.2.0 - Testing framework with ES modules support
-- **ESLint** v9.17.0 - Code linting with TypeScript parser
-- **TypeScript Compiler** - Build tooling with source maps
+### Version 1.0.0 - February 23, 2026
+Initial stable release with complete MCP integration, 40 tools, and multi-client support.  
+[View Details →](docs/release-notes/v1.0.0.md)
 
 ---
 
-## Known Issues
+## Upcoming Releases
 
-### Platform Limitations
+### Planned for v1.2.0 (Q3 2026)
 
-- **Node.js 24+ Required** - Earlier versions not supported (use nvm to install Node.js 24)
-- **Claude Desktop Transport** - Only supports stdio (requires `mcp-remote` for remote servers)
-- **Large Responses** - Automatic truncation at 25,000 characters with pagination guidance
-- **Session Management** - Some endpoints require project to be opened first
-
----
-
-## Migration Notes
-
-### From Beta/Pre-release
-
-This is the **initial stable release (v1.0.0)** - no migration required.
-
-If you were using development or beta versions:
-
-1. **Update dependencies**: Run `npm install` to get latest versions
-2. **Check environment variables**: Ensure `OPENL_BASE_URL` is configured correctly
-3. **Update client configurations**: Follow the [Quick Start](docs/guides/quick-start.md) for your AI client
-4. **Review authentication**: Consider switching to Personal Access Tokens for production
-
-### Breaking Changes
-
-None. This is the first stable release.
-
----
-
-## What Can You Do?
-
-### Natural Language Commands
-
-Instead of navigating complex interfaces, simply describe what you want:
-
-- *"Show me all premium calculation rules for auto insurance"*
-- *"In the Auto rating calculation, reduce the maximum allowed Vehicle Discount cap by 5 percentage points."*
-- *"Create a test case for high-risk drivers in California"*
-- *"Deploy the latest underwriting rules to production"*
-- *"Find all rules that use customer age"*
-
-### Key Benefits
-
-**⚡ Faster Development** - Create and modify rules 3-5x faster using natural language instead of manual editing
-
-**🎯 Easier Testing** - Test rules by describing scenarios in plain language without creating Excel files
-
-**🔍 Better Understanding** - Ask questions about existing rules and get instant explanations
-
-**🚀 Safer Deployments** - Review changes, run tests, and deploy with confidence using conversational commands
-
-**📊 Instant Insights** - Get reports and analysis without learning query languages
-
-### Who Should Use This
-
-**Perfect for:**
-- Business Analysts - Create and modify rules without developer help
-- QA Teams - Test rules conversationally and get instant results
-- Product Owners - Review rule changes and understand impact quickly
-- Operations Teams - Deploy rules and monitor production safely
-- Subject Matter Experts - Work directly with rules using business language
-
-**Use Cases:**
-- Insurance - Underwriting rules, premium calculations, risk assessment
-- Banking - Loan approval, fraud detection, compliance rules
-- Healthcare - Eligibility determination, claims processing, care pathways
-- Retail - Pricing rules, promotion logic, inventory management
-- Any Industry - Decision automation, policy enforcement, business logic
-
----
-
-## Getting Started
-
-### Prerequisites
-
-1. **OpenL Studio** - Version 6.0.0 or later
-2. **AI Assistant** - Claude Desktop, Cursor IDE, or VS Code with Copilot
-3. **Node.js** - Version 24 or later (for non-Docker installations)
-
-### Quick Installation
-
-For complete setup instructions, see the [Quick Start](docs/guides/quick-start.md).
-
-
-## What's Next
-
-### Planned for v1.1.0 (Q2 2026)
-
-**New Capabilities**
-1. **Dependency Analysis** (`openl_get_table_dependencies`) - Visualize table relationships
-2. **Branch Management** (`openl_delete_project_branch`) - Delete obsolete branches safely
-3. **Enhanced Project Listing** - Project dependencies in `openl_list_projects`
-
-**Total Tool Count**: 40 active tools
+**New Capabilities:**
+1. **Table Dependencies** (`openl_get_table_dependencies`) - Visualize relationships and impact analysis
+2. **Branch Management** (`openl_delete_project_branch`) - Clean up obsolete branches safely
+3. **Project Dependencies** - Enhanced `openl_list_projects` with dependency graph
+4. **Batch Operations** - Multi-table edits in single transaction
 
 ---
 
@@ -274,16 +54,9 @@ For complete setup instructions, see the [Quick Start](docs/guides/quick-start.m
 
 ### Essential Guides
 - [Quick Start Guide](docs/guides/quick-start.md) - 5-minute setup
-- [Run with Docker](docs/guides/advanced.md#run-with-docker) - No Node.js, compose demo, or a shared server
+- [Run with Docker](docs/guides/advanced.md#run-with-docker) - No Node.js required
 - [Usage Examples](docs/guides/examples.md) - Common workflows
 - [Troubleshooting Guide](docs/guides/troubleshooting.md) - Solutions to common issues
-- [Authentication Guide](docs/guides/advanced.md#authentication) - Security best practices
-
-### Technical Documentation
-- [Architecture](docs/development/architecture.md) - System design
-- [Contributing Guide](docs/development/contributing.md) - Development workflow
-- [Testing Guide](docs/development/testing.md) - Test strategy
-- [Tool Review](docs/development/tool-review.md) - API analysis
 
 ### External Resources
 - [GitHub Repository](https://github.com/openl-tablets/openl-mcp) - Source code
@@ -304,17 +77,6 @@ For complete setup instructions, see the [Quick Start](docs/guides/quick-start.m
 **For OpenL Tablets questions:**
 - [OpenL Documentation](https://openl-tablets.org/)
 - [OpenL Forum](https://github.com/openl-tablets/openl-tablets/discussions)
-
-
-## About This Release
-
-**Released**: February 23, 2026  
-**Version**: 1.0.0  
-**License**: LGPL-3.0  
-**MCP Protocol**: 1.26.0+  
-**Node.js**: ≥24.0.0  
-
-Built by the OpenL Tablets community to bring AI-powered automation to business rules development, testing, and deployment.
 
 ---
 
