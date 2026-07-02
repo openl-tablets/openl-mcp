@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 12 raw table-source action tools that edit a table's raw source in place (any type). One tool per operation×orientation handles ONE OR MORE rows/columns — `openl_append_table_rows`/`_columns`, `openl_insert_table_rows`/`_columns`, `openl_delete_table_rows`/`_columns` — sending the studio's `rows`/`columns` block target (a single row/column is a one-element block), so there is no separate single-vs-block tool. Plus `openl_update_table_row`/`_column`/`_cell`, `openl_update_table_range` (overwrite a rectangular range), and `openl_merge_table_cells`/`openl_unmerge_table_cells`. Each returns the table's current id (table ids change when an edit relocates the table) and triggers a recompile.
 - `openl-mcp login` / `openl-mcp logout`: browser-based sign-in that mints and caches an OpenL Personal Access Token, so the server authenticates automatically without manually copy-pasting a token. Requires an OpenL Studio in OAuth2 mode; an explicit `OPENL_PERSONAL_ACCESS_TOKEN` / `--token` still takes precedence over the cached login.
 - `openl_delete_table` tool to delete an entire table from a project (`DELETE /projects/{projectId}/tables/{tableId}`).
+- `openl_get_table` raw view options: `startRow`/`maxRows` read a large table in row slices (a windowed response reports the table's `totalRows`), and `styles=true` returns each cell's Excel style (background/font colour, bold/italic/underline, alignment, indent, borders).
 
 ### Changed
 

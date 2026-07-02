@@ -193,15 +193,70 @@ describe("Tool Handler Integration Tests", () => {
       };
 
       // get_table uses buildProjectPath
-      mockAxios.onGet(/\/projects\/.*\/tables\/calculatePremium_1234/).reply(200, mockTable);
+      let queryParams: Record<string, unknown> | undefined;
+      mockAxios.onGet(/\/projects\/.*\/tables\/calculatePremium_1234/).reply((config) => {
+        queryParams = config.params as Record<string, unknown>;
+        return [200, mockTable];
+      });
+
+      // styles: false is the default — it is treated as unset (no raw=true
+      // required) and must not reach the backend query.
+      const result = await executeTool("get_table", {
+        projectId: "design-project1",
+        tableId: "calculatePremium_1234",
+        styles: false,
+      }, client);
+
+      expect(queryParams).toBeUndefined();
+      expect(result.content[0].type).toBe("text");
+      expect(result.content[0].text).toContain("calculatePremium");
+    });
+
+    it("openl_get_table forwards startRow/maxRows/styles to the raw view query and returns the slice", async () => {
+      let queryParams: Record<string, unknown> | undefined;
+      mockAxios.onGet(/\/projects\/.*\/tables\/calculatePremium_1234/).reply((config) => {
+        queryParams = config.params as Record<string, unknown>;
+        return [200, {
+          id: "calculatePremium_1234",
+          name: "calculatePremium",
+          tableType: "RawSource",
+          source: [[{ cell: "A3", value: "Age", style: { bold: true, background: "#ccccff" } }]],
+          totalRows: 120,
+        }];
+      });
 
       const result = await executeTool("get_table", {
         projectId: "design-project1",
         tableId: "calculatePremium_1234",
+        raw: true,
+        startRow: 2,
+        maxRows: 1,
+        styles: true,
+        response_format: "json",
       }, client);
 
-      expect(result.content[0].type).toBe("text");
-      expect(result.content[0].text).toContain("calculatePremium");
+      expect(queryParams).toEqual({ raw: true, startRow: 2, maxRows: 1, styles: true });
+      const text = result.content[0].text as string;
+      expect(text).toContain("\"totalRows\": 120");
+      expect(text).toContain("\"background\": \"#ccccff\"");
+    });
+
+    it("openl_get_table rejects startRow/maxRows/styles without raw=true before any request is sent", async () => {
+      let called = false;
+      mockAxios.onGet(/\/projects\/.*\/tables\/.*/).reply(() => {
+        called = true;
+        return [200, {}];
+      });
+
+      await expect(
+        executeTool("get_table", {
+          projectId: "design-project1",
+          tableId: "calculatePremium_1234",
+          startRow: 5,
+          styles: true,
+        }, client)
+      ).rejects.toThrow(/raw=true/);
+      expect(called).toBe(false);
     });
 
     it("openl_create_project_table normalizes a miscased tableType to the canonical token", async () => {

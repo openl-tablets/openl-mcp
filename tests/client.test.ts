@@ -748,6 +748,37 @@ describe("OpenLClient", () => {
         await client.getTable("design-project1", "calculatePremium_1234", true);
       });
 
+      it("should pass startRow/maxRows/styles query params for a raw slice with styles", async () => {
+        const projectIdForPath = "design-project1";
+        const encodedProjectId = encodeURIComponent(projectIdForPath);
+        const encodedTableId = encodeURIComponent("calculatePremium_1234");
+
+        mockAxios.onGet(`/projects/${encodedProjectId}/tables/${encodedTableId}`).reply((config) => {
+          expect(config.params).toEqual({ raw: true, startRow: 10, maxRows: 50, styles: true });
+          return [200, { id: "calculatePremium_1234", source: [], totalRows: 200 }];
+        });
+
+        const result = await client.getTable("design-project1", "calculatePremium_1234", true, {
+          startRow: 10,
+          maxRows: 50,
+          styles: true,
+        });
+        expect(result.totalRows).toBe(200);
+      });
+
+      it("should omit unset raw-view options and a false styles flag from the query", async () => {
+        const projectIdForPath = "design-project1";
+        const encodedProjectId = encodeURIComponent(projectIdForPath);
+        const encodedTableId = encodeURIComponent("calculatePremium_1234");
+
+        mockAxios.onGet(`/projects/${encodedProjectId}/tables/${encodedTableId}`).reply((config) => {
+          expect(config.params).toEqual({ raw: true, maxRows: 25 });
+          return [200, { id: "calculatePremium_1234", source: [] }];
+        });
+
+        await client.getTable("design-project1", "calculatePremium_1234", true, { maxRows: 25, styles: false });
+      });
+
       it("should not pass raw param when raw is false or undefined", async () => {
         const projectIdForPath = "design-project1";
         const encodedProjectId = encodeURIComponent(projectIdForPath);

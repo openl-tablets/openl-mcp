@@ -68,7 +68,7 @@ fetched by id on demand.
 
 ### Rules/Tables Tools (6)
 - `openl_list_tables` - List all tables in project
-- `openl_get_table` - Get table structure and data (use `raw=true` for raw 2D cell matrix view)
+- `openl_get_table` - Get table structure and data (use `raw=true` for raw 2D cell matrix view; raw-only options: `startRow`/`maxRows` read a large table in row slices — a windowed response carries `totalRows` — and `styles=true` adds each cell's Excel style: background/font colour, bold/italic/underline, alignment, indent, borders)
 - `openl_update_table` - Replace entire table
 - `openl_append_table` - Add rows/fields to table
 - `openl_create_project_table` - Create new table

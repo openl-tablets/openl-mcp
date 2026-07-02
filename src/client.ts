@@ -1613,15 +1613,25 @@ export class OpenLClient {
    * @param projectId - Opaque project ID returned by backend.
    * @param tableId - Table identifier
    * @param raw - If true, returns raw 2D cell matrix instead of parsed table
+   * @param options - Raw-view-only options: read the matrix in row slices
+   *   (`startRow`/`maxRows`) and/or with per-cell Excel styles (`styles`)
    * @returns Parsed table view or raw table view depending on raw flag
    */
-  async getTable(projectId: string, tableId: string, raw: true): Promise<Types.RawTableView>;
+  async getTable(projectId: string, tableId: string, raw: true, options?: Types.RawTableViewOptions): Promise<Types.RawTableView>;
   async getTable(projectId: string, tableId: string, raw?: false): Promise<Types.TableView>;
-  async getTable(projectId: string, tableId: string, raw?: boolean): Promise<Types.TableView | Types.RawTableView> {
+  async getTable(projectId: string, tableId: string, raw?: boolean, options?: Types.RawTableViewOptions): Promise<Types.TableView | Types.RawTableView> {
     const projectPath = this.buildProjectPath(projectId);
+    const params = raw
+      ? {
+          raw: true,
+          ...(options?.startRow !== undefined && { startRow: options.startRow }),
+          ...(options?.maxRows !== undefined && { maxRows: options.maxRows }),
+          ...(options?.styles && { styles: true }),
+        }
+      : undefined;
     const response = await this.axiosInstance.get<Types.TableView | Types.RawTableView>(
       `${projectPath}/tables/${encodeURIComponent(tableId)}`,
-      { params: raw ? { raw: true } : undefined }
+      { params }
     );
     return response.data;
   }

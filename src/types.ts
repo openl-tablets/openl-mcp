@@ -452,6 +452,48 @@ export type TableMetadata = SummaryTableView;
 export type TableView = EditableTableView;
 
 /**
+ * One side of a cell border: line style and width. Mirrors
+ * `RawTableCellBorderSide` in the studio OpenAPI.
+ */
+export interface RawTableCellBorderSide {
+  style?: "solid" | "dashed" | "dotted" | "double";
+  width?: number;
+}
+
+/**
+ * Cell borders per side; a side is absent when the cell has no border there.
+ * Mirrors `RawTableCellBorder` in the studio OpenAPI.
+ */
+export interface RawTableCellBorder {
+  top?: RawTableCellBorderSide;
+  right?: RawTableCellBorderSide;
+  bottom?: RawTableCellBorderSide;
+  left?: RawTableCellBorderSide;
+}
+
+/**
+ * Excel cell style carried by a raw cell when `styles=true` is requested.
+ * Every field is absent for its default (white background, black left-aligned
+ * regular font, no borders). Mirrors `RawTableCellStyle` in the studio OpenAPI.
+ */
+export interface RawTableCellStyle {
+  /** Background colour as `#rrggbb`; absent when white (the default). */
+  background?: string;
+  /** Font colour as `#rrggbb`; absent when black (the default). */
+  color?: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  /** Horizontal alignment; absent for the default left alignment. */
+  align?: "right" | "center" | "justify";
+  /** Vertical alignment; absent for the default bottom alignment. */
+  valign?: "center" | "top";
+  /** Left indent in Excel indent units; absent when zero. */
+  indent?: number;
+  border?: RawTableCellBorder;
+}
+
+/**
  * A single cell in a raw table view's 2D source matrix.
  *
  * Mirrors `RawTableCell` in the studio OpenAPI. `value` is typed as `unknown`
@@ -470,6 +512,22 @@ export interface RawTableCell {
   rowspan?: number;
   /** True when this cell is masked by another cell's span. */
   covered?: boolean;
+  /** Excel cell style; only present when the raw view was requested with `styles=true`. */
+  style?: RawTableCellStyle;
+}
+
+/**
+ * Options for the raw table view (`raw=true` on `openl_get_table`): read the
+ * source matrix in row slices and/or with per-cell Excel styles. Mirrors the
+ * `startRow`/`maxRows`/`styles` query parameters of `GET .../tables/{tableId}`.
+ */
+export interface RawTableViewOptions {
+  /** Zero-based index of the first row to return; omit to start at the top. */
+  startRow?: number;
+  /** Maximum number of rows to return, counted from `startRow`; omit to read to the end. */
+  maxRows?: number;
+  /** When true, each cell carries its Excel style in `style`. */
+  styles?: boolean;
 }
 
 /**
@@ -479,7 +537,13 @@ export interface RawTableCell {
  * `RawTableView` in the studio OpenAPI (`tableType: "RawSource"`).
  */
 export interface RawTableView extends EditableTableView {
+  /** Empty only for a slice whose `startRow` is past the last row. */
   source: RawTableCell[][];
+  /**
+   * Total number of rows when the returned window omits rows (a `startRow`
+   * offset or a `maxRows` cap); absent when the whole table is returned.
+   */
+  totalRows?: number;
 }
 
 /**
