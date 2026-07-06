@@ -16,7 +16,6 @@ export function registerTestingHandlers(): void {
     name: "start_project_tests",
     category: "Project",
     title: "Start Project Tests",
-    version: "1.0.0",
     description:
       "Start project test execution. For design repositories the project is automatically opened if closed; for repository 'local' the project is not opened (tests run directly). Returns execution status and metadata. Test results can be retrieved using openl_get_test_results_summary, openl_get_test_results, or openl_get_test_results_by_table.",
     inputSchema: schemas.z.toJSONSchema(schemas.startProjectTestsSchema) as Record<string, unknown>,
@@ -60,7 +59,6 @@ export function registerTestingHandlers(): void {
     name: "get_test_results_summary",
     category: "Project",
     title: "Get Test Results Summary",
-    version: "1.0.0",
     description:
       "Get brief test execution summary without detailed test cases. Returns aggregated statistics (execution time, total tests, passed, failed) without the testCases array. Use openl_start_project_tests() first to start test execution.",
     inputSchema: schemas.z.toJSONSchema(schemas.getTestResultsSummarySchema) as Record<string, unknown>,
@@ -103,7 +101,6 @@ export function registerTestingHandlers(): void {
     name: "get_test_results",
     category: "Project",
     title: "Get Full Test Results",
-    version: "1.0.0",
     description:
       "Get full test execution results with pagination support. Returns complete test execution summary including testCases array grouped by table. IMPORTANT: Pagination applies to test tables (not individual test cases). Each page returns test results aggregated by table (e.g., 'TestTable1' with 7 tests, 'TestTable2' with 8 tests). Supports filtering failures and pagination (page/offset/size). Use openl_start_project_tests() first to start test execution.",
     inputSchema: schemas.z.toJSONSchema(schemas.getTestResultsSchema) as Record<string, unknown>,
@@ -163,7 +160,6 @@ export function registerTestingHandlers(): void {
     name: "get_test_results_by_table",
     category: "Project",
     title: "Get Test Results By Table",
-    version: "1.0.0",
     description:
       "Get test execution results filtered by specific table ID. Returns filtered test execution summary with only test cases for the specified table. Supports pagination (page/offset/size) for efficient data retrieval. Use openl_start_project_tests() first to start test execution.",
     inputSchema: schemas.z.toJSONSchema(schemas.getTestResultsByTableSchema) as Record<string, unknown>,

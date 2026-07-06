@@ -110,7 +110,6 @@ export function registerProjectHandlers(): void {
     name: "list_projects",
     category: "Project",
     title: "List Projects",
-    version: "1.0.0",
     description:
       "List all projects with optional filters (repository, status, tags). Returns project names, status (OPENED/CLOSED), metadata, and a convenient 'projectId' field from API to use with other tools. For local-only projects, do not pass repository filter 'local' (it may fail); list projects without that filter and filter results by repository === 'local' client-side. For such projects, open/save/close do not work; table/rule/test tools work without opening. IMPORTANT: The 'projectId' is returned exactly as provided by the API and should be used without modification. Pass either the id or name from openl_list_repositories() — both are accepted (case-insensitive). Do not invent example values; call openl_list_repositories() first if not in context. Use this to discover and filter projects.",
     inputSchema: schemas.z.toJSONSchema(schemas.listProjectsSchema) as Record<string, unknown>,
@@ -252,7 +251,6 @@ export function registerProjectHandlers(): void {
     name: "get_project",
     category: "Project",
     title: "Get Project Details",
-    version: "1.0.0",
     description:
       "Get comprehensive project information including details, modules, dependencies, and metadata. Returns full project structure, configuration, and status.",
     inputSchema: schemas.z.toJSONSchema(schemas.getProjectSchema) as Record<string, unknown>,
@@ -287,7 +285,6 @@ export function registerProjectHandlers(): void {
     name: "project_status",
     category: "Project",
     title: "Get Project Status",
-    version: "1.0.0",
     description:
       "Get the post-compilation status of a project: compile state, diagnostics, pending changes, and module/test summary. Read-only — does not trigger compilation. When wait=true, blocks until compileState is terminal (ok/warnings/errors) and emits MCP progress notifications. Note: compileState reflects the last compilation. The studio does not auto-compile on edit (it resets the status), but openl_update_table / openl_append_table / openl_create_project_table all trigger a recompile of the affected table, so this status reflects changes made through those tools. (Edits made by bypassing those tools — e.g. raw REST — won't refresh it until the table is read.)",
     inputSchema: schemas.z.toJSONSchema(schemas.projectStatusSchema) as Record<string, unknown>,
@@ -367,7 +364,6 @@ export function registerProjectHandlers(): void {
     name: "open_project",
     category: "Project",
     title: "Open Project for Editing",
-    version: "1.0.0",
     description:
       "Open a project for editing. Supports opening on specific branches or viewing specific Git revisions. Use this before making changes to project tables or rules.",
     inputSchema: schemas.z.toJSONSchema(schemas.openProjectSchema) as Record<string, unknown>,
@@ -438,7 +434,6 @@ export function registerProjectHandlers(): void {
     name: "save_project",
     category: "Project",
     title: "Save Project to Git",
-    version: "1.0.0",
     description:
       "Save project changes to Git. Works only when project status is EDITING (after opening and making changes). Requires comment (used as revision/commit message). Creates a new revision and transitions project to OPENED. Optional closeAfterSave: true saves and closes in one request. Use after update_table, append_table, or other edits. Does not work for repository 'local'. Validates project before saving if validation endpoint is available.",
     inputSchema: schemas.z.toJSONSchema(schemas.saveProjectSchema) as Record<string, unknown>,
@@ -478,7 +473,6 @@ export function registerProjectHandlers(): void {
     name: "close_project",
     category: "Project",
     title: "Close Project",
-    version: "1.0.0",
     description:
       "Close a project. If the project has unsaved changes (status EDITING), you must either save (saveChanges: true with comment) or discard (discardChanges: true). When discarding, ask the user for confirmation and then call again with confirmDiscard: true. Prevents accidental data loss.",
     inputSchema: schemas.z.toJSONSchema(schemas.closeProjectSchema) as Record<string, unknown>,
@@ -592,7 +586,6 @@ export function registerProjectHandlers(): void {
     name: "create_project_branch",
     category: "Project",
     title: "Create Project Branch",
-    version: "1.0.0",
     description:
       "Create a new branch in a project's repository from a specified revision. Allows branching from specific revisions, tags, or other branches. If no revision is specified, the HEAD revision will be used.",
     inputSchema: schemas.z.toJSONSchema(schemas.createBranchSchema) as Record<string, unknown>,
@@ -637,7 +630,6 @@ export function registerProjectHandlers(): void {
     name: "create_project",
     category: "Project",
     title: "Create or Clone Project",
-    version: "2.0.0",
     description:
       "Create a new OpenL project in a design repository and commit it. Two modes, selected by the `template` argument:\n" +
       "• CREATE (omit `template`): create a BLANK project from the default empty skeleton. Committed atomically on the repository's default branch; returns the commit revision.\n" +

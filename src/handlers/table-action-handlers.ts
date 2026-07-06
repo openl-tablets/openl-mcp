@@ -324,7 +324,6 @@ export function registerTableActionHandlers(): void {
       name: spec.name,
       category: "Rules & Tables",
       title: spec.title,
-      version: "1.0.0",
       description: spec.description,
       inputSchema: schemas.z.toJSONSchema(spec.schema) as Record<string, unknown>,
       annotations: spec.annotations,

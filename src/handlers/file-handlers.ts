@@ -52,7 +52,6 @@ export function registerFileHandlers(): void {
     name: "read_project_file",
     category: "Project Files",
     title: "Read Project File",
-    version: "1.0.0",
     description:
       "Read any file in a project by its project-relative path — text or binary, and folder listings too. Maps to GET /projects/{projectId}/files/{path}. Behavior by path/params: " +
       "(1) a FILE path returns its content — UTF-8 text is returned verbatim, binary is returned base64-encoded with metadata (use encoding to force 'utf-8' or 'base64'; default 'auto' detects); " +
@@ -181,7 +180,6 @@ export function registerFileHandlers(): void {
     name: "write_project_file",
     category: "Project Files",
     title: "Write Project File",
-    version: "1.0.0",
     description:
       "Create or replace a file in a project by its project-relative path. Provide 'content' as UTF-8 text (default) or base64 (set encoding='base64' for binary files such as xlsx/images). " +
       "COMMIT: pass 'message' to commit the write to Git (a new revision is created); omit 'message' and the write stays in the project WORKING COPY (commit it later with openl_save_project). Committing saves ALL pending project changes and works only for design repositories (not 'local'). " +
@@ -316,7 +314,6 @@ export function registerFileHandlers(): void {
     name: "delete_project_file",
     category: "Project Files",
     title: "Delete Project File",
-    version: "1.0.0",
     description:
       "Delete a file or folder from a project by its project-relative path. Maps to DELETE /projects/{projectId}/files/{path}. The backend auto-cleans dangling references to the deleted resource from the project configuration. Like writes, the deletion is staged in the working copy — commit it with openl_save_project. Use 'branch' to pin the project's branch (omit for local/non-branch repositories). Use this to remove legacy assets or deprecate docs. This is a destructive operation.",
     inputSchema: schemas.z.toJSONSchema(schemas.deleteProjectFileSchema) as Record<string, unknown>,
@@ -359,7 +356,6 @@ export function registerFileHandlers(): void {
     name: "search_project_files",
     category: "Project Files",
     title: "Search Project Files",
-    version: "1.0.0",
     description:
       "Search a project's files and folders by ant-glob path 'pattern' (e.g. 'rules/**/*.xlsx'), file 'extensions', resource 'type' (FILE/FOLDER/ANY), and/or a case-insensitive 'content' substring (full-text). Maps to POST /projects/{projectId}/file-search. IMPORTANT: set recursive=true to search nested folders — by default (recursive omitted/false) only the project's TOP LEVEL is searched, and a '**' glob alone does NOT descend (so a project-wide search needs recursive=true, and to match files in subfolders use a '**/' pattern such as '**/*.xlsx', not '*.xlsx'). Scope SUBTREE (default) searches within the project and may target a historical 'version'; scope ANCESTORS walks up to the repository root. Returns matching nodes (path, name, type, size, ...), paginated client-side via 'limit'/'offset' (the response carries pagination metadata; the server returns the full match set). Use 'branch' to pin the project's branch. Use this for questions like \"where is portability loading mentioned?\" (content, recursive=true) or \"list every xlsx under rules\" (pattern '**/*.xlsx', recursive=true).",
     inputSchema: schemas.z.toJSONSchema(schemas.searchProjectFilesSchema) as Record<string, unknown>,
@@ -433,7 +429,6 @@ export function registerFileHandlers(): void {
     name: "get_project_agents_md",
     category: "Project Files",
     title: "Get Project AGENTS.md",
-    version: "1.0.0",
     description:
       "Load the AGENTS.md guidance that applies to a project as a single aggregated markdown document. Starting at the project directory — or the optional 'folder' sub-directory — this walks UP through every parent folder to the repository root, collects every AGENTS.md found, and returns them concatenated in ONE response ordered from the root folder (lowest priority) down to the project folder (highest priority); on conflicting instructions, each later section overrides the earlier ones. AGENTS.md files live not only in the project but often in a workspace/monorepo root above it. Levels with no AGENTS.md are skipped (not an error); a project with none returns a short 'no files' note. The search direction is fixed — to search a project's own subtree by glob/content instead, use openl_search_project_files.",
     inputSchema: schemas.z.toJSONSchema(schemas.getProjectAgentsMdSchema) as Record<string, unknown>,
@@ -471,7 +466,6 @@ export function registerFileHandlers(): void {
     name: "copy_project_file",
     category: "Project Files",
     title: "Copy Project File",
-    version: "1.0.0",
     description:
       "Copy a file within a project to a new project-relative path. Maps to POST /projects/{projectId}/file-copy. Intermediate destination folders are created automatically. There is NO overwrite option — if destinationPath already exists the call fails with HTTP 409; choose a different destination or delete the existing file first. The copy is staged in the working copy — commit it with openl_save_project. Use 'branch' to pin the project's branch. Use this to scaffold a new module from an existing one or clone a test set.",
     inputSchema: schemas.z.toJSONSchema(schemas.copyProjectFileSchema) as Record<string, unknown>,
@@ -528,7 +522,6 @@ export function registerFileHandlers(): void {
     name: "move_project_file",
     category: "Project Files",
     title: "Move or Rename Project File",
-    version: "1.0.0",
     description:
       "Move or rename a file within a project. Maps to POST /projects/{projectId}/file-move. Intermediate destination folders are created automatically and the source file is deleted after the move. A destination collision fails with HTTP 409. The move is staged in the working copy — commit it with openl_save_project. Use 'branch' to pin the project's branch. Use this to rename a file or relocate it to another folder.",
     inputSchema: schemas.z.toJSONSchema(schemas.moveProjectFileSchema) as Record<string, unknown>,

@@ -215,7 +215,6 @@ export function registerTableHandlers(): void {
     name: "list_tables",
     category: "Rules & Tables",
     title: "List Project Tables",
-    version: "1.0.0",
     description: "List all tables/rules in a project with optional filters for type, name, and file. Returns table metadata including 'tableId' (the 'id' field) which is required for calling get_table(), update_table(), append_table(), or run_project_tests(). Use the 'tableId' field from the response to reference specific tables in other API calls. IMPORTANT: a table id is derived from its location and changes when an edit relocates the table (it had no room to grow in place). After openl_update_table/openl_append_table, use the 'tableId' those tools return (or re-run openl_list_tables); an id from a listing taken before such an edit is stale.",
     inputSchema: schemas.z.toJSONSchema(schemas.listTablesSchema) as Record<string, unknown>,
     annotations: {
@@ -333,7 +332,6 @@ export function registerTableHandlers(): void {
     name: "get_table",
     category: "Rules & Tables",
     title: "Get Table Structure & Data",
-    version: "1.0.0",
     description:
       "Get detailed information about a specific table/rule. By default returns a parsed table structure with signature, conditions, actions, dimension properties, and row data. Set raw=true to get an unparsed 2D cell matrix (RawTableView) instead — useful for unknown/custom table types or preserving exact cell layout. Note: raw output cannot be passed directly to openl_update_table (which expects the parsed form). A table id changes when an edit relocates the table; if the given id went stale through an edit made via this server, it is resolved to the current id automatically — otherwise refresh ids with openl_list_tables().",
     inputSchema: schemas.z.toJSONSchema(schemas.getTableSchema) as Record<string, unknown>,
@@ -395,7 +393,6 @@ export function registerTableHandlers(): void {
     name: "delete_table",
     category: "Rules & Tables",
     title: "Delete Table",
-    version: "1.0.0",
     description:
       "Delete an ENTIRE table from a project. The whole table area is cleared from the sheet regardless of table type, so the table no longer exists once the project is recompiled. To remove only a row or column WITHIN a table, use openl_delete_table_rows / openl_delete_table_columns instead. If the given id went stale through an edit made via this server, it is resolved to the current id automatically. The studio does not auto-compile after the delete — run openl_project_status afterward to confirm the project still compiles (a dangling reference to the deleted table surfaces there).",
     inputSchema: schemas.z.toJSONSchema(schemas.deleteTableSchema) as Record<string, unknown>,
@@ -447,7 +444,6 @@ export function registerTableHandlers(): void {
       validateStructuredArgs("update_table", { schema: schemas.updateTableSchema, payloadArg: "view", tableTypes: schemas.EDITABLE_TABLE_TYPES }, args),
     category: "Rules & Tables",
     title: "Replace Entire Table",
-    version: "1.0.0",
     description:
       "Replace the ENTIRE table structure with a modified version. Use for MODIFYING existing rows, DELETING rows, REORDERING rows, or STRUCTURAL changes. CRITICAL: Must send the FULL table structure (not just modified fields). DO NOT use for simple additions - use append_table instead. Required workflow: 1) Call get_table() to retrieve complete structure, 2) Modify the returned object, 3) Pass the ENTIRE modified object to update_table(). IMPORTANT: an edit that relocates the table (it had no room to grow in place) CHANGES its location-derived id; the response always returns the table's CURRENT id as 'tableId' (plus previousTableId when it changed) — use it for all subsequent calls. Note: the studio does not auto-compile after an edit (it only resets the previous compile status); this tool reads the table back after updating to trigger the recompile, so a subsequent openl_project_status reflects the change.",
     inputSchema: schemas.z.toJSONSchema(schemas.updateTableSchema) as Record<string, unknown>,
@@ -537,7 +533,6 @@ export function registerTableHandlers(): void {
       validateStructuredArgs("append_table", { schema: schemas.appendTableSchema, payloadArg: "appendData", tableTypes: schemas.APPEND_TABLE_TYPES }, args),
     category: "Rules & Tables",
     title: "Append Rows/Fields to Table",
-    version: "1.0.0",
     description:
       "Add new rows/fields to an existing table (additions only). Payload by type: Datatype→fields, SimpleRules/SmartRules→rules, SimpleSpreadsheet→steps, Spreadsheet→rows+cells, Vocabulary→values, RawSource→rows. For RawSource, each row must cover ALL columns of the table (one cell object per column; rows with a wrong cell count are rejected before anything is written). For modifying, deleting, or reordering use update_table instead. IMPORTANT: an edit that relocates the table (it had no room to grow in place) CHANGES its location-derived id; the response always returns the table's CURRENT id as 'tableId' (plus previousTableId when it changed) — use it for all subsequent calls. Note: the studio does not auto-compile after an edit (it only resets the previous compile status); this tool reads the table back after appending to trigger the recompile, so a subsequent openl_project_status reflects the change.",
     inputSchema: schemas.z.toJSONSchema(schemas.appendTableSchema) as Record<string, unknown>,
@@ -700,7 +695,6 @@ export function registerTableHandlers(): void {
       validateStructuredArgs("create_project_table", { schema: schemas.createProjectTableSchema, payloadArg: "table", tableTypes: schemas.EDITABLE_TABLE_TYPES }, args),
     category: "Rules & Tables",
     title: "Create New Table",
-    version: "1.0.0",
     description:
       "Create a new table/rule in an OpenL project (Create New Project Table API). This is the recommended tool for creating new OpenL tables programmatically. Use cases: Create Rules (decision tables), Spreadsheet tables, Datatype definitions, Test tables, or other table types. Requires moduleName (an EXISTING project module — modules correspond to the project's .xlsx files; a freshly created blank project has a single module named 'Main') and a complete table structure (EditableTableView). The table structure must include 'tableType' and 'name'. CRITICAL: 'tableType' is a CASE-SENSITIVE discriminator — use EXACTLY one of: Datatype, Vocabulary, Spreadsheet, SimpleSpreadsheet, SimpleRules, SmartRules, SimpleLookup, SmartLookup, Data, Test, RawSource (a lowercase value like 'datatype' is rejected by the backend). Add type-specific data: fields (Datatype), rules (SimpleRules/SmartRules), rows (Spreadsheet), steps (SimpleSpreadsheet), values (Vocabulary). For RULES/DECISION tables (SimpleRules/SmartRules) and lookups you MUST also provide: 'returnType' (e.g. \"String\"), 'args': [{name,type}] (the input parameters), and 'headers': [{title}] (the column captions — one per rule-row key, the return column is usually titled \"RET1\"); each 'rules' row is a map keyed by those header titles. There is NO 'signature' field — the method is defined by name + returnType + args. Example SimpleRules: {tableType:\"SimpleRules\", name:\"CreditCategory\", returnType:\"String\", args:[{name:\"creditScore\",type:\"Integer\"}], headers:[{title:\"creditScore\"},{title:\"RET1\"}], rules:[{creditScore:\"< 580\", RET1:\"Poor\"}, {creditScore:\">= 800\", RET1:\"Excellent\"}]}. WARNING: the backend rejects unknown/extra fields with an opaque 400 \"Failed to read request\". 'id' is optional. Use get_table() on an existing table as a reference for the structure (for a blank project with no tables, use the tableType list and the SimpleRules example above). The response contains the created table's metadata (id, signature), NOT a compilation result — call openl_project_status afterward to confirm the project still compiles. This tool uses the Create New Project Table API endpoint.",
     inputSchema: schemas.z.toJSONSchema(schemas.createProjectTableSchema) as Record<string, unknown>,

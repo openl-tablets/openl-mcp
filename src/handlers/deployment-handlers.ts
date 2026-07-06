@@ -15,7 +15,6 @@ export function registerDeploymentHandlers(): void {
     name: "list_deployments",
     category: "Deployment",
     title: "List Active Deployments",
-    version: "1.0.0",
     description:
       "List all active deployments across production environments. Returns deployment names, repositories, versions, and status information.",
     inputSchema: schemas.z.toJSONSchema(
@@ -66,7 +65,6 @@ export function registerDeploymentHandlers(): void {
     name: "deploy_project",
     category: "Deployment",
     title: "Deploy Project to Production",
-    version: "1.0.0",
     description:
       "Deploy a project to production environment. Publishes rules to a deployment repository for runtime execution. Use production repository name (not ID) - e.g., 'Production Deployment' instead of 'production-deploy'.",
     inputSchema: schemas.z.toJSONSchema(schemas.deployProjectSchema) as Record<string, unknown>,
@@ -119,7 +117,6 @@ export function registerDeploymentHandlers(): void {
     name: "redeploy_project",
     category: "Deployment",
     title: "Redeploy with New Version",
-    version: "1.0.0",
     description:
       "Redeploy an existing deployment with a new project version. Use this to update a deployment with a newer version of the project or rollback to a previous version.",
     inputSchema: schemas.z.toJSONSchema(schemas.redeployProjectSchema) as Record<string, unknown>,

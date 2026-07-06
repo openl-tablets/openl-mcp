@@ -24,7 +24,7 @@ call can wait for the result instead of polling — project compilation
 
 ## Tools (53 Total)
 
-All tools are prefixed with `openl_` and versioned (v1.0.0+).
+All tools are prefixed with `openl_` and share the server's version.
 
 ### Repository Tools (4)
 - `openl_list_repositories` - List all design repositories

@@ -16,7 +16,6 @@ export function registerLocalChangeHandlers(): void {
     name: "list_project_local_changes",
     category: "Project",
     title: "List Local Change History",
-    version: "1.0.0",
     description:
       "List local change history for a project. Returns list of workspace history items with versions, authors, timestamps, and comments. NOTE: Requires the project to be opened (openl_open_project first); not available for repository 'local' (local projects cannot be opened). Uses session-based project context; no projectId parameter.",
     inputSchema: schemas.z.toJSONSchema(schemas.listProjectLocalChangesSchema) as Record<string, unknown>,
@@ -50,7 +49,6 @@ export function registerLocalChangeHandlers(): void {
     name: "restore_project_local_change",
     category: "Project",
     title: "Restore Previous Local Version",
-    version: "1.0.0",
     description:
       "Restore a project to a specified version from its local history. Use the historyId from openl_list_project_local_changes response. NOTE: Requires the project to be opened first; not available for repository 'local'. Uses session-based project context; no projectId parameter.",
     inputSchema: schemas.z.toJSONSchema(schemas.restoreProjectLocalChangeSchema) as Record<string, unknown>,

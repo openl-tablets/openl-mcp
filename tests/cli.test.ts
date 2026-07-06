@@ -716,7 +716,7 @@ describe("CLI", () => {
       });
       expect(code).toBe(EXIT_CODES.OK);
       const out = h.getStdout();
-      expect(out).toMatch(/^list_repositories\s+v\d/m); // bare-name header
+      expect(out).toMatch(/^list_repositories$/m); // bare-name header
       expect(out).toContain("Arguments:");
       expect(out).toContain("response_format");
     });

@@ -571,7 +571,7 @@ function renderToolHelp(toolName: string): string | null {
   });
 
   return [
-    `${tool.name}  v${tool.version}`,
+    `${tool.name}`,
     tool.title ? `  ${tool.title}` : "",
     "",
     "Description:",
@@ -748,7 +748,6 @@ export async function runCli(options: RunCliOptions): Promise<number> {
         name: t.name,
         title: t.title,
         description: t.description,
-        version: t.version,
         inputSchema: t.inputSchema,
       }));
       stdout.write(`${JSON.stringify(summary, null, 2)}\n`);

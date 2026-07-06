@@ -72,7 +72,6 @@ registerTool({
   title: "My Tool",
   description: "Tool description",
   category: "Project",             // one of TOOL_CATEGORIES (src/constants.ts)
-  version: "1.0.0",
   inputSchema: schemas.z.toJSONSchema(myToolSchema),
   annotations: {
     readOnlyHint: true,    // If read-only

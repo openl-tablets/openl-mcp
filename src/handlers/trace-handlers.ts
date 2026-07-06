@@ -149,7 +149,6 @@ export function registerTraceHandlers(): void {
     name: "start_trace",
     category: "Trace",
     title: "Start Rule Trace",
-    version: "1.0.0",
     description:
       "Start trace execution for a table. Trace is asynchronous (returns 202 Accepted). For regular rules: provide inputJson with { params: {...}, runtimeContext?: {...} }. For test tables: use testRanges (e.g. '1-3,5'). After starting, call openl_get_trace_nodes once — while the trace is still running it subscribes to the studio's trace-status websocket and waits for completion server-side (no manual polling/retrying on 409 needed).",
     inputSchema: schemas.z.toJSONSchema(schemas.startTraceSchema) as Record<string, unknown>,
@@ -197,7 +196,6 @@ export function registerTraceHandlers(): void {
     name: "get_trace_nodes",
     category: "Trace",
     title: "Get Trace Tree Nodes",
-    version: "1.0.0",
     description:
       "Get trace node children (or root nodes if nodeId omitted). Use openl_start_trace first. While the trace is still running the backend answers 409 Conflict; by DEFAULT this tool subscribes to the studio's trace-status websocket and waits (up to waitTimeoutMs, default 120s) until the trace completes — call it once after openl_start_trace, no manual polling needed. Pass 'tableId' (the id given to openl_start_trace) when the trace was started by a different server/CLI process; otherwise the table is remembered automatically. Set wait: false for the raw immediate-409 behavior.",
     inputSchema: schemas.z.toJSONSchema(schemas.getTraceNodesSchema) as Record<string, unknown>,
@@ -251,7 +249,6 @@ export function registerTraceHandlers(): void {
     name: "get_trace_node_details",
     category: "Trace",
     title: "Get Trace Node Details",
-    version: "1.0.0",
     description:
       "Get detailed trace node including parameters, context, result, and errors. Node IDs come from openl_get_trace_nodes.",
     inputSchema: schemas.z.toJSONSchema(schemas.getTraceNodeDetailsSchema) as Record<string, unknown>,
@@ -291,7 +288,6 @@ export function registerTraceHandlers(): void {
     name: "get_trace_parameter",
     category: "Trace",
     title: "Get Trace Parameter Value",
-    version: "1.0.0",
     description:
       "Get lazy-loaded parameter value. Use when a TraceParameterValue has lazy:true and parameterId set.",
     inputSchema: schemas.z.toJSONSchema(schemas.getTraceParameterSchema) as Record<string, unknown>,
@@ -326,7 +322,6 @@ export function registerTraceHandlers(): void {
     name: "cancel_trace",
     category: "Trace",
     title: "Cancel Ongoing Trace",
-    version: "1.0.0",
     description: "Cancel ongoing trace execution for a project.",
     inputSchema: schemas.z.toJSONSchema(schemas.cancelTraceSchema) as Record<string, unknown>,
     annotations: { openWorldHint: true },
@@ -349,7 +344,6 @@ export function registerTraceHandlers(): void {
     name: "export_trace",
     category: "Trace",
     title: "Export Trace as Text",
-    version: "1.0.0",
     description:
       "Export trace as plain text. Returns full trace content. Use release: true to clear trace from memory after export. While the trace is still running the backend answers 409 Conflict; by DEFAULT this tool subscribes to the studio's trace-status websocket and waits (up to waitTimeoutMs, default 120s) until the trace completes. Pass 'tableId' (the id given to openl_start_trace) when the trace was started by a different server/CLI process; otherwise the table is remembered automatically. Set wait: false for the raw immediate-409 behavior.",
     inputSchema: schemas.z.toJSONSchema(schemas.exportTraceSchema) as Record<string, unknown>,

@@ -51,7 +51,6 @@ export interface ToolDefinition {
   /** Display category for CLI `--help` grouping. */
   category: ToolCategory;
   inputSchema: Record<string, unknown>;
-  version: string; // Semantic version (e.g., "2.0.0")
   annotations?: {
     readOnlyHint?: boolean;
     openWorldHint?: boolean;
