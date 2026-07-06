@@ -1,7 +1,7 @@
 {
   "name": "openl-mcp",
   "version": "0.0.1",
-  "description": "MCP Server for OpenL Studio Rules Management System",
+  "description": "MCP Server for OpenL Studio 6.3.0 Rules Management System",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
