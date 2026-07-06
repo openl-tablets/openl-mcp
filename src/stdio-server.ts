@@ -107,7 +107,10 @@ export async function loadConfigFromEnv(
 
   // Token precedence: an explicit token (flag/env) always wins; otherwise fall
   // back to a credential cached by `openl-mcp login`; otherwise anonymous.
-  const explicitToken = overrides.personalAccessToken ?? process.env.OPENL_PERSONAL_ACCESS_TOKEN;
+  // A blank/whitespace token (e.g. an unset `${user_config.studio_token}` that
+  // expands to "") is treated as absent so it can't mask a valid cached login.
+  const rawToken = overrides.personalAccessToken ?? process.env.OPENL_PERSONAL_ACCESS_TOKEN;
+  const explicitToken = rawToken && rawToken.trim() !== "" ? rawToken : undefined;
   const cachedToken = explicitToken ? undefined : await getCachedToken(baseUrl);
   const config: Types.OpenLConfig = {
     baseUrl,
