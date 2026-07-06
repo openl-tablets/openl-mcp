@@ -1,7 +1,7 @@
 # Quick Start
 
-Connect your AI assistant to OpenL Studio. This works with **Claude Code**, **Claude Desktop**, **Cursor**, and
-**VS Code (GitHub Copilot)**.
+Connect your AI assistant to OpenL Studio. This works with **Claude Code**, **Claude Desktop**, **Cursor**,
+**VS Code (GitHub Copilot)**, and **Codex**.
 
 Your AI client starts the server for you. You do not install or build anything first.
 
@@ -18,7 +18,7 @@ This takes about 5 minutes.
 
 You need three things:
 
-1. **An AI client** — Claude Code, Claude Desktop, Cursor, or VS Code with GitHub Copilot.
+1. **An AI client** — Claude Code, Claude Desktop, Cursor, VS Code with GitHub Copilot, or Codex.
 2. **An URL of the running OpenL Studio** — for example `http://localhost:8080/webstudio` or `https://studio.example.com/`.
    No OpenL Studio yet? Bring one up with the [OpenL Tablets DEMO](https://openl-tablets.github.io/openl-tablets/user-guides/getting-started/demo-package/).
 3. **Node.js 24 or newer.** Check it in a terminal:
@@ -132,6 +132,23 @@ You need GitHub Copilot with Agent mode. Open `.vscode/mcp.json` in your project
 > [user-level config](https://code.visualstudio.com/docs/copilot/customization/mcp-servers) instead.
 
 Open the Copilot Chat **Agent** tools menu and turn on the OpenL tools.
+
+### Codex
+
+Open `~/.codex/config.toml` (create it if it is missing). Add this block:
+
+```toml
+[mcp_servers.openl]
+command = "npx"
+args = ["-y", "openl-mcp", "http://localhost:8080"]
+
+[mcp_servers.openl.env]
+OPENL_PERSONAL_ACCESS_TOKEN = "<your-token>"
+```
+
+**No login (single-user Studio)?** Drop the `[mcp_servers.openl.env]` block.
+
+Restart Codex.
 
 ✅ **Checkpoint:** restart the client. It lists `openl` as connected.
 
