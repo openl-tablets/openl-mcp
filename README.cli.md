@@ -114,7 +114,7 @@ Discovery is deliberately split by audience — all three work without credentia
 
 ### `--help` (global) and `--version`
 
-Prints usage, all flags, and a human-readable catalog of tool **titles** grouped by category (Repository / Project / Rules & Tables / Trace / Version Control / Deployment). The titles (e.g. `List Repositories`, `Update Table`) keep the catalog scannable — use `<tool> --help` for the full description of any one tool.
+Prints usage, all flags, and a human-readable catalog of tool **titles** grouped by category (Guidance / Repository / Project / Rules & Tables / Project Files / Trace / Deployment). The titles (e.g. `List Repositories`, `Update Table`) keep the catalog scannable — use `<tool> --help` for the full description of any one tool.
 
 ```bash
 npx -y openl-mcp --help

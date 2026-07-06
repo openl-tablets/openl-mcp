@@ -1,6 +1,6 @@
 ---
 title: Use Project AGENTS.md
-description: "How to load and correctly apply a project's AGENTS.md guidance with openl_get_project_agents_md: walk up to the repo root, read every applicable file, and apply nearest-file-wins precedence"
+description: "How to load and correctly apply a project's AGENTS.md guidance with openl_get_project_agent_context: walk up to the repo root, read every applicable file, and apply nearest-file-wins precedence"
 arguments:
   - name: projectId
     description: ID or name of the project to load AGENTS.md guidance for
@@ -12,7 +12,7 @@ arguments:
 
 ## Summary
 
-**Before editing rules, tables, or files in an OpenL project, load its AGENTS.md guidance first.** Call **openl_get_project_agents_md** to get every AGENTS.md that applies to the project — not just the one inside it, but also those in parent/workspace/monorepo folders above it. The tool walks UP from the project to the repository root and returns each file **with its raw markdown content**, ordered **nearest-first**. Apply them with **nearest-file-wins** precedence: when two files conflict, the one closer to the project (lower `precedence` number) takes priority.
+**Before editing rules, tables, or files in an OpenL project, load its AGENTS.md guidance first.** Call **openl_get_project_agent_context** to get every AGENTS.md that applies to the project — not just the one inside it, but also those in parent/workspace/monorepo folders above it. The tool walks UP from the project to the repository root and returns each file **with its raw markdown content**, ordered **nearest-first**. Apply them with **nearest-file-wins** precedence: when two files conflict, the one closer to the project (lower `precedence` number) takes priority.
 
 # Using AGENTS.md Guidance for an OpenL Project
 
@@ -28,8 +28,8 @@ arguments:
 - Whenever instructions might live **above** the project — AGENTS.md commonly sits in a workspace or monorepo root, not only in the project folder.
 
 ## How to call it
-- `openl_get_project_agents_md({ projectId })` — the AGENTS.md chain for the whole project (start at the project root).
-- Add `folder` when you are editing something deeper inside the project, e.g. `openl_get_project_agents_md({ projectId, folder: "rules/pricing" })`. The walk then starts at that sub-folder so the **closest** AGENTS.md to your edit is ranked first.
+- `openl_get_project_agent_context({ projectId })` — the AGENTS.md chain for the whole project (start at the project root).
+- Add `folder` when you are editing something deeper inside the project, e.g. `openl_get_project_agent_context({ projectId, folder: "rules/pricing" })`. The walk then starts at that sub-folder so the **closest** AGENTS.md to your edit is ranked first.
 - The search **direction is fixed** (it always walks UP / ANCESTORS) and cannot be changed. To search a project's **own** subtree by glob or content instead, use `openl_search_project_files`.
 
 ## How to read the result

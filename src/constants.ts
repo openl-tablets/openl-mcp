@@ -62,6 +62,7 @@ export function stripToolPrefix(name: string): string {
  * the tool name.
  */
 export const TOOL_CATEGORIES = [
+  "Guidance",
   "Repository",
   "Project",
   "Rules & Tables",

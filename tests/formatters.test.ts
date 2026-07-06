@@ -505,7 +505,7 @@ describe("formatters", () => {
   });
 
   describe("formatAgentsDocument", () => {
-    // getProjectAgentsMd returns nearest-first (project first); the document is root-first.
+    // getProjectAgentContext returns nearest-first (project first); the document is root-first.
     const chain: AgentsFile[] = [
       { path: "foo/Project-1/AGENTS.md", content: "project guidance" },
       { path: "foo/AGENTS.md", content: "root guidance" },

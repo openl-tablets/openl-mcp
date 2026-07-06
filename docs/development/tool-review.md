@@ -511,7 +511,7 @@ compilation errors. Saving a project (`openl_save_project`) also validates it.
 
 ### Full Tools Table
 
-The server registers **53 tools**. All are listed below.
+The server registers **56 tools**. All are listed below.
 
 | # | Tool Name | Category | Status | OpenL API Endpoint | Description |
 |---|-----------|----------|--------|-------------------|-------------|
@@ -526,7 +526,7 @@ The server registers **53 tools**. All are listed below.
 | 9 | `openl_save_project` | Project | ✅ Complete | `PATCH /projects/{projectId}` with `{ comment }` | Save project changes to Git (validates on save) |
 | 10 | `openl_close_project` | Project | ✅ Complete | `PATCH /projects/{projectId}` with `status: "CLOSED"` | Close project (with save/discard safety checks) |
 | 11 | `openl_project_status` | Project | ✅ Complete | project compile state + diagnostics | Get `compileState` plus errors/warnings with location |
-| 12 | `openl_get_project_agents_md` | Project | ✅ Complete | project AGENTS.md content | Get the project's AGENTS.md guidance |
+| 12 | `openl_get_project_agent_context` | Guidance | ✅ Complete | project AGENTS.md chain (file-search, ANCESTORS scope) | Resolve the AGENTS.md hierarchy applying to a project path, with referenced bundled-guide ids |
 | 13 | `openl_create_project_branch` | Project | ✅ Complete | `POST /projects/{projectId}/branches` | Create new branch from revision |
 | 14 | `openl_list_project_local_changes` | Project | ✅ Complete | `GET /history/project` (session-based) | List local change history (requires project open) |
 | 15 | `openl_restore_project_local_change` | Project | ✅ Complete | `POST /history/restore` with `historyId` | Restore project to previous local version |
@@ -568,6 +568,9 @@ The server registers **53 tools**. All are listed below.
 | 51 | `openl_merge_table_cells` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`merge`/`cells`) | Merge a rectangular range of cells |
 | 52 | `openl_unmerge_table_cells` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`unmerge`/`cells`) | Unmerge the cell covering a position |
 | 53 | `openl_delete_table` | Rules | ✅ Complete | `DELETE /projects/{projectId}/tables/{tableId}` | Delete an entire table from the project |
+| 54 | `openl_get_started` | Guidance | ✅ Complete | none (local) | Onboarding bootstrap: workflow protocol + workspace orientation |
+| 55 | `openl_list_guides` | Guidance | ✅ Complete | none (local guides bundle) | Metadata index of the bundled OpenL docs (filterable, paginated) |
+| 56 | `openl_get_guides` | Guidance | ✅ Complete | none (local guides bundle) | Full markdown bodies for requested guide ids |
 
 **Legend:**
 - ✅ **Complete**: Tool is fully implemented and working
@@ -582,10 +585,10 @@ The server registers **53 tools**. All are listed below.
 
 | Status | Count | Tools |
 |--------|-------|-------|
-| ✅ Complete | 52 | All repository, project, file, table, raw table-source action, deployment, testing, and trace tools (excluding `openl_list_deployments`, which is partial). |
+| ✅ Complete | 55 | All guidance, repository, project, file, table, raw table-source action, deployment, testing, and trace tools (excluding `openl_list_deployments`, which is partial). |
 | ⚠️ Partial | 1 | `openl_list_deployments` (missing `repository` filter parameter) |
 
-Total registered tools: **53**.
+Total registered tools: **56**.
 
 ### Critical Issues
 

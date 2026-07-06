@@ -1323,7 +1323,7 @@ export class OpenLClient {
    * Implemented as a fixed ANCESTORS-scope `file-search` (`from = <folder>/AGENTS.md`),
    * which returns every same-named ancestor nearest-first WITH its content.
    * Proximity is carried by the array order alone (nearest-first); the
-   * `openl_get_project_agents_md` tool renders them as one document via
+   * `openl_get_project_agent_context` tool renders them as one document via
    * `formatAgentsDocument`.
    *
    * @param projectId - Project ID or name (same resolution as other project calls).
@@ -1332,7 +1332,7 @@ export class OpenLClient {
    *                   the project's branch.
    * @returns AGENTS.md files ordered nearest-first; empty array when none exist.
    */
-  async getProjectAgentsMd(
+  async getProjectAgentContext(
     projectId: string,
     options?: { folder?: string; branch?: string }
   ): Promise<Types.AgentsFile[]> {

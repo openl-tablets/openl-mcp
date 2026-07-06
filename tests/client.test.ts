@@ -1615,7 +1615,7 @@ describe("OpenLClient", () => {
       });
     });
 
-    describe("getProjectAgentsMd", () => {
+    describe("getProjectAgentContext", () => {
       const ancestorsNodes = [
         { path: "foo/Project-1/AGENTS.md", name: "AGENTS.md", type: "file", basePath: "foo/Project-1", size: 7, lastModified: "2026-06-12T10:47:05Z", content: "project" },
         { path: "foo/AGENTS.md", name: "AGENTS.md", type: "file", basePath: "foo", size: 0, lastModified: "2026-06-12T10:47:06Z", content: "" },
@@ -1628,7 +1628,7 @@ describe("OpenLClient", () => {
           return [200, ancestorsNodes];
         });
 
-        const res = await client.getProjectAgentsMd("p1");
+        const res = await client.getProjectAgentContext("p1");
 
         // Direction + start path are fixed (not caller-controllable).
         expect(body).toEqual({ scope: "ANCESTORS", from: "AGENTS.md" });
@@ -1642,7 +1642,7 @@ describe("OpenLClient", () => {
       it("does NOT call getProject (no enrichment round-trip)", async () => {
         mockAxios.onPost("/projects/p1/file-search").reply(200, ancestorsNodes);
         // No GET /projects/p1 mock registered: a call would 404 and surface here.
-        await client.getProjectAgentsMd("p1");
+        await client.getProjectAgentContext("p1");
         expect(mockAxios.history.get.find((r) => r.url === "/projects/p1")).toBeUndefined();
       });
 
@@ -1653,7 +1653,7 @@ describe("OpenLClient", () => {
           return [200, ancestorsNodes];
         });
 
-        await client.getProjectAgentsMd("p1", { folder: "/rules/pricing/" });
+        await client.getProjectAgentContext("p1", { folder: "/rules/pricing/" });
 
         // Leading/trailing slashes trimmed; '/AGENTS.md' appended.
         expect(body).toEqual({ scope: "ANCESTORS", from: "rules/pricing/AGENTS.md" });
@@ -1666,7 +1666,7 @@ describe("OpenLClient", () => {
           return [200, ancestorsNodes];
         });
 
-        await client.getProjectAgentsMd("p1", { branch: "release" });
+        await client.getProjectAgentContext("p1", { branch: "release" });
         expect(params).toMatchObject({ branch: "release" });
       });
 
@@ -1675,13 +1675,13 @@ describe("OpenLClient", () => {
           { path: "foo/AGENTS.md", name: "AGENTS.md", type: "file", basePath: "foo" },
         ]);
 
-        const res = await client.getProjectAgentsMd("p1");
+        const res = await client.getProjectAgentContext("p1");
         expect(res).toEqual([{ path: "foo/AGENTS.md", content: "", size: undefined, lastModified: undefined }]);
       });
 
       it("returns an empty array when no AGENTS.md exists anywhere", async () => {
         mockAxios.onPost("/projects/p1/file-search").reply(200, []);
-        await expect(client.getProjectAgentsMd("p1")).resolves.toEqual([]);
+        await expect(client.getProjectAgentContext("p1")).resolves.toEqual([]);
       });
     });
 

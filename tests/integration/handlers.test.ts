@@ -10,6 +10,7 @@ import { executeTool, getAllTools, registerAllTools } from "../../src/handlers/i
 import type { OpenLConfig, ProjectStatusView, ProjectViewModel, RepositoryInfo, SummaryTableView, TestsExecutionSummary } from "../../src/types.js";
 import * as Types from "../../src/types.js";
 import { mockRepositories, mockDecisionTable, mockDeployments } from "../mocks/openl-api-mocks.js";
+import { FIXTURE_IDS, writeGuidesFixture } from "../mocks/guides-bundle-fixture.js";
 
 // Shared fixture for the tests below that address a project by its colon-form id.
 const projectId = "design:insurance-rules:hash123";
@@ -821,14 +822,91 @@ describe("Tool Handler Integration Tests", () => {
     });
   });
 
-  describe("AGENTS.md Tool", () => {
-    it("should execute openl_get_project_agents_md (aggregated document, root-first)", async () => {
+  describe("Guidance Tools", () => {
+    // The guides tools resolve the bundle via OPENL_MCP_GUIDES_DIR — pointed at a
+    // fixture so these tests never depend on the real build artifact (CI runs
+    // `npm test` before `npm run build`).
+    let savedGuidesDir: string | undefined;
+
+    beforeAll(() => {
+      savedGuidesDir = process.env.OPENL_MCP_GUIDES_DIR;
+      process.env.OPENL_MCP_GUIDES_DIR = writeGuidesFixture();
+    });
+
+    afterAll(() => {
+      if (savedGuidesDir === undefined) {
+        delete process.env.OPENL_MCP_GUIDES_DIR;
+      } else {
+        process.env.OPENL_MCP_GUIDES_DIR = savedGuidesDir;
+      }
+    });
+
+    it("registers the tools under their EPBDS-16156 names (agents-md name is gone)", () => {
+      const names = getAllTools().map((t) => t.name);
+      expect(names).toEqual(
+        expect.arrayContaining(["get_started", "list_guides", "get_guides", "get_project_agent_context"]),
+      );
+      expect(names).not.toContain("get_project_agents_md");
+    });
+
+    it("openl_get_started returns the workflow protocol plus a bundle orientation, not an index dump", async () => {
+      const result = await executeTool("get_started", {}, client);
+
+      const text = result.content[0].text;
+      // The protocol must direct the agent to the other guidance tools.
+      expect(text).toContain("openl_get_project_agent_context");
+      expect(text).toContain("openl_list_guides");
+      expect(text).toContain("openl_get_guides");
+      // Orientation reflects the bundle (source ref, spec ids, section groups)...
+      expect(text).toContain("fixture-ref");
+      expect(text).toContain(FIXTURE_IDS.rulesXml);
+      expect(text).toContain("Introduction (1)");
+      // ...but stays an orientation: guide ids/titles are NOT dumped.
+      expect(text).not.toContain(FIXTURE_IDS.smartRules);
+    });
+
+    it("openl_list_guides returns filterable metadata only (no bodies)", async () => {
+      const result = await executeTool("list_guides", {
+        type: "guide",
+        search: "smart",
+        response_format: "json",
+      }, client);
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data).toHaveLength(1);
+      expect(parsed.data[0]).toMatchObject({
+        id: FIXTURE_IDS.smartRules,
+        type: "guide",
+        title: "Smart Rules Table",
+      });
+      expect(parsed.data[0]).not.toHaveProperty("body");
+      expect(parsed.pagination).toMatchObject({ total_count: 1 });
+    });
+
+    it("openl_get_guides returns the full bodies for the requested ids", async () => {
+      const result = await executeTool("get_guides", {
+        ids: [FIXTURE_IDS.rulesXml, FIXTURE_IDS.basicConcepts],
+      }, client);
+
+      const text = result.content[0].text;
+      expect(text).toContain("**Guide `spec/rules.xml`**");
+      expect(text).toContain("Every project has one.");
+      expect(text).toContain("Tables hold the rules.");
+    });
+
+    it("openl_get_guides fails actionably on unknown ids instead of falling back to the index", async () => {
+      await expect(
+        executeTool("get_guides", { ids: ["spec/rules.xml", "guide/no-such-doc"] }, client),
+      ).rejects.toThrow(/Unknown guide id\(s\): guide\/no-such-doc.*openl_list_guides/);
+    });
+
+    it("should execute openl_get_project_agent_context (aggregated document, root-first)", async () => {
       mockAxios.onPost(/\/projects\/.*\/file-search/).reply(200, [
         { path: "foo/P1/AGENTS.md", name: "AGENTS.md", type: "file", basePath: "foo/P1", content: "project guidance" },
         { path: "foo/AGENTS.md", name: "AGENTS.md", type: "file", basePath: "foo", content: "root guidance" },
       ]);
 
-      const result = await executeTool("get_project_agents_md", {
+      const result = await executeTool("get_project_agent_context", {
         projectId: "design-P1",
       }, client);
 
@@ -838,12 +916,35 @@ describe("Tool Handler Integration Tests", () => {
       // Root file precedes the project file (root-first, project last = highest priority).
       expect(text.indexOf("## /foo/AGENTS.md")).toBeLessThan(text.indexOf("## /foo/P1/AGENTS.md"));
       expect(text.indexOf("root guidance")).toBeLessThan(text.indexOf("project guidance"));
+      // No guide ids mentioned → no cross-reference section.
+      expect(text).not.toContain("### Referenced guides");
+    });
+
+    it("lists the bundled guide ids referenced by the AGENTS.md chain", async () => {
+      mockAxios.onPost(/\/projects\/.*\/file-search/).reply(200, [
+        {
+          path: "foo/P1/AGENTS.md", name: "AGENTS.md", type: "file", basePath: "foo/P1",
+          content: `Datatypes are documented in ${FIXTURE_IDS.basicConcepts}; also see spec/rules.xml.`,
+        },
+      ]);
+
+      const result = await executeTool("get_project_agent_context", {
+        projectId: "design-P1",
+      }, client);
+
+      const text = result.content[0].text;
+      expect(text).toContain("### Referenced guides");
+      expect(text).toContain("openl_get_guides");
+      // Both referenced ids listed, in index order (spec first in the fixture).
+      expect(text.indexOf("- `spec/rules.xml`")).toBeLessThan(
+        text.indexOf(`- \`${FIXTURE_IDS.basicConcepts}\``),
+      );
     });
 
     it("returns a 'no files' note when the project has no AGENTS.md", async () => {
       mockAxios.onPost(/\/projects\/.*\/file-search/).reply(200, []);
 
-      const result = await executeTool("get_project_agents_md", {
+      const result = await executeTool("get_project_agent_context", {
         projectId: "design-P2",
       }, client);
 

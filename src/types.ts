@@ -101,8 +101,8 @@ export interface FsNode {
 
 /**
  * One AGENTS.md file in a project's resolved ancestry chain, as returned by
- * {@link OpenLClient.getProjectAgentsMd} (surfaced by the
- * `openl_get_project_agents_md` tool). The chain follows the AGENTS.md spec:
+ * {@link OpenLClient.getProjectAgentContext} (surfaced by the
+ * `openl_get_project_agent_context` tool). The chain follows the AGENTS.md spec:
  * starting at the project (or a
  * sub-folder of it) and walking up to the repository root, the nearest file wins.
  * Proximity is carried by array order (nearest-first); the presentation layer

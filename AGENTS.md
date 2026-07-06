@@ -6,6 +6,7 @@ The OpenL MCP Server connects AI coding agents (Claude Code, Claude Desktop,
 Cursor, VS Code / GitHub Copilot) to the OpenL Studio Business Rules Management
 System (BRMS). Through its tools you can:
 
+- **Get oriented** with an onboarding entry point and bundled OpenL reference docs
 - **Discover** repositories, projects, and rules
 - **Read** project structure, table definitions, and rule logic
 - **Modify** rules, tables, and project files
@@ -22,9 +23,21 @@ call can wait for the result instead of polling — project compilation
 (`openl_get_trace_nodes` / `openl_export_trace` while a trace runs). Details:
 [docs/development/websockets.md](docs/development/websockets.md).
 
-## Tools (53 Total)
+## Tools (56 Total)
 
 All tools are prefixed with `openl_` and share the server's version.
+
+### Guidance Tools (4)
+The onboarding and reference-documentation layer. Call `openl_get_started` once per
+session before anything else; call `openl_get_project_agent_context` before working on
+or creating any project. The documentation tools serve a bundle of the official OpenL
+Tablets docs **embedded at build time** from the release tag matching the targeted
+OpenL Studio version — progressive disclosure: the index is metadata-only, bodies are
+fetched by id on demand.
+- `openl_get_started` - Read-only onboarding bootstrap: the mandatory workflow protocol (load agent context per project, consult guides on demand, edit → validate → save) plus a workspace orientation (which specification/guide categories exist and how to discover more — not an index dump)
+- `openl_get_project_agent_context` - Resolve the **AGENTS.md hierarchy** for a project as a **single aggregated markdown document**: walks UP from the project (or an optional `folder`) to the repository root, collects every applicable `AGENTS.md`, and returns them concatenated in one response — ordered from the root folder (lowest priority) down to the project folder (highest priority), later sections winning on conflict. Ends with the ids of bundled guides the guidance references
+- `openl_list_guides` - The canonical index of the bundled docs: **metadata only** (id, type, title, source path, size), filterable by `type` ('specification'/'guide') and case-insensitive `search` over id+title, paginated
+- `openl_get_guides` - Full markdown bodies for 1-5 ids from the index (e.g. `spec/rules.xml`, `guide/introduction/basic-concepts`); unknown ids fail with an actionable error — it never falls back to the index
 
 ### Repository Tools (4)
 - `openl_list_repositories` - List all design repositories
@@ -71,7 +84,7 @@ Cells / ranges:
 - `openl_merge_table_cells` - Merge a `rowspan`×`colspan` range from (`row`, `column`)
 - `openl_unmerge_table_cells` - Unmerge the cell covering (`row`, `column`)
 
-### Project Files Tools (7, BETA)
+### Project Files Tools (6, BETA)
 Operate on ANY file in a project by exact project-relative path (not just Excel rule files). Writes/deletes/copies/moves land in the project **working copy** — commit them with `openl_save_project`. Use the optional `branch` to pin the project's branch (omit for `local`/non-branch repositories).
 - `openl_read_project_file` - Read a file (text verbatim, binary as base64; optional `offset`/`length` byte range), read file metadata (`view: "meta"`), or list a folder (`recursive`, `viewMode` FLAT/NESTED, `extensions`, `namePattern`, `foldersOnly`); optional `version` reads a historical revision
 - `openl_write_project_file` - Create/replace a file from UTF-8 or base64 `content`; `createFolders` (default true), `conflictPolicy` FAIL/OVERWRITE/SKIP
@@ -79,7 +92,6 @@ Operate on ANY file in a project by exact project-relative path (not just Excel 
 - `openl_search_project_files` - Search by glob `pattern`, `extensions`, `type`, or case-insensitive `content` substring; `scope` SUBTREE (default) or ANCESTORS
 - `openl_copy_project_file` - Copy a file within the project (no overwrite — destination collision returns 409)
 - `openl_move_project_file` - Move or rename a file within the project
-- `openl_get_project_agents_md` - Load the **AGENTS.md** guidance for a project as a **single aggregated markdown document**: walks UP from the project (or an optional `folder`) to the repository root, collects every applicable `AGENTS.md`, and returns them concatenated in one response — ordered from the root folder (lowest priority) down to the project folder (highest priority), later sections winning on conflict.
 
 ### Trace Tools (6, BETA)
 - `openl_start_trace` - Start trace execution for a table
@@ -141,7 +153,7 @@ HTTP), never from the server. Setup: [docs/guides/quick-start.md](docs/guides/qu
 
 - Formats: `json`, `markdown`, `markdown_concise`, `markdown_detailed` (the `response_format` argument).
 - List operations return pagination metadata.
-- Large responses are truncated at a 25K-character limit.
+- Large responses are truncated at a 25K-character limit — except `openl_get_guides` bodies, which are returned verbatim (sizes are published in the index so callers can budget).
 
 ## OpenL-specific behaviour
 

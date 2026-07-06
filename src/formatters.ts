@@ -722,7 +722,7 @@ export const AGENTS_DOCUMENT_NOTE =
 /**
  * Render a project's applicable AGENTS.md files as a single markdown document.
  *
- * The input is the chain as returned by {@link OpenLClient.getProjectAgentsMd},
+ * The input is the chain as returned by {@link OpenLClient.getProjectAgentContext},
  * which is ordered nearest-first (project folder first). The document is emitted
  * root-first — repository root at the top (lowest priority), project folder at the
  * bottom (highest priority) — so a reader applies later sections over earlier ones.

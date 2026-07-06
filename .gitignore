@@ -9,6 +9,8 @@ yarn.lock
 
 # Build output
 dist/
+# OpenL docs bundle fetched at build time by dist/fetch-guides.js — never committed
+guides/
 *.js
 *.js.map
 *.d.ts

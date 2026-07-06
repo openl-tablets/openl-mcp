@@ -965,7 +965,7 @@ export const searchProjectFilesSchema = z.object({
 // Intentionally has no `response_format` or pagination: the tool returns a single
 // aggregated markdown document (one AGENTS.md chain), which has no alternate format
 // or pages — do not add them to match the other tools.
-export const getProjectAgentsMdSchema = z.object({
+export const getProjectAgentContextSchema = z.object({
   projectId: projectIdSchema,
   folder: z
     .string()
@@ -975,6 +975,43 @@ export const getProjectAgentsMdSchema = z.object({
       "Optional project-relative sub-folder to start the walk-up from, e.g. 'rules' or 'rules/pricing'. Use this to get the AGENTS.md chain that applies to a file deeper inside the project ('the AGENTS.md nearest the edited file wins'). Omit to start at the project root. Do NOT include the project name; the path is relative to the project root."
     ),
   branch: fileBranchSchema,
+}).strict();
+
+// =============================================================================
+// Guidance Schemas
+// =============================================================================
+
+// Intentionally argument-less: the onboarding text is fixed per build and the
+// orientation is computed from the bundled guides index.
+export const getStartedSchema = z.object({}).strict();
+
+export const listGuidesSchema = z.object({
+  type: z
+    .enum(["specification", "guide"])
+    .optional()
+    .describe(
+      "Filter by document type: 'specification' (config-file and project-layout specs, e.g. rules.xml) or 'guide' (OpenL Tablets Reference Guide chapters). Omit for both."
+    ),
+  search: z
+    .string()
+    .max(200)
+    .optional()
+    .describe(
+      "Case-insensitive substring matched against each entry's id and title (e.g. 'decision table', 'spreadsheet', 'rules.xml')."
+    ),
+  response_format: ResponseFormat.optional(),
+}).merge(PaginationParams).strict();
+
+// Like getProjectAgentContextSchema, intentionally no `response_format`: the tool
+// returns the requested markdown documents verbatim.
+export const getGuidesSchema = z.object({
+  ids: z
+    .array(z.string().min(1))
+    .min(1)
+    .max(5)
+    .describe(
+      "1-5 guide ids exactly as returned by openl_list_guides (e.g. 'spec/rules.xml', 'guide/introduction/basic-concepts'). Each entry's size_bytes is in the index — fetch only what you need."
+    ),
 }).strict();
 
 const copyMovePairSchema = {

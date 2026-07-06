@@ -209,7 +209,13 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 
 ### FR-1: Tool Execution
 
-**Requirement**: MCP server provides 53 tools.
+**Requirement**: MCP server provides 56 tools.
+
+**Guidance Tools**:
+- `openl_get_started` - Read-only onboarding bootstrap: workflow protocol + workspace orientation (call first, once per session)
+- `openl_get_project_agent_context` - Resolve the AGENTS.md hierarchy applying to a project path (with referenced bundled-guide ids)
+- `openl_list_guides` - Metadata index of the OpenL docs bundled at build time (filterable, paginated)
+- `openl_get_guides` - Full markdown bodies for requested guide ids (errors on unknown ids)
 
 **Repository Tools**:
 - `openl_list_repositories` - List all design repositories
@@ -228,7 +234,6 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - `openl_create_project_branch` - Create new branch
 - `openl_list_project_local_changes` - List local change history
 - `openl_restore_project_local_change` - Restore previous local version
-- `openl_get_project_agents_md` - Get project AGENTS.md guidance
 
 **Project File Tools**:
 - `openl_read_project_file` - Read a project file
@@ -577,7 +582,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 
 The MCP server is considered successful when:
 
-1. ✅ All 53 tools execute successfully
+1. ✅ All 56 tools execute successfully
 2. ✅ All tools support response_format parameter
 3. ✅ All list operations support pagination
 4. ✅ Character limits enforced on all responses
@@ -621,4 +626,4 @@ Potential enhancements for future versions:
 
 *Last Updated: 2026-01-28*
 *Version: 1.0.0*
-*Status: Production-ready (53 tools, 14 prompts)*
+*Status: Production-ready (56 tools, 14 prompts)*

@@ -9,6 +9,7 @@
  * detail of this directory.
  */
 
+import { registerGuideHandlers } from "./guide-handlers.js";
 import { registerDeploymentHandlers } from "./deployment-handlers.js";
 import { registerRepositoryHandlers } from "./repository-handlers.js";
 import { registerTestingHandlers } from "./testing-handlers.js";
@@ -28,6 +29,7 @@ export { getAllTools, executeTool, hasTool } from "./common.js";
  * repeatedly — each module just re-sets its entries in the registry map.
  */
 export function registerAllTools(): void {
+  registerGuideHandlers();
   registerDeploymentHandlers();
   registerRepositoryHandlers();
   registerTestingHandlers();

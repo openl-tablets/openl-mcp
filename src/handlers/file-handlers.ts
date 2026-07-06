@@ -1,13 +1,13 @@
 /**
  * Project-file tool handlers (BETA) — read, write, delete, search, copy, and
- * move files inside an opened project, plus the project's AGENTS.md.
+ * move files inside an opened project.
  */
 
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 
 import * as schemas from "../schemas.js";
 import type * as Types from "../types.js";
-import { formatResponse, paginateResults, formatAgentsDocument } from "../formatters.js";
+import { formatResponse, paginateResults } from "../formatters.js";
 import { validateResponseFormat, validatePagination } from "../validators.js";
 import { isAxiosError, sanitizeError } from "../utils.js";
 import { RESPONSE_LIMITS } from "../constants.js";
@@ -421,43 +421,6 @@ export function registerFileHandlers(): void {
             pagination: { limit, offset, total: paginated.total_count },
           }),
         }],
-      };
-    },
-  });
-
-  registerTool({
-    name: "get_project_agents_md",
-    category: "Project Files",
-    title: "Get Project AGENTS.md",
-    description:
-      "Load the AGENTS.md guidance that applies to a project as a single aggregated markdown document. Starting at the project directory — or the optional 'folder' sub-directory — this walks UP through every parent folder to the repository root, collects every AGENTS.md found, and returns them concatenated in ONE response ordered from the root folder (lowest priority) down to the project folder (highest priority); on conflicting instructions, each later section overrides the earlier ones. AGENTS.md files live not only in the project but often in a workspace/monorepo root above it. Levels with no AGENTS.md are skipped (not an error); a project with none returns a short 'no files' note. The search direction is fixed — to search a project's own subtree by glob/content instead, use openl_search_project_files.",
-    inputSchema: schemas.z.toJSONSchema(schemas.getProjectAgentsMdSchema) as Record<string, unknown>,
-    annotations: {
-      readOnlyHint: true,
-      idempotentHint: true,
-      openWorldHint: true,
-    },
-    handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        folder?: string;
-        branch?: string;
-      };
-
-      if (!typedArgs || !typedArgs.projectId) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          "Missing required argument: projectId. To find valid project IDs, use: openl_list_projects()"
-        );
-      }
-
-      const files = await client.getProjectAgentsMd(typedArgs.projectId, {
-        folder: typedArgs.folder,
-        branch: typedArgs.branch,
-      });
-
-      return {
-        content: [{ type: "text", text: formatAgentsDocument(files) }],
       };
     },
   });

@@ -9,11 +9,16 @@
   },
   "files": [
     "dist/",
+    "guides/",
     "prompts/",
     "LICENSE",
     "README.md",
     "README.cli.md"
   ],
+  "openlDocs": {
+    "repo": "openl-tablets/openl-tablets",
+    "ref": "6.3.0"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/openl-tablets/openl-mcp.git"
@@ -27,11 +32,12 @@
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node dist/fetch-guides.js",
+    "fetch:guides": "tsc && node dist/fetch-guides.js --force",
     "start": "node dist/index.js",
     "start:http": "node dist/index.js --http",
-    "dev": "tsc && node dist/index.js",
-    "dev:http": "tsc && node dist/index.js --http",
+    "dev": "npm run build && node dist/index.js",
+    "dev:http": "npm run build && node dist/index.js --http",
     "watch": "tsc --watch",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand",
     "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --testPathIgnorePatterns=integration",
