@@ -10,6 +10,7 @@ Navigate to the right guide based on what you need.
 
 - **[Usage Examples](guides/examples.md)** — what you can ask the AI to do
 - **[Advanced Guide](guides/advanced.md)** — settings, authentication, Docker, and CLI mode
+- **[CLI Guide](guides/cli.md)** — use the same binary as a shell tool (no MCP client)
 - **[Troubleshooting](guides/troubleshooting.md)** — common issues and fixes
 
 ## Development
@@ -26,7 +27,7 @@ Navigate to the right guide based on what you need.
 - **Connect my AI client** → [Quick Start](guides/quick-start.md)
 - **Run without Node.js, or share one server** → [Advanced Guide](guides/advanced.md#run-with-docker)
 - **Configure authentication** → [Advanced Guide](guides/advanced.md#authentication)
-- **Run the binary from a shell** → [Advanced Guide](guides/advanced.md#cli-mode)
+- **Run the binary from a shell** → [CLI Guide](guides/cli.md)
 - **Use the MCP tools** → [Usage Examples](guides/examples.md)
 - **Fix a problem** → [Troubleshooting](guides/troubleshooting.md)
 - **Contribute code** → [Contributing](development/contributing.md)

@@ -10,7 +10,8 @@ yarn.lock
 # Build output
 dist/
 # OpenL docs bundle fetched at build time by dist/fetch-guides.js — never committed
-guides/
+# Anchored to the repo root so it does not also match docs/guides/.
+/guides/
 *.js
 *.js.map
 *.d.ts

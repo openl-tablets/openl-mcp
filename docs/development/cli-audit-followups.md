@@ -34,7 +34,7 @@ Tracks items identified in the `EPBDS-16027` CLI audit (May 2026) that were **no
 
 ## 🟡 P1.7 — `--token-stdin` for secret-safer input
 
-**Problem.** Passing the secret through `--token <pat>` exposes it in the OS process listing (`ps aux`, `/proc/<pid>/cmdline`), shell history, and process accounting logs. Documented in [README.cli.md → Security](../../README.cli.md#security), but documentation alone is a weak mitigation — the secure path doesn't exist yet.
+**Problem.** Passing the secret through `--token <pat>` exposes it in the OS process listing (`ps aux`, `/proc/<pid>/cmdline`), shell history, and process accounting logs. Documented in [CLI Guide → Security](../guides/cli.md#security), but documentation alone is a weak mitigation — the secure path doesn't exist yet.
 
 **Best practice.** Industry convention (`docker login --password-stdin`, `gh auth login --with-token`) is to accept the secret via a dedicated stdin flag, which sidesteps the argv leak.
 
@@ -349,7 +349,7 @@ Suggested grouping for tickets:
 
 ## See also
 
-- [`../../README.cli.md`](../../README.cli.md) — User-facing CLI guide.
+- [`../guides/cli.md`](../guides/cli.md) — User-facing CLI guide.
 - [`../../src/cli.ts`](../../src/cli.ts) — Current implementation.
 - [`../../tests/cli.test.ts`](../../tests/cli.test.ts) — In-process test suite.
 - Audit conducted 2026-05-26 against [clig.dev](https://clig.dev/), [sysexits.h](https://man7.org/linux/man-pages/man3/sysexits.h.3head.html), 12-factor §3, smallstep secrets guidance, and reference CLIs (`gh`, `npm`, `kubectl`, `aws v2`, `jest`).

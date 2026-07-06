@@ -12,8 +12,7 @@
     "guides/",
     "prompts/",
     "LICENSE",
-    "README.md",
-    "README.cli.md"
+    "README.md"
   ],
   "openlDocs": {
     "repo": "openl-tablets/openl-tablets",

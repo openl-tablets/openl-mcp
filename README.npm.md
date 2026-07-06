@@ -90,7 +90,7 @@ OPENL_BASE_URL=<host> OPENL_PERSONAL_ACCESS_TOKEN=<pat> \
 npx -y openl-mcp <host> list_repositories '{"response_format":"json"}' --token <pat> | jq
 ```
 
-**See [`README.cli.md`](https://github.com/openl-tablets/openl-mcp/blob/main/README.cli.md)** for the full CLI guide: configuration, all flags (`--base-url`, `--token`, `--timeout`, `--cookie-jar`), argument-passing modes (`@file.json`, `--stdin`), session handling for trace flows, recipes, exit codes, Windows notes, and troubleshooting.
+**See the [CLI Guide](https://github.com/openl-tablets/openl-mcp/blob/main/docs/guides/cli.md)** for the full reference: configuration, all flags (`--base-url`, `--token`, `--timeout`, `--cookie-jar`), argument-passing modes (`@file.json`, `--stdin`), session handling for trace flows, recipes, exit codes, Windows notes, and troubleshooting.
 
 Run with just a `<url>` (and no tool name) — or with no arguments at all (falling back to `OPENL_BASE_URL`) — to start the MCP server on stdio.
 

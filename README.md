@@ -8,7 +8,7 @@ Built with MCP SDK v1.29+ featuring type-safe validation (Zod) and comprehensive
 
 - 🚀 [Quick Start](docs/guides/quick-start.md) - Connect Claude Code, Claude Desktop, Cursor, or VS Code in ~5 minutes
 - ⚙️ [Advanced Guide](docs/guides/advanced.md) - Settings, authentication, Docker, and CLI mode
-- 🖥️ [CLI Guide](README.cli.md) - Use the same binary as a shell tool (no MCP client needed)
+- 🖥️ [CLI Guide](docs/guides/cli.md) - Use the same binary as a shell tool (no MCP client needed)
 - 📖 [Usage Examples](docs/guides/examples.md) - Learn how to use MCP tools
 - 🐛 [Troubleshooting](docs/guides/troubleshooting.md) - Common issues and solutions
 - 👨‍💻 [Contributing](docs/development/contributing.md) - Development guide
@@ -17,7 +17,7 @@ Built with MCP SDK v1.29+ featuring type-safe validation (Zod) and comprehensive
 
 The MCP server is published as an npm package: [`openl-mcp`](https://www.npmjs.com/package/openl-mcp) — stdio transport via `npx` for Claude Code / Claude Desktop / Cursor / VS Code. No Node.js? Run it on the official Docker image instead — see the [Advanced Guide](docs/guides/advanced.md#run-with-docker).
 
-The same binary also doubles as a **CLI** for direct API calls without an MCP client (`npx -y openl-mcp <tool> '<json-args>'`) — see [README.cli.md](README.cli.md) for the full CLI guide.
+The same binary also doubles as a **CLI** for direct API calls without an MCP client (`npx -y openl-mcp <tool> '<json-args>'`) — see the [CLI Guide](docs/guides/cli.md) for the full reference.
 
 For npm package details see [README.npm.md](README.npm.md).
 
@@ -29,6 +29,7 @@ For npm package details see [README.npm.md](README.npm.md).
 ### Guides
 - [Usage Examples](docs/guides/examples.md) - Practical examples of using MCP tools
 - [Advanced Guide](docs/guides/advanced.md) - Settings, authentication, Docker, and CLI mode
+- [CLI Guide](docs/guides/cli.md) - Use the same binary as a shell tool (no MCP client needed)
 - [Troubleshooting Guide](docs/guides/troubleshooting.md) - Common issues, debugging, and solutions
 
 ### Development

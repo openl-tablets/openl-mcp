@@ -227,4 +227,4 @@ Key points:
   from might-retry failures.
 
 Full reference — every flag, argument-passing modes, recipes, exit codes, and cross-platform notes:
-**[README.cli.md](../../README.cli.md)**.
+**[CLI Guide](cli.md)**.
