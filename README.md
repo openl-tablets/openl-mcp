@@ -21,27 +21,6 @@ The same binary also doubles as a **CLI** for direct API calls without an MCP cl
 
 For npm package details see [README.npm.md](README.npm.md).
 
-## Quick Start
-
-Point your AI client at OpenL Studio — it launches the server over stdio via
-`npx` (or Docker, if you don't have Node.js):
-
-```bash
-# Claude Code
-claude mcp add openl -- npx -y openl-mcp http://localhost:8080
-```
-
-For Claude Desktop, Cursor, and VS Code (and the no-Node.js Docker option), see the
-[Quick Start guide](docs/guides/quick-start.md).
-
-Or bring up OpenL Studio **and** a shared MCP server with one command using
-[`compose.yaml`](compose.yaml) — only Docker required:
-
-```bash
-docker compose up -d
-# OpenL Studio → http://localhost:8080, MCP server → http://localhost:3000/mcp
-```
-
 ## Documentation Structure
 
 ### Getting Started
