@@ -12,6 +12,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfigFromEnv } from "../src/stdio-server.js";
+import { setCachedToken } from "../src/token-cache.js";
 
 describe("loadConfigFromEnv (stdio MCP transport)", () => {
   const OPENL_KEYS = [
@@ -104,6 +105,29 @@ describe("loadConfigFromEnv (stdio MCP transport)", () => {
     // Running without a token is the normal single-user case: no auth status
     // line and no "no authentication" notice are logged for it.
     expect(errSpy).not.toHaveBeenCalledWith(expect.stringMatching(/Personal Access Token|No authentication/i));
+  });
+
+  it("falls back to the cached login when no token is set", async () => {
+    process.env.OPENL_BASE_URL = "http://localhost:8080";
+    await setCachedToken("http://localhost:8080", { token: "openl_pat_cached" });
+    const cfg = await loadConfigFromEnv();
+    expect(cfg.personalAccessToken).toBe("openl_pat_cached");
+  });
+
+  it("treats a blank/whitespace token as absent and uses the cached login", async () => {
+    process.env.OPENL_BASE_URL = "http://localhost:8080";
+    process.env.OPENL_PERSONAL_ACCESS_TOKEN = "   ";
+    await setCachedToken("http://localhost:8080", { token: "openl_pat_cached" });
+    const cfg = await loadConfigFromEnv();
+    expect(cfg.personalAccessToken).toBe("openl_pat_cached");
+  });
+
+  it("prefers an explicit token over the cached login", async () => {
+    process.env.OPENL_BASE_URL = "http://localhost:8080";
+    process.env.OPENL_PERSONAL_ACCESS_TOKEN = "openl_pat_env";
+    await setCachedToken("http://localhost:8080", { token: "openl_pat_cached" });
+    const cfg = await loadConfigFromEnv();
+    expect(cfg.personalAccessToken).toBe("openl_pat_env");
   });
 
   it("resolves with a PAT and logs that a token is configured", async () => {

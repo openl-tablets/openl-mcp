@@ -16,7 +16,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 import { OpenLClient } from "./client.js";
 import { createConfiguredServer } from "./mcp-core.js";
-import { getCachedToken } from "./token-cache.js";
+import { getCachedToken, normalizeToken } from "./token-cache.js";
 import { sanitizeError } from "./utils.js";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { ParsedArgs } from "./cli.js";
@@ -109,8 +109,7 @@ export async function loadConfigFromEnv(
   // back to a credential cached by `openl-mcp login`; otherwise anonymous.
   // A blank/whitespace token (e.g. an unset `${user_config.studio_token}` that
   // expands to "") is treated as absent so it can't mask a valid cached login.
-  const rawToken = overrides.personalAccessToken ?? process.env.OPENL_PERSONAL_ACCESS_TOKEN;
-  const explicitToken = rawToken && rawToken.trim() !== "" ? rawToken : undefined;
+  const explicitToken = normalizeToken(overrides.personalAccessToken ?? process.env.OPENL_PERSONAL_ACCESS_TOKEN);
   const cachedToken = explicitToken ? undefined : await getCachedToken(baseUrl);
   const config: Types.OpenLConfig = {
     baseUrl,
