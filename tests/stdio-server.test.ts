@@ -8,6 +8,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { loadConfigFromEnv } from "../src/stdio-server.js";
 
 describe("loadConfigFromEnv (stdio MCP transport)", () => {
@@ -15,10 +18,14 @@ describe("loadConfigFromEnv (stdio MCP transport)", () => {
     "OPENL_BASE_URL",
     "OPENL_PERSONAL_ACCESS_TOKEN",
     "OPENL_TIMEOUT",
+    // Isolate the credential cache dir so getCachedToken never reads a real
+    // ~/.config/openl-mcp/credentials.json.
+    "OPENL_CONFIG_DIR",
   ] as const;
 
   let saved: Record<string, string | undefined>;
   let errSpy: ReturnType<typeof jest.spyOn>;
+  let cacheDir: string;
 
   beforeEach(() => {
     // Snapshot and clear the OPENL_* env so each test starts from a clean slate.
@@ -27,6 +34,11 @@ describe("loadConfigFromEnv (stdio MCP transport)", () => {
       saved[k] = process.env[k];
       delete process.env[k];
     }
+    // Point the credential cache at an empty temp dir. Without this, the "no
+    // auth / single-user mode" case would pick up a developer's real cached
+    // login (from `openl-mcp login`) and fail — it passes only on a clean CI.
+    cacheDir = mkdtempSync(join(tmpdir(), "openl-mcp-test-"));
+    process.env.OPENL_CONFIG_DIR = cacheDir;
     // loadConfigFromEnv emits diagnostic [Config] lines to stderr — silence them.
     errSpy = jest.spyOn(console, "error").mockImplementation(() => {});
   });
@@ -36,6 +48,7 @@ describe("loadConfigFromEnv (stdio MCP transport)", () => {
       if (saved[k] === undefined) delete process.env[k];
       else process.env[k] = saved[k];
     }
+    rmSync(cacheDir, { recursive: true, force: true });
     errSpy.mockRestore();
   });
 
