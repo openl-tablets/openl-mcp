@@ -22,7 +22,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { OpenLClient } from "./client.js";
 import { SERVER_INFO, TOOL_CATEGORIES } from "./constants.js";
 import { executeTool, getAllTools, registerAllTools } from "./handlers/index.js";
-import { getCachedToken } from "./token-cache.js";
+import { getCachedToken, normalizeToken } from "./token-cache.js";
 import { hashFingerprint, sanitizeError } from "./utils.js";
 import type * as Types from "./types.js";
 
@@ -351,8 +351,10 @@ function buildConfig(
 
   // Authentication is optional, matching the stdio server: not supplying a
   // token simply means an unauthenticated (anonymous) request. There is no
-  // separate flag for that — it is the absence of `--token`.
-  const personalAccessToken = overrides.token ?? env.OPENL_PERSONAL_ACCESS_TOKEN;
+  // separate flag for that — it is the absence of `--token`. A blank/whitespace
+  // token is treated as absent (via normalizeToken) so it can't mask the cached
+  // login fallback below.
+  const personalAccessToken = normalizeToken(overrides.token ?? env.OPENL_PERSONAL_ACCESS_TOKEN);
 
   let timeout = overrides.timeout;
   if (timeout === undefined && env.OPENL_TIMEOUT) {

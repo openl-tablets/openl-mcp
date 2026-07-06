@@ -61,6 +61,17 @@ export function cacheKey(baseUrl: string): string {
   }
 }
 
+/**
+ * Normalize an explicit token: treat `undefined` and blank/whitespace-only
+ * strings (e.g. an unset `${user_config.studio_token}` that expands to `""`) as
+ * absent, so a blank token can't mask a valid cached login — it would otherwise
+ * be sent as-is and rejected with 401. Shared by the stdio server and the CLI so
+ * their token precedence (explicit token > cached login > anonymous) can't drift.
+ */
+export function normalizeToken(raw: string | undefined): string | undefined {
+  return raw && raw.trim() !== "" ? raw : undefined;
+}
+
 async function readCacheFile(): Promise<CacheFile> {
   let raw: string;
   try {

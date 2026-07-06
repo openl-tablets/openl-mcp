@@ -35,6 +35,10 @@ const DEFAULT_SCOPE = "openid profile email";
 const DEFAULT_TOKEN_NAME = `Claude Code (openl-mcp) — ${hostname()}`;
 const DEFAULT_TOKEN_TTL_SECONDS = 90 * 24 * 3600; // 90 days
 const DEFAULT_AUTH_TIMEOUT_MS = 180_000; // 3 minutes to click "OK"
+// Per-request bound for the OIDC/Studio HTTP calls (discovery, settings probe,
+// token exchange, PAT mint) so an unreachable/slow host can't hang login — the
+// auth timeout above only bounds the browser/loopback wait, not these requests.
+const HTTP_TIMEOUT_MS = 10_000;
 
 /** Parsed options for `login`. */
 interface LoginOptions {
@@ -55,13 +59,19 @@ function base64url(buf: Buffer): string {
 
 /** Open `url` in the system browser; best-effort, non-fatal. */
 function openInBrowser(url: string): void {
-  const cmd =
-    process.platform === "darwin" ? "open" :
-    process.platform === "win32" ? "cmd" :
-    "xdg-open";
-  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
   try {
-    const child = spawn(cmd, args, { stdio: "ignore", detached: true });
+    let child;
+    if (process.platform === "win32") {
+      // The OAuth authorize URL contains `&`, which cmd treats as a command
+      // separator. Quote the URL and pass args verbatim so it reaches `start`
+      // intact; the empty `""` is start's window-title placeholder.
+      child = spawn("cmd", ["/s", "/c", "start", '""', `"${url}"`], {
+        stdio: "ignore", detached: true, windowsVerbatimArguments: true,
+      });
+    } else {
+      const cmd = process.platform === "darwin" ? "open" : "xdg-open";
+      child = spawn(cmd, [url], { stdio: "ignore", detached: true });
+    }
     child.on("error", () => {/* fall back to the printed URL */});
     child.unref();
   } catch {
@@ -83,7 +93,7 @@ interface OidcMetadata {
 /** Fetch OIDC discovery metadata from the issuer. */
 export async function discover(issuer: string): Promise<OidcMetadata> {
   const url = `${issuer.replace(/\/+$/, "")}/.well-known/openid-configuration`;
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
   if (!res.ok) {
     throw new Error(`OIDC discovery failed at ${url}: HTTP ${res.status}`);
   }
@@ -100,7 +110,7 @@ export async function assertPatSupported(baseUrl: string): Promise<void> {
   const url = `${baseUrl.replace(/\/+$/, "")}/rest/settings`;
   let res: Response;
   try {
-    res = await fetch(url);
+    res = await fetch(url, { signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
   } catch (error) {
     throw new Error(`Could not reach OpenL Studio at ${url}: ${sanitizeError(error)}`);
   }
@@ -178,6 +188,7 @@ export async function exchangeCode(meta: OidcMetadata, opts: { clientId: string;
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
+    signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
   });
   if (!res.ok) {
     throw new Error(`Token exchange failed: HTTP ${res.status} ${await res.text()}`);
@@ -196,6 +207,7 @@ export async function mintPat(baseUrl: string, accessToken: string, name: string
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({ name: tokenName, expiresAt }),
+      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
     });
     return { ok: res.ok, status: res.status, text: await res.text() };
   };
