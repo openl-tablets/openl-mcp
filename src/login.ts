@@ -57,6 +57,20 @@ function base64url(buf: Buffer): string {
   return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+/**
+ * Escape a string for interpolation into the loopback result page. The failure
+ * text can embed callback query parameters (`error`, `iss`) an attacker can
+ * influence — unescaped, that is reflected XSS in the user's browser.
+ */
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 /** Open `url` in the system browser; best-effort, non-fatal. */
 function openInBrowser(url: string): void {
   try {
@@ -197,7 +211,7 @@ function startLoopback(expected: { state: string; issuer: string }, timeoutMs: n
         res.end(`<!doctype html><meta charset=utf-8><title>OpenL MCP</title>` +
           `<body style="font-family:system-ui;padding:3rem;text-align:center">` +
           `<h2>${ok ? "✅ Connected to OpenL Studio" : "❌ Login failed"}</h2>` +
-          `<p>${msg}</p><p>You can close this tab and return to your terminal.</p>`);
+          `<p>${escapeHtml(msg)}</p><p>You can close this tab and return to your terminal.</p>`);
         setTimeout(() => server.close(), 100);
       };
       let returnedCode: string;

@@ -22,6 +22,7 @@ import {
   mintPat,
   runLoginCli,
   validateAuthorizationCallback,
+  escapeHtml,
 } from "../src/login.js";
 
 /** Build a minimal Response-like object for the fetch stub. */
@@ -223,6 +224,18 @@ describe("validateAuthorizationCallback", () => {
   it("rejects a callback that carries no authorization code", () => {
     expect(() => validateAuthorizationCallback(params({ state: "s1" }), expected))
       .toThrow(/no authorization code/i);
+  });
+});
+
+describe("escapeHtml", () => {
+  it("neutralizes HTML metacharacters so callback-derived text can't inject markup", () => {
+    // The shape of a reflected-XSS attempt via the `error`/`iss` query params.
+    expect(escapeHtml(`<script>alert("x&y")</script>'`))
+      .toBe("&lt;script&gt;alert(&quot;x&amp;y&quot;)&lt;/script&gt;&#39;");
+  });
+
+  it("passes plain failure text through unchanged", () => {
+    expect(escapeHtml("OAuth state mismatch — aborting")).toBe("OAuth state mismatch — aborting");
   });
 });
 

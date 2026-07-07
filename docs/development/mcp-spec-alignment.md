@@ -27,7 +27,7 @@ protocol `2025-11-25`):
 
 - **Transports:** stdio (single session) and Streamable HTTP at `/mcp` with
   `Mcp-Session-Id` sessions (`src/http-server.ts`). The legacy HTTP+SSE
-  transport was never provided.
+  transport was already removed in the current (unreleased) cycle.
 - **Capabilities:** `tools` and `prompts` only. Resources were removed
   entirely; roots, sampling, and MCP logging were never adopted — diagnostics
   already go to `stderr`, which is exactly the migration the new spec suggests.
@@ -52,7 +52,7 @@ Recorded so future readers don't re-derive it:
 | Change | Why it's a no-op here |
 |---|---|
 | Roots / Sampling / Logging deprecated | Never adopted; logging already on `stderr` |
-| HTTP+SSE transport reclassified Deprecated | Never provided |
+| HTTP+SSE transport reclassified Deprecated | Already removed (see CHANGELOG, Unreleased → Removed) |
 | `-32002` → `-32602` resource error | No resources, code never emitted |
 | SSE resumability / `Last-Event-ID` removed | Never used |
 | `includeContext` sampling values deprecated | No sampling |
@@ -241,7 +241,7 @@ it. Everything below is targeted to complete by September 2026.
 
 | Step | Work | Gate |
 |---|---|---|
-| 1 | **P0 complete**: `iss` validation (P0.1), issuer in the token cache (P0.2), docs pointer (P0.3). File the studio-side request for token-addressable debug sessions (the external half of P1.2). | — (✅ done except the studio request) |
+| 1 | **P0**: `iss` validation (P0.1), issuer in the token cache (P0.2), docs pointer (P0.3) — ✅ done. **Still open:** file the studio-side request for token-addressable debug sessions (the external half of P1.2). | — |
 | 2 | Stateless-ready refactor, SDK-independent: per-request auth extraction and the credential-fingerprint client pool with TTL/size cap on the HTTP transport (subsumes [improvement-plans Plan 1](improvement-plans.md)); sessions remain at the transport layer for now. | — |
 | 3 | Trace affinity moved onto the pool; replica constraint documented; integration tests over both auth paths. | Step 2 |
 | 4 | **P2.1 design**: authorization flow design; add Keycloak to `compose.yaml` for authorization integration tests. | — (parallel to steps 2–3) |
