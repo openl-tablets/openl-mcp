@@ -2634,12 +2634,25 @@ export class OpenLClient {
 
   /**
    * Collected watched-cell values — one series per cell, one point per execution
-   * of its table. Read after a run completes (409 while still running).
+   * of its table. Read after a run completes (409 while still running). `fields`
+   * is the standard response projection — used to drop each point value's JSON
+   * Schema from the default reply.
    */
-  async getTraceWatch(projectId: string): Promise<Types.WatchView> {
+  async getTraceWatch(
+    projectId: string,
+    fields?: string,
+    maxContentLength?: number
+  ): Promise<Types.WatchView> {
     const projectPath = this.buildProjectPath(projectId);
     const response = await this.axiosInstance.get<Types.WatchView>(
-      `${projectPath}/trace/watch`
+      `${projectPath}/trace/watch`,
+      {
+        params: fields ? { fields } : undefined,
+        // Reject a pathologically large body up front (a watched cell in a
+        // combinatorial branch can produce a response too big to even parse)
+        // rather than letting it OOM the process.
+        ...(maxContentLength != null ? { maxContentLength } : {}),
+      }
     );
     return response.data;
   }

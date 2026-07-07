@@ -1043,6 +1043,11 @@ export interface CallNodeView {
 export interface DebugFrameView {
   index: number;
   depth: number;
+  /**
+   * Zero-based execution number of this table (0 the first time it runs, 1 the
+   * second, …) — the number a `uri#ref@N` breakpoint and a watch series use.
+   */
+  instance?: number;
   /** Table source URI — breakpoint + raw-table key. */
   uri: string;
   /** Table id for the shared Tables API (?raw=true). */
@@ -1115,11 +1120,12 @@ export interface WatchPointView {
   /** 0-based execution index of the watched cell's table across the run. */
   instance: number;
   label?: string;
-  /** Cell reference, e.g. "R2C3" — for a breakpoint replay. */
+  /** Breakpoint key uri#cellRef to reach this cell (replay + breakpoint). */
   ref?: string;
-  /** Path from the root call to this instance (table names). */
+  /** Path from the root call to the owning frame (table names). */
   path?: string[];
-  value?: unknown;
+  /** Serialized like any traced value — lazy (lazy: true + parameterId) when large. */
+  value?: TraceParameterValue;
 }
 
 /** All values a watched cell took across the run, one series per cell. */
