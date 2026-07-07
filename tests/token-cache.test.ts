@@ -45,8 +45,13 @@ describe("get/set round-trip", () => {
   });
 
   it("returns a stored token, matching on the normalized key", async () => {
-    await setCachedToken("http://studio:8080", { token: "openl_pat_abc", loginName: "admin" });
+    const credential = { token: "openl_pat_abc", loginName: "admin", issuer: "https://idp.example.com/realms/openl" };
+    await setCachedToken("http://studio:8080", credential);
     expect(await getCachedToken("http://studio:8080/")).toBe("openl_pat_abc");
+    // The full credential — including the issuer provenance the login flow
+    // records (SEP-2352) — survives the round-trip to disk, not just the token.
+    const persisted = JSON.parse(readFileSync(join(dir, "credentials.json"), "utf-8"));
+    expect(persisted[cacheKey("http://studio:8080")]).toEqual(credential);
   });
 
   it("keeps tokens for different servers independent", async () => {

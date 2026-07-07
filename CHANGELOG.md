@@ -103,6 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Resolved all known `npm audit` advisories in the dependency tree, including the high-severity `hono` path-traversal issue (pulled in transitively via the MCP SDK) and a `js-yaml` denial-of-service issue in the test toolchain (pinned to a patched version via an override). `npm audit` now reports zero vulnerabilities.
+- `openl-mcp login` now validates the `iss` parameter of the OAuth authorization response (RFC 9207) against the configured issuer, rejecting authorization-server mix-up attempts, and records the issuer alongside the cached token.
 
 ## [1.0.0] - 2026-02-23
 
