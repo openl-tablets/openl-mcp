@@ -107,9 +107,14 @@ Wrap the user's JSON as:
 The param name comes from the entry point table's signature. Start the debug
 session on the identified project and entry point table with this wrapped
 input, using `stopAtEntry: false` and `profiling: true` and no breakpoints —
-the run completes in one call and returns the **executed call tree** (`tree`):
-which tables ran, what each step called, dispatcher choices, and timings.
-Structure only — no values.
+the run completes in one call and returns a constant-size **profile** overview:
+`hotspots` (the slowest tables, by selfMillis/totalMillis/count) plus
+`nodeCount`/`distinctTables`/`totalMillis`. It stays small on any project size.
+
+Scan `profile.hotspots` for the table relevant to the problem — the hot table,
+or one that ran an unexpected number of times. (To browse a branch's structure
+too, re-run with `includeTree: true`; to trace one factor's value across every
+coverage, use openl_watch_trace_cells — see Step 4.)
 
 If starting the trace returns 404, the project session is stale — open the
 project, then retry. Do NOT fall back to manual table reading — 404 is a
@@ -125,11 +130,14 @@ failing table, step, and exception — that is usually the root-cause pointer.
 
 ### Step 4: Replay into the suspicious branch for values
 
-Scan the executed tree for the branch relevant to the reported problem
-(the table producing the wrong value, an unexpected fallback, a skipped
-branch). Then **replay**: restart the trace with a breakpoint on that table
-(the input is remembered — send neither input nor test ranges), run to the
-breakpoint, and inspect the suspended frame:
+From `profile.hotspots` (or a watch series), pick the table relevant to the
+reported problem. To see one factor's value across every coverage/iteration
+in one call, run openl_watch_trace_cells with the cell name(s) — read the
+series, find the outlier (e.g. 83.372 among 1.0s), and take its `ref`/`tableUri`.
+Then **replay**: restart the trace with a breakpoint on that table (the input is
+remembered — send neither input nor test ranges), run to the breakpoint, and
+inspect the suspended frame (use `excludeStepValues: [1]` to hide neutral rating
+factors and surface the outlier):
 
 - parameters, runtime context, and computed step values (expand lazy values
   on demand);

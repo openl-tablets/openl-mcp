@@ -40,6 +40,37 @@ const INSPECT_FIELDS =
   "parameters(name,description,lazy,parameterId,value)," +
   "context(name,description,lazy,parameterId,value)";
 
+/**
+ * Optionally thin out a frame's `steps` so an anomaly stands out among many
+ * neutral factors: `onlyExecuted` keeps only steps that actually computed a
+ * value, and `excludeValues` drops steps whose scalar value equals one of the
+ * caller-supplied neutral constants (e.g. 1 in rating). Returns the variables
+ * unchanged when neither filter is requested.
+ */
+function filterSteps(
+  variables: Types.DebugFrameVariables,
+  opts: { onlyExecuted?: boolean; excludeValues?: Array<number | string | boolean> },
+): Types.DebugFrameVariables {
+  if (!opts.onlyExecuted && !(opts.excludeValues && opts.excludeValues.length > 0)) {
+    return variables;
+  }
+  const exclude = opts.excludeValues ?? [];
+  const steps = (variables.steps ?? []).filter((step) => {
+    if (opts.onlyExecuted && step.status !== "executed") {
+      return false;
+    }
+    if (exclude.length > 0) {
+      const scalar = step.value?.value;
+      if ((typeof scalar === "number" || typeof scalar === "string" || typeof scalar === "boolean")
+        && exclude.some((e) => e === scalar)) {
+        return false;
+      }
+    }
+    return true;
+  });
+  return { ...variables, steps };
+}
+
 function is404(error: unknown): boolean {
   return isAxiosError(error) && error.response?.status === 404;
 }
@@ -113,6 +144,7 @@ async function waitForStop(
   projectId: string,
   timeoutMs: number,
   extra?: ToolHandlerExtra,
+  stackOptions?: { view?: "full" | "compact"; includeTree?: boolean; profileTop?: number },
 ): Promise<Types.DebugStackView | null> {
   const startedAt = Date.now();
   const progressToken = extra?._meta?.progressToken;
@@ -121,7 +153,7 @@ async function waitForStop(
   for (;;) {
     const { status } = await client.getTraceStatus(projectId);
     if (status !== "running" && status !== "pending") {
-      return client.getTraceStack(projectId);
+      return client.getTraceStack(projectId, stackOptions);
     }
     if (Date.now() - startedAt >= timeoutMs) {
       return null;
@@ -150,7 +182,8 @@ export function registerTraceHandlers(): void {
       "Start an interactive debug session for a table and run to the first stop. Returns the execution stack (status + frames root→current). " +
       "Default stopAtEntry: true suspends at the entry of the first frame; from there use openl_step_trace / openl_resume_trace and openl_inspect_trace_frame. " +
       "For test tables pass testRanges (e.g. '2'); for regular rules pass inputJson { params, runtimeContext? }; omitting both replays the previous run's remembered input. " +
-      "Cheapest way to understand a whole run: profiling: true with stopAtEntry: false and no breakpoints — completes in this one call and returns 'tree', the executed call tree with per-step timings (structure only, no values; to see values, restart with a breakpoint on the suspicious table). " +
+      "Cheapest way to understand a whole run: profiling: true with stopAtEntry: false and no breakpoints — completes in this one call and returns 'profile', a constant-size overview of the top-N slowest tables (selfMillis/totalMillis/count) plus nodeCount/distinctTables/totalMillis. " +
+      "Find the hot or unexpected table in profile.hotspots, then replay into it with a breakpoint to inspect live values. The full executed 'tree' is omitted by default (it can exceed the 1 MB limit); set includeTree: true only to browse a specific branch's structure. " +
       "One active session per user — starting a new one terminates the previous. Idle sessions are reaped after ~10 minutes.",
     inputSchema: schemas.z.toJSONSchema(schemas.startTraceSchema) as Record<string, unknown>,
     annotations: {
@@ -166,6 +199,8 @@ export function registerTraceHandlers(): void {
         stopAtEntry?: boolean;
         profiling?: boolean;
         breakpoints?: string[];
+        includeTree?: boolean;
+        profileTop?: number;
         response_format?: string;
       };
 
@@ -187,11 +222,13 @@ export function registerTraceHandlers(): void {
         inputJson: typedArgs.inputJson,
         stopAtEntry: typedArgs.stopAtEntry,
         profiling: typedArgs.profiling,
+        // Never pull the >1 MB full tree unless explicitly asked; the bounded
+        // `profile` overview covers the "understand the whole run" case.
+        includeTree: typedArgs.profiling ? (typedArgs.includeTree ?? false) : undefined,
+        profileTop: typedArgs.profileTop,
       });
 
-      return {
-        content: [{ type: "text", text: formatResponse(stack, format) }],
-      };
+      return { content: [{ type: "text", text: formatResponse(stack, format) }] };
     },
   });
 
@@ -200,9 +237,11 @@ export function registerTraceHandlers(): void {
     category: "Trace",
     title: "Step (Into / Over / Out)",
     description:
-      "Step the suspended debug session once and return the new stack. type: 'into' enters the next call or sub-step; 'over' advances to the next sub-step of the current frame; " +
-      "'out' runs the current frame to its own exit. A step that finishes a frame first suspends at that frame's exit — the frame is still on the stack with completed: true and its " +
-      "result readable via openl_inspect_trace_frame; the next step continues in the caller. An exception suspends at the throwing frame before it propagates. Valid only while suspended.",
+      "Step the suspended debug session once and return the new stack. For declarative rules (decision tables, spreadsheets, rating) the main move is type: 'out' — run the current frame to its own exit " +
+      "so its result is inspectable — combined with breakpoints; 'into'/'over' are advanced (imperative TBasic/loops). A step that finishes a frame first suspends at that frame's exit — the frame is still on the stack " +
+      "with completed: true and its result readable via openl_inspect_trace_frame (or pass withValues: true to bundle those variables into this response); the next step continues in the caller. " +
+      "An exception suspends at the throwing frame before it propagates. The stack is returned compact — steps only for the active frame; use openl_inspect_trace_frame for another frame's detail. Valid only while suspended. " +
+      "(openl_resume_trace differs: it runs to the next breakpoint or completion, not just to this frame's exit.)",
     inputSchema: schemas.z.toJSONSchema(schemas.stepTraceSchema) as Record<string, unknown>,
     annotations: {
       openWorldHint: true,
@@ -211,6 +250,7 @@ export function registerTraceHandlers(): void {
       const typedArgs = args as {
         projectId: string;
         type: "into" | "over" | "out";
+        withValues?: boolean;
         response_format?: string;
       };
 
@@ -222,14 +262,20 @@ export function registerTraceHandlers(): void {
 
       let stack: Types.DebugStackView;
       try {
-        stack = await client.traceStep(typedArgs.projectId, typedArgs.type);
+        stack = await client.traceStep(typedArgs.projectId, typedArgs.type, { view: "compact" });
       } catch (error) {
         rethrowTraceStateError(error, "step");
       }
 
-      return {
-        content: [{ type: "text", text: formatResponse(stack, format) }],
-      };
+      // Bundle the active frame's variables so a `step out → inspect` cycle is
+      // one call. Only meaningful while suspended with a frame on the stack.
+      if (typedArgs.withValues && stack.status === "suspended" && stack.frames.length > 0) {
+        const active = stack.frames.find((f) => f.active) ?? stack.frames[stack.frames.length - 1];
+        const variables = await client.getTraceFrameVariables(typedArgs.projectId, active.index, INSPECT_FIELDS);
+        return { content: [{ type: "text", text: formatResponse({ ...stack, variables }, format) }] };
+      }
+
+      return { content: [{ type: "text", text: formatResponse(stack, format) }] };
     },
   });
 
@@ -238,8 +284,8 @@ export function registerTraceHandlers(): void {
     category: "Trace",
     title: "Resume to Next Stop",
     description:
-      "Resume the suspended debug session and wait (inside this call — no agent-side polling) until it stops again: at the next breakpoint, at an exception, or at completion. " +
-      "Returns the stack at the stop; on a terminal 'error' status it carries the structured 'error', and on 'completed' of a profiling run the executed 'tree'. " +
+      "Resume the suspended debug session and wait (inside this call — no agent-side polling) until it stops again: at the next breakpoint, at an exception, or at completion. Unlike openl_step_trace(out), which only runs the current frame to its exit, resume runs to the NEXT breakpoint or the end. " +
+      "Returns the stack (compact — steps for the active frame only) at the stop; on a terminal 'error' status it carries the structured 'error', and on 'completed' of a profiling run the constant-size 'profile' overview (set includeTree: true for the full 'tree'). " +
       "On timeout (default 30s) the still-running status is returned — call openl_resume_trace again to keep waiting (it re-attaches without re-resuming), or openl_stop_trace to give up.",
     inputSchema: schemas.z.toJSONSchema(schemas.resumeTraceSchema) as Record<string, unknown>,
     annotations: {
@@ -249,6 +295,8 @@ export function registerTraceHandlers(): void {
       const typedArgs = args as {
         projectId: string;
         timeoutMs?: number;
+        includeTree?: boolean;
+        profileTop?: number;
         response_format?: string;
       };
 
@@ -275,7 +323,11 @@ export function registerTraceHandlers(): void {
         }
       }
 
-      const stack = await waitForStop(client, typedArgs.projectId, timeoutMs, extra);
+      const stack = await waitForStop(client, typedArgs.projectId, timeoutMs, extra, {
+        view: "compact",
+        includeTree: typedArgs.includeTree ?? false,
+        profileTop: typedArgs.profileTop,
+      });
       if (stack === null) {
         return {
           content: [{
@@ -287,9 +339,7 @@ export function registerTraceHandlers(): void {
         };
       }
 
-      return {
-        content: [{ type: "text", text: formatResponse(stack, format) }],
-      };
+      return { content: [{ type: "text", text: formatResponse(stack, format) }] };
     },
   });
 
@@ -301,6 +351,7 @@ export function registerTraceHandlers(): void {
       "Freeze and read the full state of one suspended stack frame: input parameters, runtime context, result (for a completed frame), sub-steps with computed values, and for a " +
       "decision table the killer feature — 'decision' (which rule fired and how each condition evaluated per rule) plus 'ruleNames' (all rules, for per-rule breakpoints). " +
       "Values may come lazy (lazy: true + parameterId) — expand with openl_get_trace_value. By default the response is trimmed (no value JSON schemas); full: true lifts the trim. " +
+      "To surface an anomaly among many neutral factors, filter the steps: onlyExecutedSteps drops not-yet-computed ones, and excludeStepValues drops steps whose value is a neutral constant (e.g. [1] in rating). " +
       "withHighlights: true additionally returns the A1-keyed cell highlight overlay and the raw table grid to merge it with. Valid only while suspended (a terminal session answers 409 — read its final state from the last returned stack).",
     inputSchema: schemas.z.toJSONSchema(schemas.inspectTraceFrameSchema) as Record<string, unknown>,
     annotations: {
@@ -313,6 +364,8 @@ export function registerTraceHandlers(): void {
         frameIndex: number;
         withHighlights?: boolean;
         full?: boolean;
+        onlyExecutedSteps?: boolean;
+        excludeStepValues?: Array<number | string | boolean>;
         response_format?: string;
       };
 
@@ -332,6 +385,11 @@ export function registerTraceHandlers(): void {
       } catch (error) {
         rethrowTraceStateError(error, "frame inspection");
       }
+
+      variables = filterSteps(variables, {
+        onlyExecuted: typedArgs.onlyExecutedSteps,
+        excludeValues: typedArgs.excludeStepValues,
+      });
 
       let result: unknown = variables;
       if (typedArgs.withHighlights) {
@@ -461,6 +519,61 @@ export function registerTraceHandlers(): void {
 
       return {
         content: [{ type: "text", text: "Debug session terminated." }],
+      };
+    },
+  });
+
+  registerTool({
+    name: "watch_trace_cells",
+    category: "Trace",
+    title: "Watch Cells Across a Run",
+    description:
+      "Answer 'show me this factor across all coverages/iterations' in one call, without dumping frames. Watches the named cells (e.g. ['$VehiclePriceFactor']), runs the table to completion, and returns a WatchView: " +
+      "one 'series' per cell with a 'points' array holding the cell's value at every execution of its table (each point carries instance/label/ref/path). Read the series, spot the outlier (e.g. 83.372 among 1.0s), then take its ref/tableUri and replay with a breakpoint + openl_inspect_trace_frame to see why. " +
+      "Pass testRanges for a test table or inputJson for a regular rule (omit both to replay the remembered input). This starts a fresh session (terminates any previous one).",
+    inputSchema: schemas.z.toJSONSchema(schemas.watchTraceCellsSchema) as Record<string, unknown>,
+    annotations: {
+      openWorldHint: true,
+    },
+    handler: async (args, client): Promise<ToolResponse> => {
+      const typedArgs = args as {
+        projectId: string;
+        tableId: string;
+        cells: string[];
+        testRanges?: string;
+        inputJson?: string | Record<string, unknown>;
+        fromModule?: string;
+        response_format?: string;
+      };
+
+      if (!typedArgs?.projectId || !typedArgs?.tableId || !typedArgs?.cells?.length) {
+        throw new McpError(ErrorCode.InvalidParams, "Missing required arguments: projectId, tableId, cells");
+      }
+
+      const format = validateResponseFormat(typedArgs.response_format);
+
+      // Set the watch cells, run the whole table (no tree — the watch carries
+      // the data), then read the collected series.
+      await client.setTraceWatches(typedArgs.projectId, typedArgs.cells);
+      await client.startTrace({
+        projectId: typedArgs.projectId,
+        tableId: typedArgs.tableId,
+        testRanges: typedArgs.testRanges,
+        fromModule: typedArgs.fromModule,
+        inputJson: typedArgs.inputJson,
+        stopAtEntry: false,
+        includeTree: false,
+      });
+
+      let watch: Types.WatchView;
+      try {
+        watch = await client.getTraceWatch(typedArgs.projectId);
+      } catch (error) {
+        rethrowTraceStateError(error, "watch read");
+      }
+
+      return {
+        content: [{ type: "text", text: formatResponse(watch, format) }],
       };
     },
   });

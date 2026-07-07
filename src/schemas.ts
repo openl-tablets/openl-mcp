@@ -624,6 +624,16 @@ export const EDITABLE_TABLE_TYPES: readonly string[] = discriminatorValues(
 // Trace Debug API Schemas (BETA) — interactive debugger
 // =============================================================================
 
+/**
+ * Shaping a profiling run's response. The backend returns a constant-size
+ * `profile` overview (top-N slowest tables) plus, only when asked, the full
+ * `tree` — which on a real project easily exceeds the 1 MB tool-result limit.
+ */
+const traceProfileParams = {
+  includeTree: z.boolean().optional().describe("Also return the FULL executed call tree ('tree'), not just the bounded 'profile' overview (default false). The full tree can exceed the 1 MB response limit on a mid-size project — leave it off and use 'profile' to find the hot table, then replay into it with a breakpoint."),
+  profileTop: z.number().int().min(1).max(500).optional().describe("Number of hotspots (slowest tables) in the 'profile' overview (backend default 20)."),
+};
+
 export const startTraceSchema = z.object({
   projectId: projectIdSchema,
   tableId: tableIdSchema.describe("Table ID to debug (e.g., 'calculatePremium_1234'). Get from openl_list_tables()."),
@@ -631,20 +641,23 @@ export const startTraceSchema = z.object({
   inputJson: z.union([z.string(), z.record(z.string(), z.any())]).optional().describe("For regular rules: JSON input. Use object with params (required) and runtimeContext (optional). E.g. { params: { age: 25 }, runtimeContext: { lob: 'Auto' } }. Omit BOTH inputJson and testRanges to replay the previous run's remembered input (e.g. restarting with profiling or new breakpoints)."),
   fromModule: z.string().optional().describe("Module name to trace in the context of a specific opened module. Usually omit."),
   stopAtEntry: z.boolean().optional().describe("Suspend at the entry of the first frame (default true). Set false to run straight to the first breakpoint — or, with no breakpoints, to completion."),
-  profiling: z.boolean().optional().describe("Retain the executed call tree — structure and timings, NO values (default false). With stopAtEntry: false and no breakpoints the run completes in this single call and returns the whole tree."),
+  profiling: z.boolean().optional().describe("Retain the executed call tree — structure and timings, NO values (default false). With stopAtEntry: false and no breakpoints the run completes in this single call and returns a constant-size 'profile' overview (top-N slowest tables); the full 'tree' comes only with includeTree: true."),
   breakpoints: z.array(z.string()).optional().describe("Initial breakpoint set — REPLACES the current set before starting. Key forms: '<name>' (entry of any same-named table), '<uri>' (entry of that table), '<uri>#R{r}C{c}' (spreadsheet cell), '<uri>#rule' (any decision-table rule fires), '<uri>#<ruleName>' (specific rule fires)."),
+  ...traceProfileParams,
   response_format: ResponseFormat.optional(),
 }).strict();
 
 export const stepTraceSchema = z.object({
   projectId: projectIdSchema,
-  type: z.enum(["into", "over", "out"]).describe("'into' — enter the next call / next sub-step; 'over' — next sub-step of the current frame (nested calls run through); 'out' — run the current frame to its own exit (result becomes inspectable), then continue in the caller."),
+  type: z.enum(["into", "over", "out"]).describe("'out' (main tool for declarative rules — decision tables, spreadsheets, rating): run the current frame to its own exit so its result is inspectable, then continue in the caller. 'into' / 'over' are ADVANCED (imperative TBasic / loops): 'into' enters the next call or sub-step; 'over' advances to the next sub-step of the current frame (nested calls run through). For 'which table returned what', prefer 'out' plus breakpoints over stepping through expressions."),
+  withValues: z.boolean().optional().describe("After the step, also return the active frame's variables (the same content as openl_inspect_trace_frame on the top frame) as 'variables' — saves the usual step→inspect round-trip when you step 'out' to read a frame's result. Default false."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
 export const resumeTraceSchema = z.object({
   projectId: projectIdSchema,
-  timeoutMs: z.number().int().positive().max(600000).optional().describe("Maximum time to wait for the next suspension or completion, in milliseconds. Default 30000, cap 600000. On timeout the current (still RUNNING) status is returned — call openl_resume_trace again to keep waiting, or openl_stop_trace to give up."),
+  timeoutMs: z.number().int().positive().max(600000).optional().describe("Maximum time to wait for the next suspension or completion, in milliseconds. Default 30000, cap 600000. On timeout the current (still running) status is returned — call openl_resume_trace again to keep waiting, or openl_stop_trace to give up."),
+  ...traceProfileParams,
   response_format: ResponseFormat.optional(),
 }).strict();
 
@@ -653,6 +666,8 @@ export const inspectTraceFrameSchema = z.object({
   frameIndex: z.number().int().nonnegative().describe("Stack frame index from the frames[] of the last stack response (0 = root, highest = current)."),
   withHighlights: z.boolean().optional().describe("Also return the frame's cell-highlight overlay (A1-keyed) plus the raw table grid to merge it with (default false)."),
   full: z.boolean().optional().describe("Return the complete untrimmed response, including value JSON schemas (default false — trimmed via ?fields to save tokens)."),
+  onlyExecutedSteps: z.boolean().optional().describe("Keep only executed steps (drop pending/current-without-value) so the response is just the computed factors (default false)."),
+  excludeStepValues: z.array(z.union([z.number(), z.string(), z.boolean()])).optional().describe("Drop executed steps whose scalar value equals one of these — to hide neutral factors and surface the outlier (e.g. [1] in rating, where a factor of 1.0 means 'no effect'). Do not use for tables where those values are meaningful."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
@@ -671,6 +686,16 @@ export const getTraceValueSchema = z.object({
 
 export const stopTraceSchema = z.object({
   projectId: projectIdSchema,
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+export const watchTraceCellsSchema = z.object({
+  projectId: projectIdSchema,
+  tableId: tableIdSchema.describe("Table ID to run (e.g., 'calculatePremium_1234'). Get from openl_list_tables()."),
+  cells: z.array(z.string()).min(1).describe("Cell names to watch, e.g. ['$VehiclePriceFactor']. The value of each named cell is captured at EVERY execution of its table across the whole run — one series per cell."),
+  testRanges: z.string().optional().describe("For test tables: comma-separated test-case ranges (e.g., '1-3,5')."),
+  inputJson: z.union([z.string(), z.record(z.string(), z.any())]).optional().describe("For regular rules: JSON input { params, runtimeContext? }. Omit BOTH inputJson and testRanges to replay the previous run's remembered input."),
+  fromModule: z.string().optional().describe("Module name to run in the context of a specific opened module. Usually omit."),
   response_format: ResponseFormat.optional(),
 }).strict();
 

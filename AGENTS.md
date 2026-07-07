@@ -27,7 +27,7 @@ call can wait for the result instead of polling — project compilation
 (`openl_project_status` with `wait: true`). Details:
 [docs/development/websockets.md](docs/development/websockets.md).
 
-## Tools (57 Total)
+## Tools (58 Total)
 
 All tools are prefixed with `openl_` and share the server's version.
 
@@ -97,7 +97,7 @@ Operate on ANY file in a project by exact project-relative path (not just Excel 
 - `openl_copy_project_file` - Copy a file within the project (no overwrite — destination collision returns 409)
 - `openl_move_project_file` - Move or rename a file within the project
 
-### Trace Tools (7, BETA)
+### Trace Tools (8, BETA)
 An **interactive debugger** for rules: the rule runs on a server-side worker that
 suspends at breakpoints and step points, and the tools inspect that live, suspended
 execution. The debug session is bound to the MCP server's HTTP session — the whole
@@ -105,24 +105,29 @@ flow must go through one server instance (or one CLI `--cookie-jar`). One active
 session per user (a new start terminates the previous); idle sessions are reaped
 after ~10 minutes.
 
-- `openl_start_trace` - Start a debug session for a table (test case via `testRanges`, or `inputJson`; omit both to replay the remembered input) and run to the first stop; optional initial `breakpoints`
-- `openl_step_trace` - Step `into` / `over` / `out` and return the new stack (a frame-finishing step first suspends at the frame's own exit with its result inspectable)
-- `openl_resume_trace` - Run to the next breakpoint / exception / completion, waiting inside the call (re-invoke after a timeout to keep waiting)
-- `openl_inspect_trace_frame` - Freeze one stack frame: parameters, context, result, sub-step values; for decision tables `decision` (which rule fired, how each condition evaluated) and `ruleNames`; optional A1-keyed cell `highlights` + raw grid
+- `openl_start_trace` - Start a debug session for a table (test case via `testRanges`, or `inputJson`; omit both to replay the remembered input) and run to the first stop; optional initial `breakpoints`. With `profiling: true` + `stopAtEntry: false` it returns a constant-size `profile` overview (see below)
+- `openl_step_trace` - Step the current frame. `out` (run the frame to its exit so its result is inspectable) + breakpoints is the main move for declarative rules; `into`/`over` are advanced (imperative TBasic/loops). Returns a compact stack (steps for the active frame only); `withValues: true` bundles the active frame's variables so you don't need a separate inspect
+- `openl_resume_trace` - Run to the next breakpoint / exception / completion (further than `step out`, which stops at the current frame's exit), waiting inside the call (re-invoke after a timeout to keep waiting)
+- `openl_inspect_trace_frame` - Freeze one stack frame: parameters, context, result, sub-step values; for decision tables `decision` (which rule fired, how each condition evaluated) and `ruleNames`; optional A1-keyed cell `highlights` + raw grid. Filter steps with `onlyExecutedSteps` / `excludeStepValues` (e.g. `[1]`) to surface an outlier among neutral factors
 - `openl_set_trace_breakpoints` - Read the active breakpoint keys and available targets; `set` replaces the whole set. Key forms: `<name>`, `<uri>`, `<uri>#R{r}C{c}`, `<uri>#rule` (any rule fires), `<uri>#<ruleName>` (specific rule)
 - `openl_get_trace_value` - Expand a lazy value (`lazy: true` + `parameterId`) from openl_inspect_trace_frame; returns name/description/value only — `withSchema: true` adds the value's (large) JSON Schema
+- `openl_watch_trace_cells` - Watch named cells (e.g. `['$VehiclePriceFactor']`) across a whole run and return one series per cell with its value at every execution of its table — "show me this factor across all coverages" without dumping frames; spot the outlier, then replay into it with a breakpoint
 - `openl_stop_trace` - Terminate the session (idempotent; breakpoints survive)
 
 Lifecycle (status values are lowercase): `running ⇄ suspended → completed | error | terminated`.
 Stepping and inspection are valid only while `suspended`; on a terminal status read the
-final state (structured `error`, profiling `tree`) from the stack that the last
+final state (structured `error`, profiling `profile`/`tree`) from the stack that the last
 start/step/resume call already returned.
 
 Cheapest whole-run overview: `openl_start_trace` with `profiling: true`,
-`stopAtEntry: false` and no breakpoints completes in one call and returns `tree` —
-the executed call tree with per-step timings (structure only, no values). To see
-values inside a suspicious branch, restart with a breakpoint on that table (the
-input is remembered) and inspect live.
+`stopAtEntry: false` and no breakpoints completes in one call and returns `profile` —
+a **constant-size** overview: the top-N slowest tables (`hotspots` with
+`selfMillis`/`totalMillis`/`count`) plus `nodeCount`/`distinctTables`/`totalMillis`.
+It stays small regardless of project size (the full call `tree` is omitted by default
+because it can exceed the 1 MB response limit; `profileTop` tunes the hotspot count).
+Find the hot or unexpected table in `hotspots`, then restart with a breakpoint on it
+(the input is remembered) and inspect live for values. Pull the full `tree` only to
+browse one branch's structure, with `includeTree: true`.
 
 ### Deployment (4)
 - `openl_list_deploy_repositories` - List deployment repositories

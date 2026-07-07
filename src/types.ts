@@ -1018,6 +1018,12 @@ export interface StepValueView {
   children?: CallNodeView[];
   durationMillis?: number;
   selfMillis?: number;
+  /**
+   * Number of child call nodes hidden from this step by the profiling-tree
+   * summarizer (client-side only — never sent by the studio). Present only on a
+   * step whose slower siblings crowded it out of the node budget.
+   */
+  omittedChildren?: number;
 }
 
 /** A node of the executed call tree (profiling) — structure and timings only, no values. */
@@ -1062,14 +1068,73 @@ export interface DebugError {
   detail?: string;
 }
 
+/** One hot table in the profile — time aggregated across all its invocations. */
+export interface ProfileHotspotView {
+  uri: string;
+  name: string;
+  kind: FrameKind;
+  /** Own time across all calls (excludes called tables); the hotspots' selfMillis sum to wall-clock. */
+  selfMillis: number;
+  /** Inclusive time (own + called tables). */
+  totalMillis: number;
+  /** How many times this table was invoked. */
+  count: number;
+}
+
+/**
+ * Constant-size profile overview (unlike the unbounded `tree`): the top-N
+ * slowest tables plus run-wide totals. Present after a profiling run completes.
+ */
+export interface ProfileSummaryView {
+  /** Top-N slowest tables by selfMillis, most-expensive first. */
+  hotspots: ProfileHotspotView[];
+  /** Distinct tables that executed (may exceed hotspots.length). */
+  distinctTables: number;
+  /** Total table invocations in the run (the size of the full tree). */
+  nodeCount: number;
+  /** Wall-clock of the whole run. */
+  totalMillis: number;
+  /** true when more tables executed than were returned as hotspots. */
+  truncated: boolean;
+}
+
 /** The live execution stack — returned by start / step / stack reads. */
 export interface DebugStackView {
   status: DebugStatus;
   /** Frames ordered root (index 0) → current; empty after completion. */
   frames: DebugFrameView[];
   error?: DebugError;
-  /** Whole executed call tree after completion (profiling only). */
+  /** Whole executed call tree after completion (profiling; only when includeTree). */
   tree?: CallNodeView;
+  /** Bounded profile overview after completion (profiling) — prefer this over `tree`. */
+  profile?: ProfileSummaryView;
+}
+
+/** One watched cell's value at a single execution of its table. */
+export interface WatchPointView {
+  /** 0-based execution index of the watched cell's table across the run. */
+  instance: number;
+  label?: string;
+  /** Cell reference, e.g. "R2C3" — for a breakpoint replay. */
+  ref?: string;
+  /** Path from the root call to this instance (table names). */
+  path?: string[];
+  value?: unknown;
+}
+
+/** All values a watched cell took across the run, one series per cell. */
+export interface WatchSeriesView {
+  name: string;
+  table?: string;
+  tableUri?: string;
+  points: WatchPointView[];
+}
+
+/** Watched-cell values collected across a whole profiling-style run. */
+export interface WatchView {
+  series: WatchSeriesView[];
+  /** true when more points were captured than returned. */
+  truncated?: boolean;
 }
 
 /** Lightweight status poll response. */
@@ -1119,6 +1184,12 @@ export interface StartTraceRequest {
   stopAtEntry?: boolean;
   /** Retain the executed call tree — structure and timings, no values (default false). */
   profiling?: boolean;
+  /** Include the full (possibly >1 MB) `tree` in the response; false returns only the bounded `profile`. */
+  includeTree?: boolean;
+  /** Number of hotspots in the profile overview (backend default 20). */
+  profileTop?: number;
+  /** "compact" returns steps only for the active frame; "full" for every frame. */
+  view?: "full" | "compact";
 }
 
 // =============================================================================

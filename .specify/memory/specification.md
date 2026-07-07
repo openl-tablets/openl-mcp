@@ -209,7 +209,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 
 ### FR-1: Tool Execution
 
-**Requirement**: MCP server provides 56 tools.
+**Requirement**: MCP server provides 58 tools.
 
 **Guidance Tools**:
 - `openl_get_started` - Read-only onboarding bootstrap: workflow protocol + workspace orientation (call first, once per session)
@@ -267,12 +267,13 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - `openl_get_test_results_by_table` - Get test results filtered by table ID
 
 **Trace Tools** (interactive debugger):
-- `openl_start_trace` - Start a debug session and run to the first stop
-- `openl_step_trace` - Step into/over/out
+- `openl_start_trace` - Start a debug session and run to the first stop (profiling returns a bounded profile overview)
+- `openl_step_trace` - Step out/into/over (compact stack; optional bundled active-frame values)
 - `openl_resume_trace` - Run to the next breakpoint/exception/completion
-- `openl_inspect_trace_frame` - Inspect a suspended stack frame's variables
+- `openl_inspect_trace_frame` - Inspect a suspended stack frame's variables (optional step filter)
 - `openl_set_trace_breakpoints` - Read/replace breakpoints and list targets
 - `openl_get_trace_value` - Expand a lazy parameter value
+- `openl_watch_trace_cells` - Watch named cells across a whole run
 - `openl_stop_trace` - Terminate the debug session
 
 **Deployment Tools**:
@@ -583,7 +584,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 
 The MCP server is considered successful when:
 
-1. ✅ All 56 tools execute successfully
+1. ✅ All 58 tools execute successfully
 2. ✅ All tools support response_format parameter
 3. ✅ All list operations support pagination
 4. ✅ Character limits enforced on all responses
@@ -627,4 +628,4 @@ Potential enhancements for future versions:
 
 *Last Updated: 2026-01-28*
 *Version: 1.0.0*
-*Status: Production-ready (56 tools, 14 prompts)*
+*Status: Production-ready (58 tools, 14 prompts)*
