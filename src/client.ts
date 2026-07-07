@@ -2462,7 +2462,6 @@ export class OpenLClient {
     if (request.profiling != null) params.set("profiling", String(request.profiling));
     if (request.includeTree != null) params.set("includeTree", String(request.includeTree));
     if (request.profileTop != null) params.set("profileTop", String(request.profileTop));
-    if (request.view) params.set("view", request.view);
 
     const body = request.inputJson != null
       ? (typeof request.inputJson === "string" ? request.inputJson : JSON.stringify(request.inputJson))
@@ -2638,21 +2637,11 @@ export class OpenLClient {
    * is the standard response projection — used to drop each point value's JSON
    * Schema from the default reply.
    */
-  async getTraceWatch(
-    projectId: string,
-    fields?: string,
-    maxContentLength?: number
-  ): Promise<Types.WatchView> {
+  async getTraceWatch(projectId: string, fields?: string): Promise<Types.WatchView> {
     const projectPath = this.buildProjectPath(projectId);
     const response = await this.axiosInstance.get<Types.WatchView>(
       `${projectPath}/trace/watch`,
-      {
-        params: fields ? { fields } : undefined,
-        // Reject a pathologically large body up front (a watched cell in a
-        // combinatorial branch can produce a response too big to even parse)
-        // rather than letting it OOM the process.
-        ...(maxContentLength != null ? { maxContentLength } : {}),
-      }
+      { params: fields ? { fields } : undefined }
     );
     return response.data;
   }

@@ -98,10 +98,11 @@ Entry points are tables exposed as API endpoints. To identify them:
 
 ### Step 3: Run a whole-run profiling trace first
 
-Wrap the user's JSON as:
+Wrap the user's JSON as (include `runtimeContext` only if the rule needs it —
+e.g. `lob`, `usState`, effective date; omit it otherwise):
 
 ```json
-{ "params": { "<paramName>": <value> } }
+{ "params": { "<paramName>": <value> }, "runtimeContext": { "<key>": <value> } }
 ```
 
 The param name comes from the entry point table's signature. Start the debug

@@ -15,7 +15,7 @@ a single tool call**: the agent calls a tool once and gets the final result, whi
 server blocks on a real completion event instead of polling.
 
 > [!Note]
-> The interactive trace debugger (`openl_trace_*`) does **not** use WebSockets. Its only
+> The interactive trace debugger (the `openl_*_trace` / `openl_*_trace_*` tools) does **not** use WebSockets. Its only
 > asynchronous command, `openl_resume_trace`, waits inside the tool call by polling the
 > lightweight `GET /trace/status` endpoint (the poll also serves as the session
 > keepalive), and every other trace command is synchronous.

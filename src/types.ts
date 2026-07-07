@@ -1018,12 +1018,6 @@ export interface StepValueView {
   children?: CallNodeView[];
   durationMillis?: number;
   selfMillis?: number;
-  /**
-   * Number of child call nodes hidden from this step by the profiling-tree
-   * summarizer (client-side only — never sent by the studio). Present only on a
-   * step whose slower siblings crowded it out of the node budget.
-   */
-  omittedChildren?: number;
 }
 
 /** A node of the executed call tree (profiling) — structure and timings only, no values. */
@@ -1031,6 +1025,11 @@ export interface CallNodeView {
   uri: string;
   name: string;
   kind: FrameKind;
+  /**
+   * Zero-based execution index of this table in the run — combine with the
+   * breakpoint key as `uri@N` to replay this exact iteration.
+   */
+  instance?: number;
   durationMillis: number;
   selfMillis: number;
   steps: StepValueView[];
@@ -1133,13 +1132,16 @@ export interface WatchSeriesView {
   name: string;
   table?: string;
   tableUri?: string;
+  /** Captured values in execution order, capped by the server to the first several executions. */
   points: WatchPointView[];
+  /** Full number of executions of the table — may exceed points.length when capped. */
+  total?: number;
 }
 
 /** Watched-cell values collected across a whole profiling-style run. */
 export interface WatchView {
   series: WatchSeriesView[];
-  /** true when more points were captured than returned. */
+  /** true when the server's capture cap was reached, so some late executions are missing. */
   truncated?: boolean;
 }
 
@@ -1194,8 +1196,6 @@ export interface StartTraceRequest {
   includeTree?: boolean;
   /** Number of hotspots in the profile overview (backend default 20). */
   profileTop?: number;
-  /** "compact" returns steps only for the active frame; "full" for every frame. */
-  view?: "full" | "compact";
 }
 
 // =============================================================================
