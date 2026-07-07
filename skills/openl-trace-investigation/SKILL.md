@@ -133,11 +133,15 @@ failing table, step, and exception — that is usually the root-cause pointer.
 From `profile.hotspots` (or a watch series), pick the table relevant to the
 reported problem. To see one factor's value across every coverage/iteration
 in one call, run openl_watch_trace_cells with the cell name(s) — read the
-series, find the outlier (e.g. 83.372 among 1.0s), and take its `ref`/`tableUri`.
-Then **replay**: restart the trace with a breakpoint on that table (the input is
-remembered — send neither input nor test ranges), run to the breakpoint, and
-inspect the suspended frame (use `excludeStepValues: [1]` to hide neutral rating
-factors and surface the outlier):
+series and find the outlier (e.g. 83.372 among 1.0s). For a table that runs
+many times (one per coverage), jump straight to the offending pass: take the
+outlier point's `ref` and `instance` and set the breakpoint `<ref>@<instance>`
+(the `@N` suffix targets the N-th execution; a plain cell breakpoint would stop
+on the first pass and need repeated resumes). Then **replay**: restart the trace
+with that breakpoint (the input is remembered — send neither input nor test
+ranges), run to it, and inspect the suspended frame (use `excludeStepValues: [1]`
+to hide neutral rating factors — lazy values are resolved, so even factors that
+arrive lazy are filtered — and surface the outlier):
 
 - parameters, runtime context, and computed step values (expand lazy values
   on demand);

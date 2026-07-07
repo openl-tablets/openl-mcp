@@ -3593,16 +3593,20 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       expect(fieldsSeen[1]).toBeUndefined();
     });
 
-    it("openl_inspect_trace_frame filters steps by onlyExecutedSteps and excludeStepValues", async () => {
+    it("openl_inspect_trace_frame filters steps by onlyExecutedSteps and excludeStepValues, resolving lazy values", async () => {
       mockAxios.onGet(`/projects/${encoded}/trace/frames/0/variables`).reply(200, {
         parameters: [],
         errors: [],
         steps: [
           { ref: "R0C0", label: "$AgeFactor", status: "executed", value: { name: "$AgeFactor", value: 1 } },
+          // A neutral factor delivered lazily — must still be dropped by [1].
+          { ref: "R3C0", label: "$BaseRate", status: "executed", value: { name: "$BaseRate", lazy: true, parameterId: 7 } },
           { ref: "R1C0", label: "$VehiclePriceFactor", status: "executed", value: { name: "$VehiclePriceFactor", value: 83.372 } },
           { ref: "R2C0", label: "$Pending", status: "pending" },
         ],
       });
+      // The lazy $BaseRate resolves to 1 via the parameter endpoint.
+      mockAxios.onGet(`/projects/${encoded}/trace/parameters/7`).reply(200, { name: "$BaseRate", value: 1 });
 
       const result = await executeTool(
         "inspect_trace_frame",
@@ -3611,7 +3615,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       );
 
       const body = JSON.parse(result.content[0].text) as { data: { steps: Array<{ label: string }> } };
-      // The neutral factor (1) and the pending step are gone; the outlier stays.
+      // The neutral factors (inline 1 and lazy→1) and the pending step are gone; the outlier stays.
       expect(body.data.steps.map((s) => s.label)).toEqual(["$VehiclePriceFactor"]);
     });
 
@@ -3730,13 +3734,18 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
         calls.push("run");
         return [200, { status: "completed", frames: [] }];
       });
-      mockAxios.onGet(`/projects/${encoded}/trace/watch`).reply(() => {
+      let watchFields: string | undefined;
+      mockAxios.onGet(`/projects/${encoded}/trace/watch`).reply((config) => {
         calls.push("watch");
+        watchFields = config.params?.fields;
         return [200, {
           series: [{
             name: "$VehiclePriceFactor",
             table: "VehiclePremiumCalculation",
-            points: [{ instance: 0, value: 1.0 }, { instance: 1, value: 83.372, ref: "R7C1" }],
+            points: [
+              { instance: 0, value: { name: "$VehiclePriceFactor", description: "Double", value: 1.0 } },
+              { instance: 1, ref: "R7C1", value: { name: "$VehiclePriceFactor", description: "Double", value: 83.372 } },
+            ],
           }],
         }];
       });
@@ -3750,8 +3759,38 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       expect(calls).toEqual(["put", "run", "watch"]); // set → run → read
       expect(JSON.parse(putBody as string)).toEqual({ cells: ["$VehiclePriceFactor"] });
       expect(startParams.stopAtEntry).toBe("false");
-      expect(startParams.includeTree).toBe("false");
+      // The run to completion materializes lazy branches on its own — no
+      // profiling (which would make the studio build a tree this tool discards).
+      expect(startParams.profiling).toBeUndefined();
+      expect(startParams.includeTree).toBeUndefined();
+      // The point value is a ParameterValue; its JSON Schema is trimmed by default.
+      expect(watchFields).toContain("value(name,description,lazy,parameterId,value)");
+      expect(watchFields).not.toContain("schema");
       expect(result.content[0].text).toContain("83.372");
+    });
+
+    it("openl_watch_trace_cells caps points per series to maxPoints and reports the total", async () => {
+      mockAxios.onPut(`/projects/${encoded}/trace/watches`).reply(204);
+      mockAxios.onPost(new RegExp(`/projects/${encoded}/trace\\?`)).reply(200, { status: "completed", frames: [] });
+      // A deep combinatorial cell fires many times.
+      const points = Array.from({ length: 5000 }, (_, i) => ({ instance: i, value: { name: "$ClaimCost", value: i } }));
+      mockAxios.onGet(`/projects/${encoded}/trace/watch`).reply(200, {
+        series: [{ name: "$ClaimCost", table: "ClaimCostPerBenefitPerAgeBand", points }],
+      });
+
+      const result = await executeTool(
+        "watch_trace_cells",
+        { projectId, tableId: "calc_42", cells: ["$ClaimCost"], maxPoints: 100, response_format: "json" },
+        client
+      );
+
+      const body = JSON.parse(result.content[0].text) as {
+        data: { series: Array<{ points: unknown[]; totalPoints?: number; pointsTruncated?: boolean }>; note?: string };
+      };
+      expect(body.data.series[0].points).toHaveLength(100);
+      expect(body.data.series[0].totalPoints).toBe(5000);
+      expect(body.data.series[0].pointsTruncated).toBe(true);
+      expect(body.data.note).toMatch(/maxPoints=100/);
     });
   });
 });

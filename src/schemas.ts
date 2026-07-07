@@ -642,7 +642,7 @@ export const startTraceSchema = z.object({
   fromModule: z.string().optional().describe("Module name to trace in the context of a specific opened module. Usually omit."),
   stopAtEntry: z.boolean().optional().describe("Suspend at the entry of the first frame (default true). Set false to run straight to the first breakpoint — or, with no breakpoints, to completion."),
   profiling: z.boolean().optional().describe("Retain the executed call tree — structure and timings, NO values (default false). With stopAtEntry: false and no breakpoints the run completes in this single call and returns a constant-size 'profile' overview (top-N slowest tables); the full 'tree' comes only with includeTree: true."),
-  breakpoints: z.array(z.string()).optional().describe("Initial breakpoint set — REPLACES the current set before starting. Key forms: '<name>' (entry of any same-named table), '<uri>' (entry of that table), '<uri>#R{r}C{c}' (spreadsheet cell), '<uri>#rule' (any decision-table rule fires), '<uri>#<ruleName>' (specific rule fires)."),
+  breakpoints: z.array(z.string()).optional().describe("Initial breakpoint set — REPLACES the current set before starting. Key forms: '<name>' (entry of any same-named table), '<uri>' (entry of that table), '<uri>#R{r}C{c}' (spreadsheet cell), '<uri>#rule' (any decision-table rule fires), '<uri>#<ruleName>' (specific rule fires). Append '@N' to any key to break only on the table's N-th execution (0-based) — e.g. '<uri>#R48C0@3' hits the 4th run; N matches frames[].instance and a watch series' instance, so a watch outlier at instance 3 is reached with '@3'. Without '@N' a cell breakpoint hits EVERY pass."),
   ...traceProfileParams,
   response_format: ResponseFormat.optional(),
 }).strict();
@@ -667,13 +667,13 @@ export const inspectTraceFrameSchema = z.object({
   withHighlights: z.boolean().optional().describe("Also return the frame's cell-highlight overlay (A1-keyed) plus the raw table grid to merge it with (default false)."),
   full: z.boolean().optional().describe("Return the complete untrimmed response, including value JSON schemas (default false — trimmed via ?fields to save tokens)."),
   onlyExecutedSteps: z.boolean().optional().describe("Keep only executed steps (drop pending/current-without-value) so the response is just the computed factors (default false)."),
-  excludeStepValues: z.array(z.union([z.number(), z.string(), z.boolean()])).optional().describe("Drop executed steps whose scalar value equals one of these — to hide neutral factors and surface the outlier (e.g. [1] in rating, where a factor of 1.0 means 'no effect'). Do not use for tables where those values are meaningful."),
+  excludeStepValues: z.array(z.union([z.number(), z.string(), z.boolean()])).optional().describe("Drop executed steps whose scalar value equals one of these — to hide neutral factors and surface the outlier (e.g. [1] in rating, where a factor of 1.0 means 'no effect'). Lazy step values are resolved before the comparison, so a neutral factor that came lazy is dropped too. Do not use for tables where those values are meaningful."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
 export const setTraceBreakpointsSchema = z.object({
   projectId: projectIdSchema,
-  set: z.array(z.string()).optional().describe("When provided, REPLACES the whole breakpoint set (empty array clears all). Key forms: '<name>' (entry of any same-named table), '<uri>' (entry of that table), '<uri>#R{r}C{c}' (spreadsheet cell), '<uri>#rule' (any decision-table rule fires), '<uri>#<ruleName>' (specific rule fires). Omit to just read the current set and available targets."),
+  set: z.array(z.string()).optional().describe("When provided, REPLACES the whole breakpoint set (empty array clears all). Key forms: '<name>' (entry of any same-named table), '<uri>' (entry of that table), '<uri>#R{r}C{c}' (spreadsheet cell), '<uri>#rule' (any decision-table rule fires), '<uri>#<ruleName>' (specific rule fires). Append '@N' to any key to break only on the table's N-th execution (0-based, matching frames[].instance and a watch series' instance) — e.g. '<uri>#R48C0@3'. Omit to just read the current set and available targets."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
@@ -696,6 +696,8 @@ export const watchTraceCellsSchema = z.object({
   testRanges: z.string().optional().describe("For test tables: comma-separated test-case ranges (e.g., '1-3,5')."),
   inputJson: z.union([z.string(), z.record(z.string(), z.any())]).optional().describe("For regular rules: JSON input { params, runtimeContext? }. Omit BOTH inputJson and testRanges to replay the previous run's remembered input."),
   fromModule: z.string().optional().describe("Module name to run in the context of a specific opened module. Usually omit."),
+  withSchema: z.boolean().optional().describe("Include each watched value's JSON Schema (default false — the schema is large and rarely needed; a value that came lazy still carries its parameterId for openl_get_trace_value)."),
+  maxPoints: z.number().int().min(1).max(50000).optional().describe("Cap the number of points returned per series (default 500). A cell deep in a combinatorial branch (benefit × gender × age-band …) executes thousands of times; a truncated series reports its totalPoints. Raise this for more, watch a higher-level cell, or target one pass with a '<ref>@N' breakpoint."),
   response_format: ResponseFormat.optional(),
 }).strict();
 

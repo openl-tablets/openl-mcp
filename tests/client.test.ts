@@ -2574,23 +2574,31 @@ describe("OpenLClient — additional method coverage", () => {
         expect(JSON.parse(body as string)).toEqual({ cells: ["$VehiclePriceFactor", "$AgeFactor"] });
       });
 
-      it("GETs /trace/watch and returns the collected series", async () => {
+      it("GETs /trace/watch, forwarding the fields projection, and returns the collected series", async () => {
+        let fields: string | undefined;
         const watch: Types.WatchView = {
           series: [
             {
               name: "$VehiclePriceFactor",
               table: "VehiclePremiumCalculation",
               points: [
-                { instance: 0, value: 1.0 },
-                { instance: 1, value: 83.372, ref: "R7C1" },
+                { instance: 0, value: { name: "$VehiclePriceFactor", description: "Double", value: 1.0 } },
+                { instance: 1, ref: "R7C1", value: { name: "$VehiclePriceFactor", description: "Double", value: 83.372 } },
               ],
             },
           ],
         };
-        mockAxios.onGet(`${projectPath}/trace/watch`).reply(200, watch);
+        mockAxios.onGet(`${projectPath}/trace/watch`).reply((config) => {
+          fields = config.params?.fields;
+          return [200, watch];
+        });
 
-        const result = await client.getTraceWatch(projectId);
-        expect(result.series[0].points[1].value).toBe(83.372);
+        const result = await client.getTraceWatch(projectId, "series(points(value(value)))");
+        expect(result.series[0].points[1].value?.value).toBe(83.372);
+        expect(fields).toBe("series(points(value(value)))");
+
+        await client.getTraceWatch(projectId);
+        expect(fields).toBeUndefined();
       });
     });
 
