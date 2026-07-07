@@ -126,7 +126,7 @@ Deep codebase analysis results. Plans are grouped by priority.
 
 ## Plan 5. Split tool-handlers.ts into Modules [HIGH] — ✅ DONE
 
-**Outcome:** The 3,744-line `tool-handlers.ts` was split into per-category modules under `src/handlers/`. The registry core (`registerTool` / `getAllTools` / `executeTool`) and the shared error handling now live in `src/handlers/common.ts`; the generic `isNotFoundError` / `isPlainObject` guards moved to `utils.ts`. Each category exposes a `registerXxxHandlers()` function and owns its own private helpers and module-level state (the trace active-table registry, the table-id alias registry, the structured-payload argument validation). `src/handlers/index.ts` is the sole registry entry point — it defines `registerAllTools()` (which calls every `register*`) and re-exports `getAllTools` / `executeTool`. `tool-handlers.ts` is gone.
+**Outcome:** The 3,744-line `tool-handlers.ts` was split into per-category modules under `src/handlers/`. The registry core (`registerTool` / `getAllTools` / `executeTool`) and the shared error handling now live in `src/handlers/common.ts`; the generic `isNotFoundError` / `isPlainObject` guards moved to `utils.ts`. Each category exposes a `registerXxxHandlers()` function and owns its own private helpers and module-level state (the table-id alias registry, the structured-payload argument validation). `src/handlers/index.ts` is the sole registry entry point — it defines `registerAllTools()` (which calls every `register*`) and re-exports `getAllTools` / `executeTool`. `tool-handlers.ts` is gone.
 
 Two design refinements landed with the move: the central name-keyed `TOOL_VALIDATION` map was replaced by an optional `validateArgs` callback carried on each tool (so validation travels with the tool), and `registerAllTools()` lost its unused server/client parameters — registration needs neither, since tools receive their client at call time via `executeTool` (this also removed a throwaway `Server` and two stub clients from the CLI).
 
@@ -289,7 +289,7 @@ Modules (with the registry core): `common.ts`, `repository-handlers.ts`, `projec
    ```typescript
    registerTool({
      name: "openl_start_trace",
-     minStudioVersion: "6.1.0",
+     minStudioVersion: "6.2.0",
      // ...
    });
    ```

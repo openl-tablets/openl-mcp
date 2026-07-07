@@ -17,7 +17,7 @@ Navigate to the right guide based on what you need.
 
 - **[Contributing](development/contributing.md)** — how to contribute
 - **[Architecture](development/architecture.md)** — system architecture
-- **[WebSockets (STOMP)](development/websockets.md)** — how the server waits for async studio work (compile & trace status)
+- **[WebSockets (STOMP)](development/websockets.md)** — how the server waits for async studio work (compile status)
 - **[Testing](development/testing.md)** — testing strategy
 - **[Code Standards](development/code-standards.md)** — coding standards
 

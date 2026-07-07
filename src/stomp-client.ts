@@ -4,12 +4,10 @@
  * The studio publishes per-user notifications via Spring's
  * `convertAndSendToUser` (see `ProjectSocketNotificationService`): project
  * compile status on `/topic/projects/{encoded}[/branches/{encoded}]/status`
- * (`ProjectStatusViewModel` JSON) and trace execution status on
- * `/topic/projects/{encoded}/tables/{encoded}/trace/status` (a plain
- * `ExecutionStatus` name, or a small JSON object for errors). The broker
- * prefix is `/user`, the broker resolves the principal from the WebSocket
- * session, and STOMP CONNECT frames carry no credentials — authentication
- * piggybacks on the HTTP handshake's JSESSIONID cookie / Authorization header.
+ * (`ProjectStatusViewModel` JSON). The broker prefix is `/user`, the broker
+ * resolves the principal from the WebSocket session, and STOMP CONNECT frames
+ * carry no credentials — authentication piggybacks on the HTTP handshake's
+ * JSESSIONID cookie / Authorization header.
  *
  * This module is intentionally narrow: one subscription per call, no pooling,
  * no global state. It's invoked from `stomp-waits.ts` inside a single tool
@@ -75,11 +73,9 @@ export interface Subscription {
 /**
  * Destination-agnostic variant of {@link SubscribeProjectStatusOpts}: same
  * connection/auth/lifecycle options, but the caller supplies the full STOMP
- * destination and receives RAW frame bodies (no payload parsing) — different
- * topics carry different payload shapes (the trace topic sends plain status
- * strings, the project-status topic sends JSON).
+ * destination and receives RAW frame bodies (no payload parsing).
  */
-export interface SubscribeTopicOpts {
+interface SubscribeTopicOpts {
   studioBaseUrl: string;
   cookieHeader: string;
   authorizationHeader?: string;
@@ -129,7 +125,7 @@ export async function subscribeProjectStatus(
  * caller should treat that as a hard error (typically: missing/expired cookie,
  * wrong URL, or studio not reachable).
  */
-export async function subscribeTopic(
+async function subscribeTopic(
   opts: SubscribeTopicOpts
 ): Promise<Subscription> {
   const wsUrl = deriveWsUrl(opts.studioBaseUrl);
@@ -262,19 +258,6 @@ export function buildDestination(projectId: string, branch?: string): string {
     return `/user/topic/projects/${encodedProject}/branches/${encodeURIComponent(branch)}/status`;
   }
   return `/user/topic/projects/${encodedProject}/status`;
-}
-
-/**
- * Build the STOMP destination for a table's trace-execution status topic.
- *
- * Mirrors `ProjectSocketNotificationService.notifyTraceExecutionStatus` in the
- * studio: `/topic/projects/{id}/tables/{tableId}/trace/status`, published per
- * user (subscribe with the `/user` prefix). Frames are the plain
- * `ExecutionStatus` name (`PENDING`/`STARTED`/`COMPLETED`/`INTERRUPTED`) or a
- * JSON object `{"status":"ERROR","message":...}` on failure.
- */
-export function buildTraceStatusDestination(projectId: string, tableId: string): string {
-  return `/user/topic/projects/${encodeURIComponent(projectId)}/tables/${encodeURIComponent(tableId)}/trace/status`;
 }
 
 /**

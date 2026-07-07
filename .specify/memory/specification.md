@@ -266,13 +266,14 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - `openl_get_test_results` - Get full test execution results with pagination
 - `openl_get_test_results_by_table` - Get test results filtered by table ID
 
-**Trace Tools**:
-- `openl_start_trace` - Start a trace session
-- `openl_cancel_trace` - Cancel a trace session
-- `openl_export_trace` - Export trace data
-- `openl_get_trace_nodes` - Get trace nodes
-- `openl_get_trace_node_details` - Get details for a trace node
-- `openl_get_trace_parameter` - Get a trace parameter
+**Trace Tools** (interactive debugger):
+- `openl_start_trace` - Start a debug session and run to the first stop
+- `openl_step_trace` - Step into/over/out
+- `openl_resume_trace` - Run to the next breakpoint/exception/completion
+- `openl_inspect_trace_frame` - Inspect a suspended stack frame's variables
+- `openl_set_trace_breakpoints` - Read/replace breakpoints and list targets
+- `openl_get_trace_value` - Expand a lazy parameter value
+- `openl_stop_trace` - Terminate the debug session
 
 **Deployment Tools**:
 - `openl_list_deploy_repositories` - List deployment repositories

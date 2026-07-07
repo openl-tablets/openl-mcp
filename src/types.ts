@@ -951,41 +951,174 @@ export interface ProjectStatusView {
 }
 
 // =============================================================================
-// Trace API Types (BETA)
+// Trace Debug API Types (BETA) — interactive debugger
 // =============================================================================
 
-/** Trace parameter value (input, context, or result) - may be lazy-loaded */
+/** Debug session lifecycle status. */
+export type DebugStatus =
+  | "pending"
+  | "running"
+  | "suspended"
+  | "completed"
+  | "error"
+  | "terminated";
+
+/** Kind of a traced frame / call-tree node ("stepRef" appears only on CallNodeView). */
+export type FrameKind =
+  | "decisionTable"
+  | "spreadsheet"
+  | "method"
+  | "cmatch"
+  | "tbasic"
+  | "tbasicMethod"
+  | "stepRef";
+
+/** Trace parameter value (input, context, result, or step value) — may be lazy-loaded. */
 export interface TraceParameterValue {
   name: string;
   description: string;
-  lazy: boolean;
-  parameterId?: number | null;
+  /** true → value omitted; fetch via openl_get_trace_value with parameterId. */
+  lazy?: boolean;
+  parameterId?: number;
   value?: unknown;
   schema?: object;
 }
 
-/** Trace node view - tree node with optional detail fields */
-export interface TraceNodeView {
-  key: number;
-  title: string;
-  tooltip: string;
-  type: string;
-  lazy: boolean;
-  extraClasses: string;
-  error?: boolean;
-  parameters?: TraceParameterValue[];
-  context?: TraceParameterValue;
-  result?: TraceParameterValue;
-  errors?: Array<{ severity: string; summary: string; detail?: string; sourceLocation?: string }>;
+/** Error/warning message attached to a failed frame. */
+export interface MessageDescription {
+  id?: number;
+  severity: "INFO" | "WARN" | "ERROR";
+  summary: string;
 }
 
-/** Start trace request - tableId required; for regular methods use inputJson, for test suite use testRanges */
+/** Dispatcher badge — the table was chosen from overloaded (dimension-property) versions. */
+export interface DispatchInfo {
+  candidates: Array<{ label: string; chosen: boolean }>;
+}
+
+/** Current line inside a frame. */
+export interface DebugLocationView {
+  kind: "cell" | "dtrule" | "operation";
+  row?: number;
+  column?: number;
+  /** Short cell reference, e.g. "R2C3" — breakpoint sub-step key. */
+  ref?: string;
+  /** Human-readable, e.g. "$Formula$HouseTotal" or a fired rule name. */
+  label?: string;
+}
+
+/** A sub-step of a frame (only executable cells are steps). */
+export interface StepValueView {
+  ref: string;
+  label?: string;
+  status: "executed" | "current" | "pending";
+  /** Frozen computed value (variables endpoint only). */
+  value?: TraceParameterValue;
+  /** What this step called or referenced, in execution order (profiling). */
+  children?: CallNodeView[];
+  durationMillis?: number;
+  selfMillis?: number;
+}
+
+/** A node of the executed call tree (profiling) — structure and timings only, no values. */
+export interface CallNodeView {
+  uri: string;
+  name: string;
+  kind: FrameKind;
+  durationMillis: number;
+  selfMillis: number;
+  steps: StepValueView[];
+  dispatch?: DispatchInfo;
+  /** For kind=stepRef: the ref of the original step this node points at. */
+  refStep?: string;
+}
+
+/** One frame of the live execution stack. */
+export interface DebugFrameView {
+  index: number;
+  depth: number;
+  /** Table source URI — breakpoint + raw-table key. */
+  uri: string;
+  /** Table id for the shared Tables API (?raw=true). */
+  tableId: string;
+  name: string;
+  kind: FrameKind;
+  location?: DebugLocationView;
+  active: boolean;
+  completed: boolean;
+  error: boolean;
+  steps?: StepValueView[];
+  durationMillis?: number;
+  selfMillis?: number;
+  dispatch?: DispatchInfo;
+}
+
+/** Structured error of a terminal ERROR session. */
+export interface DebugError {
+  summary: string;
+  table?: string;
+  location?: string;
+  type?: string;
+  detail?: string;
+}
+
+/** The live execution stack — returned by start / step / stack reads. */
+export interface DebugStackView {
+  status: DebugStatus;
+  /** Frames ordered root (index 0) → current; empty after completion. */
+  frames: DebugFrameView[];
+  error?: DebugError;
+  /** Whole executed call tree after completion (profiling only). */
+  tree?: CallNodeView;
+}
+
+/** Lightweight status poll response. */
+export interface DebugStatusView {
+  status: DebugStatus;
+}
+
+/** Which rule fired and how its conditions evaluated (decision tables). */
+export interface DecisionView {
+  firedRules: string[];
+  conditions: Array<{ condition: string; rule: string; matched: boolean }>;
+}
+
+/** Frozen variables of one suspended frame. */
+export interface DebugFrameVariables {
+  parameters: TraceParameterValue[];
+  context?: TraceParameterValue;
+  result?: TraceParameterValue;
+  steps: StepValueView[];
+  gridColumns?: string[];
+  gridRows?: string[];
+  decision?: DecisionView;
+  ruleNames?: string[];
+  errors: MessageDescription[];
+}
+
+/** Execution highlight for one cell, keyed by A1 address in the table's sheet. */
+export interface CellHighlight {
+  cell: string;
+  state: "current" | "result" | "conditionTrue" | "conditionFalse";
+}
+
+/** A rule table a breakpoint can be set on (name is the breakpoint key). */
+export interface BreakpointTableView {
+  name: string;
+  kind: FrameKind;
+}
+
+/** Start debug session request — tableId required; testRanges for test tables, inputJson for regular methods. */
 export interface StartTraceRequest {
   projectId: string;
   tableId: string;
   testRanges?: string;
   fromModule?: string;
   inputJson?: string | object;
+  /** Suspend at the entry of the first frame (default true). */
+  stopAtEntry?: boolean;
+  /** Retain the executed call tree — structure and timings, no values (default false). */
+  profiling?: boolean;
 }
 
 // =============================================================================

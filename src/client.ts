@@ -211,10 +211,9 @@ export class OpenLClient {
    *    handshake (the studio authenticates STOMP via the HTTP session cookie,
    *    not via STOMP CONNECT headers).
    * 2. The CLI `--cookie-jar` flag, which round-trips this value through a file
-   *    so session-coupled flows (notably trace: `startTrace` stores state on
-   *    the server keyed by JSESSIONID; subsequent `getTraceNodes` /
-   *    `getTraceNodeDetails` calls must present the same cookie) work across
-   *    separate `npx` invocations.
+   *    so session-coupled flows (notably trace: the debug session is
+   *    server-side and keyed by JSESSIONID; every step/inspect/resume call
+   *    must present the same cookie) work across separate `npx` invocations.
    */
   public getSessionCookie(): string | null {
     return this.jsessionId;
@@ -2437,113 +2436,179 @@ export class OpenLClient {
   }
 
   // =============================================================================
-  // Trace API (BETA)
+  // Trace Debug API (BETA) — interactive debugger
+  //
+  // The debug session is server-side and bound to the HTTP session (JSESSIONID):
+  // the cookie interceptors above carry the same session across all calls of one
+  // debug flow. One active session per user; starting a new one terminates the
+  // previous.
   // =============================================================================
 
   /**
-   * Start trace execution for a table (asynchronous, returns 202 Accepted).
+   * Start an interactive debug session for a table and run it to the first
+   * suspension (the table entry when stopAtEntry, otherwise the first breakpoint)
+   * or to a terminal state. Returns the initial execution stack.
+   *
    * For TestSuiteMethod: use testRanges (e.g. "1-3,5").
    * For regular methods: use inputJson with { params: {...}, runtimeContext?: {...} }.
+   * A restart with neither re-runs the remembered last input (replay).
    */
-  async startTrace(request: Types.StartTraceRequest): Promise<void> {
+  async startTrace(request: Types.StartTraceRequest): Promise<Types.DebugStackView> {
     const projectPath = this.buildProjectPath(request.projectId);
     const params = new URLSearchParams({ tableId: request.tableId });
     if (request.testRanges) params.set("testRanges", request.testRanges);
     if (request.fromModule) params.set("fromModule", request.fromModule);
+    if (request.stopAtEntry != null) params.set("stopAtEntry", String(request.stopAtEntry));
+    if (request.profiling != null) params.set("profiling", String(request.profiling));
 
     const body = request.inputJson != null
       ? (typeof request.inputJson === "string" ? request.inputJson : JSON.stringify(request.inputJson))
       : undefined;
 
-    await this.axiosInstance.post(
+    const response = await this.axiosInstance.post<Types.DebugStackView>(
       `${projectPath}/trace?${params.toString()}`,
       body,
       body != null ? { headers: { "Content-Type": "application/json" } } : undefined
     );
+    return response.data;
   }
 
   /**
-   * Get trace node children (or root nodes if nodeId omitted).
-   * Returns 409 Conflict if trace is still running.
+   * Lightweight status poll of the debug session.
    */
-  async getTraceNodes(
-    projectId: string,
-    options?: { nodeId?: number; showRealNumbers?: boolean }
-  ): Promise<Types.TraceNodeView[]> {
+  async getTraceStatus(projectId: string): Promise<Types.DebugStatusView> {
     const projectPath = this.buildProjectPath(projectId);
-    const params: Record<string, string> = {
-      showRealNumbers: String(options?.showRealNumbers ?? false),
-    };
-    if (options?.nodeId != null) params.id = String(options.nodeId);
-
-    const response = await this.axiosInstance.get<Types.TraceNodeView[]>(
-      `${projectPath}/trace/nodes`,
-      { params }
+    const response = await this.axiosInstance.get<Types.DebugStatusView>(
+      `${projectPath}/trace/status`
     );
     return response.data;
   }
 
   /**
-   * Get detailed trace node (parameters, context, result).
+   * Read the execution stack (frames root → current). Readable while suspended
+   * or terminal; 409 while the worker is still running.
    */
-  async getTraceNodeDetails(
-    projectId: string,
-    nodeId: number,
-    showRealNumbers = false
-  ): Promise<Types.TraceNodeView> {
+  async getTraceStack(projectId: string): Promise<Types.DebugStackView> {
     const projectPath = this.buildProjectPath(projectId);
-    const response = await this.axiosInstance.get<Types.TraceNodeView>(
-      `${projectPath}/trace/nodes/${nodeId}`,
-      { params: { showRealNumbers } }
+    const response = await this.axiosInstance.get<Types.DebugStackView>(
+      `${projectPath}/trace/stack`
     );
     return response.data;
   }
 
   /**
-   * Get lazy-loaded parameter value.
+   * Step once (into / over / out) and return the new stack once the worker
+   * re-suspends (the backend waits synchronously, bounded ~30s).
+   */
+  async traceStep(projectId: string, type: "into" | "over" | "out"): Promise<Types.DebugStackView> {
+    const projectPath = this.buildProjectPath(projectId);
+    const response = await this.axiosInstance.post<Types.DebugStackView>(
+      `${projectPath}/trace/step`,
+      undefined,
+      { params: { type } }
+    );
+    return response.data;
+  }
+
+  /**
+   * Resume execution to the next breakpoint or completion. Asynchronous:
+   * returns 202 immediately — poll getTraceStatus until it leaves running,
+   * then read getTraceStack.
+   */
+  async traceResume(projectId: string): Promise<void> {
+    const projectPath = this.buildProjectPath(projectId);
+    await this.axiosInstance.post(`${projectPath}/trace/resume`);
+  }
+
+  /**
+   * Freeze and read the variables of a suspended frame. `fields` is the
+   * standard response projection (nested selection supported) used to keep
+   * value schemas and other bulk out of the agent's token budget.
+   */
+  async getTraceFrameVariables(
+    projectId: string,
+    frameIndex: number,
+    fields?: string
+  ): Promise<Types.DebugFrameVariables> {
+    const projectPath = this.buildProjectPath(projectId);
+    const response = await this.axiosInstance.get<Types.DebugFrameVariables>(
+      `${projectPath}/trace/frames/${frameIndex}/variables`,
+      { params: fields ? { fields } : undefined }
+    );
+    return response.data;
+  }
+
+  /**
+   * Execution highlight overlay for a frame's table, keyed by A1 cell address.
+   * Merge with the raw table grid (getTable(..., raw: true)).
+   */
+  async getTraceFrameHighlights(
+    projectId: string,
+    frameIndex: number
+  ): Promise<Types.CellHighlight[]> {
+    const projectPath = this.buildProjectPath(projectId);
+    const response = await this.axiosInstance.get<Types.CellHighlight[]>(
+      `${projectPath}/trace/frames/${frameIndex}/highlights`
+    );
+    return response.data;
+  }
+
+  /**
+   * Active breakpoint keys. Session-scoped, persist across runs, work without
+   * an active debug session.
+   */
+  async getTraceBreakpoints(projectId: string): Promise<string[]> {
+    const projectPath = this.buildProjectPath(projectId);
+    const response = await this.axiosInstance.get<string[]>(
+      `${projectPath}/trace/breakpoints`
+    );
+    return response.data;
+  }
+
+  /**
+   * Replace the whole breakpoint set (effective on the next frame enter /
+   * current-line change).
+   */
+  async setTraceBreakpoints(projectId: string, uris: string[]): Promise<void> {
+    const projectPath = this.buildProjectPath(projectId);
+    await this.axiosInstance.put(`${projectPath}/trace/breakpoints`, { uris });
+  }
+
+  /**
+   * Rule tables a breakpoint can be set on, deduplicated by name. With an
+   * active session only tables reachable from the traced table are returned.
+   */
+  async getTraceBreakpointTables(projectId: string): Promise<Types.BreakpointTableView[]> {
+    const projectPath = this.buildProjectPath(projectId);
+    const response = await this.axiosInstance.get<Types.BreakpointTableView[]>(
+      `${projectPath}/trace/breakpoint-tables`
+    );
+    return response.data;
+  }
+
+  /**
+   * Get lazy-loaded parameter value. `fields` is the standard response
+   * projection — used to drop the value's JSON Schema from the default reply.
    */
   async getTraceParameter(
     projectId: string,
-    parameterId: number
+    parameterId: number,
+    fields?: string
   ): Promise<Types.TraceParameterValue> {
     const projectPath = this.buildProjectPath(projectId);
     const response = await this.axiosInstance.get<Types.TraceParameterValue>(
-      `${projectPath}/trace/parameters/${parameterId}`
+      `${projectPath}/trace/parameters/${parameterId}`,
+      { params: fields ? { fields } : undefined }
     );
     return response.data;
   }
 
-
   /**
-   * Cancel ongoing trace execution.
+   * Terminate the debug session and clear the parameter registry. Idempotent.
    */
-  async cancelTrace(projectId: string): Promise<void> {
+  async stopTrace(projectId: string): Promise<void> {
     const projectPath = this.buildProjectPath(projectId);
     await this.axiosInstance.delete(`${projectPath}/trace`);
-  }
-
-  /**
-   * Export trace as text (returns raw response stream).
-   * Use responseType: 'arraybuffer' or 'stream' for binary; 'text' for string.
-   */
-  async exportTrace(
-    projectId: string,
-    options?: { showRealNumbers?: boolean; release?: boolean }
-  ): Promise<string> {
-    const projectPath = this.buildProjectPath(projectId);
-    const params: Record<string, string> = {};
-    if (options?.showRealNumbers) params.showRealNumbers = "true";
-    if (options?.release) params.release = "true";
-
-    const response = await this.axiosInstance.get<string>(
-      `${projectPath}/trace/export`,
-      {
-        params: Object.keys(params).length ? params : undefined,
-        responseType: "text",
-        headers: { Accept: "text/plain" },
-      }
-    );
-    return response.data;
   }
 
 }

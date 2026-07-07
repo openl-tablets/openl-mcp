@@ -2594,8 +2594,7 @@ describe("Tool Handler Integration Tests", () => {
 
 // These suites were migrated from the former tests/mcp-server.test.ts. They use
 // their OWN client/mockAxios so they stay isolated from the session state that
-// the "Test Execution Tools" suite above stores on its shared client (a leaked
-// JSESSIONID would flip the trace tests off their intended no-session path).
+// the "Test Execution Tools" suite above stores on its shared client.
 describe("Tool Handler Integration Tests — status, edits, creation & trace", () => {
   let client: OpenLClient;
   let mockAxios: MockAdapter;
@@ -3381,94 +3380,272 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
   });
 
   // ---------------------------------------------------------------------------
-  // Trace (EPBDS-16089: websocket-based wait while the trace is running).
-  // The full wait orchestration (subscribe → race-close re-read → terminal
-  // frame → final read) is unit-tested with an injected STOMP fake in
-  // tests/stomp-waits.trace.test.ts; here we cover the tool-layer glue.
+  // Trace Debug (interactive debugger) — tool-layer glue over the client:
+  // breakpoint pre-set on start, resume's status poll loop, inspect's fields
+  // trim + highlights merge, and the actionable 404/409 mapping.
   // ---------------------------------------------------------------------------
-  describe("Trace (EPBDS-16089)", () => {
-    it("openl_get_trace_nodes returns nodes when the trace is already complete", async () => {
-      const encoded = encodeProjectPath(projectId);
-      const nodes = [{ id: 1, name: "calculatePremium", type: "rule" }];
-      mockAxios.onGet(`/projects/${encoded}/trace/nodes`).reply(200, nodes);
+  describe("Trace Debug tools", () => {
+    const encoded = encodeProjectPath(projectId);
+    const suspendedStack = {
+      status: "suspended",
+      frames: [
+        {
+          index: 0,
+          depth: 1,
+          uri: "P/Rules.xlsx?sheet=Main&range=B2:D8",
+          tableId: "calc_42",
+          name: "CalcRule",
+          kind: "spreadsheet",
+          active: true,
+          completed: false,
+          error: false,
+        },
+      ],
+    };
+
+    it("openl_start_trace replaces the breakpoint set BEFORE starting when breakpoints are given", async () => {
+      const calls: string[] = [];
+      mockAxios.onPut(`/projects/${encoded}/trace/breakpoints`).reply((config) => {
+        calls.push(`put:${config.data}`);
+        return [204];
+      });
+      mockAxios.onPost(new RegExp(`/projects/${encoded}/trace\\?`)).reply(() => {
+        calls.push("start");
+        return [200, suspendedStack];
+      });
 
       const result = await executeTool(
-        "get_trace_nodes",
+        "start_trace",
+        { projectId, tableId: "calc_42", breakpoints: ["MyDT#rule"], response_format: "json" },
+        client
+      );
+
+      expect(calls[0]).toBe('put:{"uris":["MyDT#rule"]}');
+      expect(calls[1]).toBe("start");
+      expect(result.content[0].text).toContain("suspended");
+    });
+
+    it("openl_start_trace returns the terminal stack with the profiling tree as-is", async () => {
+      mockAxios.onPost(new RegExp(`/projects/${encoded}/trace\\?`)).reply(200, {
+        status: "completed",
+        frames: [],
+        tree: { uri: "u", name: "CalcRule", kind: "spreadsheet", durationMillis: 8.3, selfMillis: 2.0, steps: [] },
+      });
+
+      const result = await executeTool(
+        "start_trace",
+        { projectId, tableId: "calc_42", stopAtEntry: false, profiling: true, response_format: "json" },
+        client
+      );
+
+      expect(result.content[0].text).toContain("completed");
+      expect(result.content[0].text).toContain("durationMillis");
+    });
+
+    it("openl_step_trace forwards the step type and returns the new stack", async () => {
+      mockAxios.onPost(`/projects/${encoded}/trace/step`).reply((config) => {
+        expect(config.params).toEqual({ type: "over" });
+        return [200, suspendedStack];
+      });
+
+      const result = await executeTool(
+        "step_trace",
+        { projectId, type: "over", response_format: "json" },
+        client
+      );
+      expect(result.content[0].text).toContain("CalcRule");
+    });
+
+    it("openl_step_trace maps a 409 to an actionable not-suspended message", async () => {
+      mockAxios.onPost(`/projects/${encoded}/trace/step`).reply(409, { message: "trace.execution.not.suspended.message" });
+
+      await expect(
+        executeTool("step_trace", { projectId, type: "into" }, client)
+      ).rejects.toThrow(/not suspended/i);
+    });
+
+    it("openl_step_trace maps a 404 to an actionable no-session message", async () => {
+      mockAxios.onPost(`/projects/${encoded}/trace/step`).reply(404, { message: "trace.execution.task.message" });
+
+      await expect(
+        executeTool("step_trace", { projectId, type: "into" }, client)
+      ).rejects.toThrow(/openl_start_trace/);
+    });
+
+    it("openl_resume_trace resumes, polls the status until it leaves running, then returns the stack", async () => {
+      mockAxios.onPost(`/projects/${encoded}/trace/resume`).reply(202);
+      const statuses = ["running", "running", "suspended"];
+      mockAxios.onGet(`/projects/${encoded}/trace/status`).reply(() => [200, { status: statuses.shift() ?? "suspended" }]);
+      mockAxios.onGet(`/projects/${encoded}/trace/stack`).reply(200, suspendedStack);
+
+      const result = await executeTool(
+        "resume_trace",
         { projectId, response_format: "json" },
         client
       );
 
-      expect(result.content[0].text).toContain("calculatePremium");
+      expect(statuses).toHaveLength(0);
+      expect(result.content[0].text).toContain("suspended");
     });
 
-    it("openl_get_trace_nodes with wait: false surfaces the 409 immediately", async () => {
-      const encoded = encodeProjectPath(projectId);
-      mockAxios.onGet(`/projects/${encoded}/trace/nodes`).reply(409, { message: "Trace is still running" });
+    it("openl_resume_trace re-attaches to a still-running session instead of failing on the resume 409", async () => {
+      mockAxios.onPost(`/projects/${encoded}/trace/resume`).reply(409, { message: "trace.execution.not.suspended.message" });
+      const statuses = ["running", "completed"];
+      mockAxios.onGet(`/projects/${encoded}/trace/status`).reply(() => [200, { status: statuses.shift() ?? "completed" }]);
+      mockAxios.onGet(`/projects/${encoded}/trace/stack`).reply(200, { status: "completed", frames: [] });
 
-      await expect(
-        executeTool("get_trace_nodes", { projectId, wait: false }, client)
-      ).rejects.toThrow(/409|still running/i);
-      expect(mockAxios.history.get.filter((g) => g.url === `/projects/${encoded}/trace/nodes`).length).toBe(1);
-    });
-
-    it("openl_get_trace_nodes asks for tableId when the trace's table is unknown (EPBDS-16089)", async () => {
-      // Unique project id: nothing recorded by openl_start_trace for it.
-      const unknownProjectId = "design:trace-unknown:1";
-      const encoded = encodeProjectPath(unknownProjectId);
-      mockAxios.onGet(`/projects/${encoded}/trace/nodes`).reply(409, { message: "Trace is still running" });
-
-      await expect(
-        executeTool("get_trace_nodes", { projectId: unknownProjectId }, client)
-      ).rejects.toThrow(/Pass 'tableId'/);
-    });
-
-    it("openl_get_trace_nodes explains when the websocket wait is unavailable (no studio session)", async () => {
-      // The mocked axios layer never issues a JSESSIONID, so once the 409 arrives
-      // the handler cannot join the trace-status websocket and must say so.
-      const wsProjectId = "design:trace-no-session:1";
-      const encoded = encodeProjectPath(wsProjectId);
-      mockAxios.onGet(`/projects/${encoded}/trace/nodes`).reply(409, { message: "Trace is still running" });
-
-      await expect(
-        executeTool("get_trace_nodes", { projectId: wsProjectId, tableId: "rule_1" }, client)
-      ).rejects.toThrow(/websocket.*unavailable.*session cookie|session cookie.*websocket/is);
-    });
-
-    it("openl_start_trace records the traced table so reads can subscribe without tableId (EPBDS-16089)", async () => {
-      const traceProjectId = "design:trace-recorded:1";
-      const encoded = encodeProjectPath(traceProjectId);
-      mockAxios.onPost(/\/projects\/.*\/trace.*/).reply(202);
-      mockAxios.onGet(`/projects/${encoded}/trace/nodes`).reply(409, { message: "Trace is still running" });
-
-      const started = await executeTool(
-        "start_trace",
-        { projectId: traceProjectId, tableId: "calcRule_42", inputJson: { params: { x: 1 } } },
+      const result = await executeTool(
+        "resume_trace",
+        { projectId, response_format: "json" },
         client
       );
-      expect(started.content[0].text).toContain("websocket");
 
-      // No explicit tableId here — the handler must find the recorded one and
-      // proceed to the websocket path (which then fails on the missing session
-      // cookie rather than asking for tableId).
-      await expect(
-        executeTool("get_trace_nodes", { projectId: traceProjectId }, client)
-      ).rejects.toThrow(/session cookie/i);
+      expect(result.content[0].text).toContain("completed");
     });
 
-    it("openl_export_trace supports the same websocket wait glue", async () => {
-      const wsProjectId = "design:trace-export:1";
-      const encoded = encodeProjectPath(wsProjectId);
-      mockAxios.onGet(`/projects/${encoded}/trace/export`).reply(409, { message: "Trace is still running" });
+    it("openl_resume_trace rejects the resume 409 when the session is terminal (not merely running)", async () => {
+      mockAxios.onPost(`/projects/${encoded}/trace/resume`).reply(409, { message: "trace.execution.not.suspended.message" });
+      mockAxios.onGet(`/projects/${encoded}/trace/status`).reply(200, { status: "completed" });
 
       await expect(
-        executeTool("export_trace", { projectId: wsProjectId, tableId: "rule_1" }, client)
-      ).rejects.toThrow(/websocket.*unavailable|session cookie/is);
+        executeTool("resume_trace", { projectId }, client)
+      ).rejects.toThrow(/not suspended/i);
+    });
 
-      // And returns the export verbatim when the trace is already complete.
-      mockAxios.reset();
-      mockAxios.onGet(`/projects/${encoded}/trace/export`).reply(200, "TRACE: calculatePremium -> 42");
-      const result = await executeTool("export_trace", { projectId: wsProjectId, tableId: "rule_1" }, client);
-      expect(result.content[0].text).toContain("calculatePremium -> 42");
+    it("openl_resume_trace reports a still-running trace on timeout instead of erroring", async () => {
+      mockAxios.onPost(`/projects/${encoded}/trace/resume`).reply(202);
+      mockAxios.onGet(`/projects/${encoded}/trace/status`).reply(200, { status: "running" });
+
+      const result = await executeTool(
+        "resume_trace",
+        { projectId, timeoutMs: 1 },
+        client
+      );
+
+      expect(result.content[0].text).toMatch(/still running/);
+      expect(result.content[0].text).toContain("openl_stop_trace");
+    });
+
+    it("openl_inspect_trace_frame trims the response via ?fields by default and lifts the trim with full: true", async () => {
+      const fieldsSeen: Array<string | undefined> = [];
+      mockAxios.onGet(`/projects/${encoded}/trace/frames/0/variables`).reply((config) => {
+        fieldsSeen.push(config.params?.fields);
+        return [200, { parameters: [], steps: [], errors: [], decision: { firedRules: ["R10"], conditions: [] } }];
+      });
+
+      const result = await executeTool(
+        "inspect_trace_frame",
+        { projectId, frameIndex: 0, response_format: "json" },
+        client
+      );
+      expect(result.content[0].text).toContain("R10");
+      expect(fieldsSeen[0]).toContain("decision");
+      expect(fieldsSeen[0]).toContain("parameters(name,description,lazy,parameterId,value)");
+      expect(fieldsSeen[0]).not.toContain("schema");
+
+      await executeTool("inspect_trace_frame", { projectId, frameIndex: 0, full: true }, client);
+      expect(fieldsSeen[1]).toBeUndefined();
+    });
+
+    it("openl_inspect_trace_frame with withHighlights merges the overlay and the raw grid of the frame's table", async () => {
+      mockAxios.onGet(`/projects/${encoded}/trace/frames/0/variables`).reply(200, { parameters: [], steps: [], errors: [] });
+      mockAxios.onGet(`/projects/${encoded}/trace/frames/0/highlights`).reply(200, [{ cell: "C5", state: "current" }]);
+      mockAxios.onGet(`/projects/${encoded}/trace/stack`).reply(200, suspendedStack);
+      mockAxios.onGet(new RegExp(`/projects/${encoded}/tables/calc_42`)).reply((config) => {
+        expect(config.params?.raw).toBe(true);
+        return [200, { view: "raw", cells: [["Header"], ["=A1*2"]] }];
+      });
+
+      const result = await executeTool(
+        "inspect_trace_frame",
+        { projectId, frameIndex: 0, withHighlights: true, response_format: "json" },
+        client
+      );
+
+      const text = result.content[0].text;
+      expect(text).toContain('"C5"');
+      expect(text).toContain("=A1*2");
+    });
+
+    it("openl_inspect_trace_frame maps a 409 to guidance about the terminal/running state", async () => {
+      mockAxios.onGet(`/projects/${encoded}/trace/frames/3/variables`).reply(409, { message: "trace.execution.not.suspended.message" });
+
+      await expect(
+        executeTool("inspect_trace_frame", { projectId, frameIndex: 3 }, client)
+      ).rejects.toThrow(/not suspended/i);
+    });
+
+    it("openl_set_trace_breakpoints reads the current set and the available targets", async () => {
+      mockAxios.onGet(`/projects/${encoded}/trace/breakpoints`).reply(200, ["CalcRule"]);
+      mockAxios.onGet(`/projects/${encoded}/trace/breakpoint-tables`).reply(200, [
+        { name: "CalcRule", kind: "spreadsheet" },
+        { name: "BankRatingGroup", kind: "decisionTable" },
+      ]);
+
+      const result = await executeTool(
+        "set_trace_breakpoints",
+        { projectId, response_format: "json" },
+        client
+      );
+
+      const text = result.content[0].text;
+      expect(text).toContain("BankRatingGroup");
+      expect(mockAxios.history.put).toHaveLength(0);
+    });
+
+    it("openl_set_trace_breakpoints with set replaces the whole set before reading it back", async () => {
+      let putBody: unknown;
+      mockAxios.onPut(`/projects/${encoded}/trace/breakpoints`).reply((config) => {
+        putBody = config.data;
+        return [204];
+      });
+      mockAxios.onGet(`/projects/${encoded}/trace/breakpoints`).reply(200, ["uri#R0C1"]);
+      mockAxios.onGet(`/projects/${encoded}/trace/breakpoint-tables`).reply(200, []);
+
+      const result = await executeTool(
+        "set_trace_breakpoints",
+        { projectId, set: ["uri#R0C1"], response_format: "json" },
+        client
+      );
+
+      expect(JSON.parse(putBody as string)).toEqual({ uris: ["uri#R0C1"] });
+      expect(result.content[0].text).toContain("uri#R0C1");
+    });
+
+    it("openl_get_trace_value expands a lazy parameter, dropping the value's JSON Schema unless withSchema is set", async () => {
+      const fieldsSeen: Array<string | undefined> = [];
+      mockAxios.onGet(`/projects/${encoded}/trace/parameters/5`).reply((config) => {
+        fieldsSeen.push(config.params?.fields);
+        return [200, { name: "premium", description: "Double", value: 1000 }];
+      });
+
+      const result = await executeTool(
+        "get_trace_value",
+        { projectId, parameterId: 5, response_format: "json" },
+        client
+      );
+      expect(result.content[0].text).toContain("1000");
+      // The default ?fields projection excludes the token-heavy `schema`.
+      expect(fieldsSeen[0]).toBe("name,description,value");
+
+      await executeTool("get_trace_value", { projectId, parameterId: 5, withSchema: true }, client);
+      expect(fieldsSeen[1]).toBeUndefined();
+    });
+
+    it("openl_get_trace_value maps a 404 to an actionable no-session message", async () => {
+      mockAxios.onGet(`/projects/${encoded}/trace/parameters/9`).reply(404, { message: "trace.parameter.not.found.message" });
+
+      await expect(
+        executeTool("get_trace_value", { projectId, parameterId: 9 }, client)
+      ).rejects.toThrow(/openl_start_trace/);
+    });
+
+    it("openl_stop_trace terminates the session", async () => {
+      mockAxios.onDelete(`/projects/${encoded}/trace`).reply(204);
+
+      const result = await executeTool("stop_trace", { projectId }, client);
+      expect(result.content[0].text).toContain("terminated");
+      expect(mockAxios.history.delete).toHaveLength(1);
     });
   });
 });

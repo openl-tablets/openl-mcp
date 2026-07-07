@@ -621,61 +621,56 @@ export const EDITABLE_TABLE_TYPES: readonly string[] = discriminatorValues(
 );
 
 // =============================================================================
-// Trace API Schemas (BETA)
+// Trace Debug API Schemas (BETA) — interactive debugger
 // =============================================================================
 
 export const startTraceSchema = z.object({
   projectId: projectIdSchema,
-  tableId: tableIdSchema.describe("Table ID to trace (e.g., 'calculatePremium_1234'). Get from openl_list_tables()."),
-  testRanges: z.string().optional().describe("For test tables: comma-separated ranges (e.g., '1-3,5'). Omit for regular rule/table execution."),
-  fromModule: z.string().optional().describe("Module name for opened module execution. Usually omit."),
-  inputJson: z.union([z.string(), z.record(z.string(), z.any())]).optional().describe("For regular rules: JSON input. Use object with params (required) and runtimeContext (optional). E.g. { params: { age: 25 }, runtimeContext: { lob: 'Auto' } }."),
+  tableId: tableIdSchema.describe("Table ID to debug (e.g., 'calculatePremium_1234'). Get from openl_list_tables()."),
+  testRanges: z.string().optional().describe("For test tables: comma-separated test-case ranges (e.g., '1-3,5'). Omit for regular rule execution."),
+  inputJson: z.union([z.string(), z.record(z.string(), z.any())]).optional().describe("For regular rules: JSON input. Use object with params (required) and runtimeContext (optional). E.g. { params: { age: 25 }, runtimeContext: { lob: 'Auto' } }. Omit BOTH inputJson and testRanges to replay the previous run's remembered input (e.g. restarting with profiling or new breakpoints)."),
+  fromModule: z.string().optional().describe("Module name to trace in the context of a specific opened module. Usually omit."),
+  stopAtEntry: z.boolean().optional().describe("Suspend at the entry of the first frame (default true). Set false to run straight to the first breakpoint — or, with no breakpoints, to completion."),
+  profiling: z.boolean().optional().describe("Retain the executed call tree — structure and timings, NO values (default false). With stopAtEntry: false and no breakpoints the run completes in this single call and returns the whole tree."),
+  breakpoints: z.array(z.string()).optional().describe("Initial breakpoint set — REPLACES the current set before starting. Key forms: '<name>' (entry of any same-named table), '<uri>' (entry of that table), '<uri>#R{r}C{c}' (spreadsheet cell), '<uri>#rule' (any decision-table rule fires), '<uri>#<ruleName>' (specific rule fires)."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
-/**
- * Server-side wait parameters for trace reads (EPBDS-16089). While a trace is
- * running the backend answers 409 Conflict; LLM agents cannot sleep between
- * calls, so by default the SERVER retries internally until the trace completes.
- */
-const traceWaitParams = {
-  tableId: z.string().optional().describe("Table id the trace was started for (the same value passed to openl_start_trace). Used to subscribe to the studio's per-table trace-status websocket topic while waiting out the 409 window. OPTIONAL when openl_start_trace ran through this same server instance — the table is remembered automatically; pass it explicitly when the trace was started by another process (e.g. a separate CLI run)."),
-  wait: z.boolean().optional().describe("When true (DEFAULT), if the trace is still running (backend returns 409 Conflict) the server subscribes to the studio's trace-status websocket and waits until the trace completes or waitTimeoutMs elapses — no client-side polling needed. Set false to get the raw immediate 409 behavior."),
-  waitTimeoutMs: z.number().int().positive().max(600000).optional().describe("Maximum time to wait for trace completion, in milliseconds. Default 120000 (2 min), cap 600000 (10 min). On timeout an error is returned explaining that the trace is still running server-side."),
-};
-
-export const getTraceNodesSchema = z.object({
+export const stepTraceSchema = z.object({
   projectId: projectIdSchema,
-  nodeId: z.number().int().nonnegative().optional().describe("Parent node ID. Omit for root nodes."),
-  showRealNumbers: z.boolean().optional().describe("Show exact numbers instead of formatted (default: false)."),
-  ...traceWaitParams,
+  type: z.enum(["into", "over", "out"]).describe("'into' — enter the next call / next sub-step; 'over' — next sub-step of the current frame (nested calls run through); 'out' — run the current frame to its own exit (result becomes inspectable), then continue in the caller."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
-export const getTraceNodeDetailsSchema = z.object({
+export const resumeTraceSchema = z.object({
   projectId: projectIdSchema,
-  nodeId: z.number().int().nonnegative().describe("Trace node ID from get_trace_nodes."),
-  showRealNumbers: z.boolean().optional(),
+  timeoutMs: z.number().int().positive().max(600000).optional().describe("Maximum time to wait for the next suspension or completion, in milliseconds. Default 30000, cap 600000. On timeout the current (still RUNNING) status is returned — call openl_resume_trace again to keep waiting, or openl_stop_trace to give up."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
-export const getTraceParameterSchema = z.object({
+export const inspectTraceFrameSchema = z.object({
   projectId: projectIdSchema,
-  parameterId: z.number().int().nonnegative().describe("Parameter ID from TraceParameterValue (lazy-loaded params)."),
+  frameIndex: z.number().int().nonnegative().describe("Stack frame index from the frames[] of the last stack response (0 = root, highest = current)."),
+  withHighlights: z.boolean().optional().describe("Also return the frame's cell-highlight overlay (A1-keyed) plus the raw table grid to merge it with (default false)."),
+  full: z.boolean().optional().describe("Return the complete untrimmed response, including value JSON schemas (default false — trimmed via ?fields to save tokens)."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
-
-export const cancelTraceSchema = z.object({
+export const setTraceBreakpointsSchema = z.object({
   projectId: projectIdSchema,
+  set: z.array(z.string()).optional().describe("When provided, REPLACES the whole breakpoint set (empty array clears all). Key forms: '<name>' (entry of any same-named table), '<uri>' (entry of that table), '<uri>#R{r}C{c}' (spreadsheet cell), '<uri>#rule' (any decision-table rule fires), '<uri>#<ruleName>' (specific rule fires). Omit to just read the current set and available targets."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
-export const exportTraceSchema = z.object({
+export const getTraceValueSchema = z.object({
   projectId: projectIdSchema,
-  showRealNumbers: z.boolean().optional(),
-  release: z.boolean().optional().describe("Clear trace from memory after export (default: false)."),
-  ...traceWaitParams,
+  parameterId: z.number().int().nonnegative().describe("Parameter ID from a lazy ParameterValue (lazy: true) returned by openl_inspect_trace_frame."),
+  withSchema: z.boolean().optional().describe("Also return the value's JSON Schema (default false — the schema is large and rarely needed; the value itself already shows the structure)."),
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+export const stopTraceSchema = z.object({
+  projectId: projectIdSchema,
   response_format: ResponseFormat.optional(),
 }).strict();
 

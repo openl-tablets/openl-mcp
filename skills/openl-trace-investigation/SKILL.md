@@ -96,7 +96,7 @@ Entry points are tables exposed as API endpoints. To identify them:
 
 ## Phase 2 — Run the trace
 
-### Step 3: Start a trace
+### Step 3: Run a whole-run profiling trace first
 
 Wrap the user's JSON as:
 
@@ -104,8 +104,12 @@ Wrap the user's JSON as:
 { "params": { "<paramName>": <value> } }
 ```
 
-The param name comes from the entry point table's signature. Start the trace
-on the identified project and entry point table with this wrapped input.
+The param name comes from the entry point table's signature. Start the debug
+session on the identified project and entry point table with this wrapped
+input, using `stopAtEntry: false` and `profiling: true` and no breakpoints —
+the run completes in one call and returns the **executed call tree** (`tree`):
+which tables ran, what each step called, dispatcher choices, and timings.
+Structure only — no values.
 
 If starting the trace returns 404, the project session is stale — open the
 project, then retry. Do NOT fall back to manual table reading — 404 is a
@@ -116,12 +120,24 @@ If it still fails after opening the project:
 - Do NOT attempt manual reconstruction
 - Suggest filing a bug against the OpenL MCP server
 
-### Step 4: Export the full trace
+If the run ends in `error`, the stack carries a structured `error` with the
+failing table, step, and exception — that is usually the root-cause pointer.
 
-Export the complete trace and scan it for:
-- `ERROR` nodes
-- `null` values on fields the user cares about
-- Unexpected fallback branches or early exits
+### Step 4: Replay into the suspicious branch for values
+
+Scan the executed tree for the branch relevant to the reported problem
+(the table producing the wrong value, an unexpected fallback, a skipped
+branch). Then **replay**: restart the trace with a breakpoint on that table
+(the input is remembered — send neither input nor test ranges), run to the
+breakpoint, and inspect the suspended frame:
+
+- parameters, runtime context, and computed step values (expand lazy values
+  on demand);
+- for a decision table — `decision` (which rule fired and how each condition
+  evaluated per rule) and the full rule list for per-rule breakpoints;
+- step out of a frame to see its `result` while it is still on the stack.
+
+Terminate the session when the investigation is done.
 
 ---
 
@@ -132,9 +148,10 @@ reported problem — do not look only for exceptions.
 
 ### Issue: error or exception
 
-Follow every ERROR node to its deepest child by listing its child nodes and
-drilling into the details of each. Read the actual table formula directly
-from the project — **never infer it**.
+An exception suspends the trace at the throwing frame before it propagates —
+inspect that frame's parameters and step values right there; the terminal
+stack's structured `error` names the failing table, step, and exception type.
+Read the actual table formula directly from the project — **never infer it**.
 
 ### Issue: null or blank result
 
