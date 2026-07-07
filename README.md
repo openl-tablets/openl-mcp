@@ -47,7 +47,7 @@ See [prompts/create_rule.md](./prompts/create_rule.md) for detailed table type g
 
 ## Tools
 
-The MCP server provides 57 tools for managing OpenL Studio repositories, projects, rules, tables, tests, traces, and deployments. All tools are prefixed with `openl_` and versioned (v1.0.0+).
+The MCP server provides 58 tools for managing OpenL Studio repositories, projects, rules, tables, tests, traces, and deployments. All tools are prefixed with `openl_` and versioned (v1.0.0+).
 
 **Categories:**
 - **Guidance** - Agent onboarding (`openl_get_started`), per-project AGENTS.md context (`openl_get_project_agent_context`), and the official OpenL reference documentation embedded at build time (`openl_list_guides` / `openl_get_guides`)

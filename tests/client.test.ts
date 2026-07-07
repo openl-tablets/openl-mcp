@@ -2397,7 +2397,7 @@ describe("OpenLClient — additional method coverage", () => {
         expect(stack.frames[0].tableId).toBe("calc_42");
       });
 
-      it("threads testRanges, stopAtEntry and profiling into the query string and sends no body when inputJson is omitted", async () => {
+      it("threads testRanges, stopAtEntry, profiling, includeTree and profileTop into the query string and sends no body when inputJson is omitted", async () => {
         let seenUrl = "";
         let body: unknown;
         mockAxios.onPost(/\/projects\/p1\/trace\?/).reply((config) => {
@@ -2412,6 +2412,8 @@ describe("OpenLClient — additional method coverage", () => {
           testRanges: "1-3,5",
           stopAtEntry: false,
           profiling: true,
+          includeTree: false,
+          profileTop: 30,
         });
 
         expect(seenUrl).toContain("tableId=MyTest");
@@ -2419,6 +2421,8 @@ describe("OpenLClient — additional method coverage", () => {
         expect(seenUrl).toContain("testRanges=1-3%2C5");
         expect(seenUrl).toContain("stopAtEntry=false");
         expect(seenUrl).toContain("profiling=true");
+        expect(seenUrl).toContain("includeTree=false");
+        expect(seenUrl).toContain("profileTop=30");
         expect(body).toBeUndefined();
       });
     });
@@ -2431,25 +2435,30 @@ describe("OpenLClient — additional method coverage", () => {
         expect(status).toEqual({ status: "running" });
       });
 
-      it("GETs /trace/stack and returns the frames", async () => {
-        mockAxios.onGet(`${projectPath}/trace/stack`).reply(200, suspendedStack);
+      it("GETs /trace/stack and returns the frames, forwarding view/includeTree/profileTop", async () => {
+        let params: Record<string, unknown> | undefined;
+        mockAxios.onGet(`${projectPath}/trace/stack`).reply((config) => {
+          params = config.params;
+          return [200, suspendedStack];
+        });
 
-        const stack = await client.getTraceStack(projectId);
+        const stack = await client.getTraceStack(projectId, { view: "compact", includeTree: false, profileTop: 10 });
         expect(stack.frames).toHaveLength(1);
         expect(stack.frames[0].name).toBe("CalcRule");
+        expect(params).toEqual({ view: "compact", includeTree: "false", profileTop: "10" });
       });
     });
 
     describe("traceStep", () => {
-      it("POSTs /trace/step with the step type as a query param and returns the new stack", async () => {
+      it("POSTs /trace/step with the step type and view as query params and returns the new stack", async () => {
         let params: Record<string, unknown> | undefined;
         mockAxios.onPost(`${projectPath}/trace/step`).reply((config) => {
           params = config.params;
           return [200, suspendedStack];
         });
 
-        const stack = await client.traceStep(projectId, "into");
-        expect(params).toEqual({ type: "into" });
+        const stack = await client.traceStep(projectId, "into", { view: "compact" });
+        expect(params).toEqual({ type: "into", view: "compact" });
         expect(stack.status).toBe("suspended");
       });
     });
@@ -2550,6 +2559,38 @@ describe("OpenLClient — additional method coverage", () => {
 
         await client.getTraceParameter(projectId, 5);
         expect(fieldsSeen[1]).toBeUndefined();
+      });
+    });
+
+    describe("watches", () => {
+      it("PUTs /trace/watches with the cells wrapped in a WatchesRequest body", async () => {
+        let body: unknown;
+        mockAxios.onPut(`${projectPath}/trace/watches`).reply((config) => {
+          body = config.data;
+          return [204];
+        });
+
+        await client.setTraceWatches(projectId, ["$VehiclePriceFactor", "$AgeFactor"]);
+        expect(JSON.parse(body as string)).toEqual({ cells: ["$VehiclePriceFactor", "$AgeFactor"] });
+      });
+
+      it("GETs /trace/watch and returns the collected series", async () => {
+        const watch: Types.WatchView = {
+          series: [
+            {
+              name: "$VehiclePriceFactor",
+              table: "VehiclePremiumCalculation",
+              points: [
+                { instance: 0, value: 1.0 },
+                { instance: 1, value: 83.372, ref: "R7C1" },
+              ],
+            },
+          ],
+        };
+        mockAxios.onGet(`${projectPath}/trace/watch`).reply(200, watch);
+
+        const result = await client.getTraceWatch(projectId);
+        expect(result.series[0].points[1].value).toBe(83.372);
       });
     });
 

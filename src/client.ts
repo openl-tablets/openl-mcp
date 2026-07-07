@@ -2460,6 +2460,9 @@ export class OpenLClient {
     if (request.fromModule) params.set("fromModule", request.fromModule);
     if (request.stopAtEntry != null) params.set("stopAtEntry", String(request.stopAtEntry));
     if (request.profiling != null) params.set("profiling", String(request.profiling));
+    if (request.includeTree != null) params.set("includeTree", String(request.includeTree));
+    if (request.profileTop != null) params.set("profileTop", String(request.profileTop));
+    if (request.view) params.set("view", request.view);
 
     const body = request.inputJson != null
       ? (typeof request.inputJson === "string" ? request.inputJson : JSON.stringify(request.inputJson))
@@ -2486,26 +2489,43 @@ export class OpenLClient {
 
   /**
    * Read the execution stack (frames root → current). Readable while suspended
-   * or terminal; 409 while the worker is still running.
+   * or terminal; 409 while the worker is still running. `view: "compact"` keeps
+   * steps only on the active frame; `includeTree`/`profileTop` shape a
+   * profiling run's terminal `tree`/`profile`.
    */
-  async getTraceStack(projectId: string): Promise<Types.DebugStackView> {
+  async getTraceStack(
+    projectId: string,
+    options?: { view?: "full" | "compact"; includeTree?: boolean; profileTop?: number }
+  ): Promise<Types.DebugStackView> {
     const projectPath = this.buildProjectPath(projectId);
+    const params: Record<string, string> = {};
+    if (options?.view) params.view = options.view;
+    if (options?.includeTree != null) params.includeTree = String(options.includeTree);
+    if (options?.profileTop != null) params.profileTop = String(options.profileTop);
     const response = await this.axiosInstance.get<Types.DebugStackView>(
-      `${projectPath}/trace/stack`
+      `${projectPath}/trace/stack`,
+      { params: Object.keys(params).length ? params : undefined }
     );
     return response.data;
   }
 
   /**
    * Step once (into / over / out) and return the new stack once the worker
-   * re-suspends (the backend waits synchronously, bounded ~30s).
+   * re-suspends (the backend waits synchronously, bounded ~30s). `view:
+   * "compact"` (the tool default) keeps steps only on the active frame.
    */
-  async traceStep(projectId: string, type: "into" | "over" | "out"): Promise<Types.DebugStackView> {
+  async traceStep(
+    projectId: string,
+    type: "into" | "over" | "out",
+    options?: { view?: "full" | "compact" }
+  ): Promise<Types.DebugStackView> {
     const projectPath = this.buildProjectPath(projectId);
+    const params: Record<string, string> = { type };
+    if (options?.view) params.view = options.view;
     const response = await this.axiosInstance.post<Types.DebugStackView>(
       `${projectPath}/trace/step`,
       undefined,
-      { params: { type } }
+      { params }
     );
     return response.data;
   }
@@ -2599,6 +2619,27 @@ export class OpenLClient {
     const response = await this.axiosInstance.get<Types.TraceParameterValue>(
       `${projectPath}/trace/parameters/${parameterId}`,
       { params: fields ? { fields } : undefined }
+    );
+    return response.data;
+  }
+
+  /**
+   * Replace the watched-cell set (applied on the next start). Watches capture a
+   * named cell's value at every execution of its table across a whole run.
+   */
+  async setTraceWatches(projectId: string, cells: string[]): Promise<void> {
+    const projectPath = this.buildProjectPath(projectId);
+    await this.axiosInstance.put(`${projectPath}/trace/watches`, { cells });
+  }
+
+  /**
+   * Collected watched-cell values — one series per cell, one point per execution
+   * of its table. Read after a run completes (409 while still running).
+   */
+  async getTraceWatch(projectId: string): Promise<Types.WatchView> {
+    const projectPath = this.buildProjectPath(projectId);
+    const response = await this.axiosInstance.get<Types.WatchView>(
+      `${projectPath}/trace/watch`
     );
     return response.data;
   }

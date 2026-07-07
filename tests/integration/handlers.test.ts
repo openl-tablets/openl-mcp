@@ -3425,26 +3425,54 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       expect(result.content[0].text).toContain("suspended");
     });
 
-    it("openl_start_trace returns the terminal stack with the profiling tree as-is", async () => {
-      mockAxios.onPost(new RegExp(`/projects/${encoded}/trace\\?`)).reply(200, {
-        status: "completed",
-        frames: [],
-        tree: { uri: "u", name: "CalcRule", kind: "spreadsheet", durationMillis: 8.3, selfMillis: 2.0, steps: [] },
+    it("openl_start_trace profiling asks the backend for the bounded profile (includeTree=false) and returns it", async () => {
+      let params: Record<string, unknown> | undefined;
+      mockAxios.onPost(new RegExp(`/projects/${encoded}/trace\\?`)).reply((config) => {
+        params = Object.fromEntries(new URLSearchParams(config.url?.split("?")[1] ?? ""));
+        return [200, {
+          status: "completed",
+          frames: [],
+          profile: {
+            hotspots: [{ uri: "u", name: "VehiclePriceFactor", kind: "spreadsheet", selfMillis: 83.4, totalMillis: 120.1, count: 6 }],
+            distinctTables: 42,
+            nodeCount: 3571,
+            totalMillis: 128.4,
+            truncated: true,
+          },
+        }];
       });
 
       const result = await executeTool(
         "start_trace",
-        { projectId, tableId: "calc_42", stopAtEntry: false, profiling: true, response_format: "json" },
+        { projectId, tableId: "calc_42", stopAtEntry: false, profiling: true, profileTop: 30, response_format: "json" },
         client
       );
 
-      expect(result.content[0].text).toContain("completed");
-      expect(result.content[0].text).toContain("durationMillis");
+      expect(params?.includeTree).toBe("false"); // never pull the >1MB tree by default
+      expect(params?.profileTop).toBe("30");
+      expect(result.content[0].text).toContain("VehiclePriceFactor");
+      expect(result.content[0].text).toContain("hotspots");
     });
 
-    it("openl_step_trace forwards the step type and returns the new stack", async () => {
+    it("openl_start_trace with includeTree: true asks the backend for the full tree", async () => {
+      let params: Record<string, unknown> | undefined;
+      mockAxios.onPost(new RegExp(`/projects/${encoded}/trace\\?`)).reply((config) => {
+        params = Object.fromEntries(new URLSearchParams(config.url?.split("?")[1] ?? ""));
+        return [200, { status: "completed", frames: [], tree: { uri: "u", name: "root", kind: "spreadsheet", durationMillis: 5, selfMillis: 1, steps: [] } }];
+      });
+
+      await executeTool(
+        "start_trace",
+        { projectId, tableId: "calc_42", stopAtEntry: false, profiling: true, includeTree: true, response_format: "json" },
+        client
+      );
+
+      expect(params?.includeTree).toBe("true");
+    });
+
+    it("openl_step_trace steps compact by default and returns the new stack", async () => {
       mockAxios.onPost(`/projects/${encoded}/trace/step`).reply((config) => {
-        expect(config.params).toEqual({ type: "over" });
+        expect(config.params).toEqual({ type: "over", view: "compact" });
         return [200, suspendedStack];
       });
 
@@ -3454,6 +3482,24 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
         client
       );
       expect(result.content[0].text).toContain("CalcRule");
+    });
+
+    it("openl_step_trace with withValues bundles the active frame's variables", async () => {
+      mockAxios.onPost(`/projects/${encoded}/trace/step`).reply(200, suspendedStack);
+      mockAxios.onGet(`/projects/${encoded}/trace/frames/0/variables`).reply(200, {
+        parameters: [{ name: "policy", description: "AutoPolicy", value: { age: 30 } }],
+        steps: [],
+        errors: [],
+      });
+
+      const result = await executeTool(
+        "step_trace",
+        { projectId, type: "out", withValues: true, response_format: "json" },
+        client
+      );
+
+      const body = JSON.parse(result.content[0].text) as { data: { variables?: { parameters: Array<{ name: string }> } } };
+      expect(body.data.variables?.parameters[0].name).toBe("policy");
     });
 
     it("openl_step_trace maps a 409 to an actionable not-suspended message", async () => {
@@ -3545,6 +3591,28 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
 
       await executeTool("inspect_trace_frame", { projectId, frameIndex: 0, full: true }, client);
       expect(fieldsSeen[1]).toBeUndefined();
+    });
+
+    it("openl_inspect_trace_frame filters steps by onlyExecutedSteps and excludeStepValues", async () => {
+      mockAxios.onGet(`/projects/${encoded}/trace/frames/0/variables`).reply(200, {
+        parameters: [],
+        errors: [],
+        steps: [
+          { ref: "R0C0", label: "$AgeFactor", status: "executed", value: { name: "$AgeFactor", value: 1 } },
+          { ref: "R1C0", label: "$VehiclePriceFactor", status: "executed", value: { name: "$VehiclePriceFactor", value: 83.372 } },
+          { ref: "R2C0", label: "$Pending", status: "pending" },
+        ],
+      });
+
+      const result = await executeTool(
+        "inspect_trace_frame",
+        { projectId, frameIndex: 0, onlyExecutedSteps: true, excludeStepValues: [1], response_format: "json" },
+        client
+      );
+
+      const body = JSON.parse(result.content[0].text) as { data: { steps: Array<{ label: string }> } };
+      // The neutral factor (1) and the pending step are gone; the outlier stays.
+      expect(body.data.steps.map((s) => s.label)).toEqual(["$VehiclePriceFactor"]);
     });
 
     it("openl_inspect_trace_frame with withHighlights merges the overlay and the raw grid of the frame's table", async () => {
@@ -3646,6 +3714,44 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       const result = await executeTool("stop_trace", { projectId }, client);
       expect(result.content[0].text).toContain("terminated");
       expect(mockAxios.history.delete).toHaveLength(1);
+    });
+
+    it("openl_watch_trace_cells sets the watches, runs the table, and returns the collected series", async () => {
+      const calls: string[] = [];
+      let putBody: unknown;
+      let startParams: Record<string, string> = {};
+      mockAxios.onPut(`/projects/${encoded}/trace/watches`).reply((config) => {
+        putBody = config.data;
+        calls.push("put");
+        return [204];
+      });
+      mockAxios.onPost(new RegExp(`/projects/${encoded}/trace\\?`)).reply((config) => {
+        startParams = Object.fromEntries(new URLSearchParams(config.url?.split("?")[1] ?? ""));
+        calls.push("run");
+        return [200, { status: "completed", frames: [] }];
+      });
+      mockAxios.onGet(`/projects/${encoded}/trace/watch`).reply(() => {
+        calls.push("watch");
+        return [200, {
+          series: [{
+            name: "$VehiclePriceFactor",
+            table: "VehiclePremiumCalculation",
+            points: [{ instance: 0, value: 1.0 }, { instance: 1, value: 83.372, ref: "R7C1" }],
+          }],
+        }];
+      });
+
+      const result = await executeTool(
+        "watch_trace_cells",
+        { projectId, tableId: "calc_42", cells: ["$VehiclePriceFactor"], testRanges: "1", response_format: "json" },
+        client
+      );
+
+      expect(calls).toEqual(["put", "run", "watch"]); // set → run → read
+      expect(JSON.parse(putBody as string)).toEqual({ cells: ["$VehiclePriceFactor"] });
+      expect(startParams.stopAtEntry).toBe("false");
+      expect(startParams.includeTree).toBe("false");
+      expect(result.content[0].text).toContain("83.372");
     });
   });
 });
