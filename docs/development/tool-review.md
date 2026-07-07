@@ -511,7 +511,7 @@ compilation errors. Saving a project (`openl_save_project`) also validates it.
 
 ### Full Tools Table
 
-The server registers **56 tools**. All are listed below.
+The server registers **57 tools**. All are listed below.
 
 | # | Tool Name | Category | Status | OpenL API Endpoint | Description |
 |---|-----------|----------|--------|-------------------|-------------|
@@ -549,28 +549,29 @@ The server registers **56 tools**. All are listed below.
 | 32 | `openl_get_test_results_summary` | Testing | ✅ Complete | `GET /projects/{projectId}/tests/summary` | Get brief test execution summary |
 | 33 | `openl_get_test_results` | Testing | ✅ Complete | `GET /projects/{projectId}/tests/summary` | Get full test execution results |
 | 34 | `openl_get_test_results_by_table` | Testing | ✅ Complete | `GET /projects/{projectId}/tests/summary` + filtering | Get test results filtered by table |
-| 35 | `openl_start_trace` | Trace | ✅ Complete | trace start | Start a rule trace session |
-| 36 | `openl_cancel_trace` | Trace | ✅ Complete | trace cancel | Cancel an active trace session |
-| 37 | `openl_get_trace_nodes` | Trace | ✅ Complete | trace nodes | List trace tree nodes |
-| 38 | `openl_get_trace_node_details` | Trace | ✅ Complete | trace node details | Get details for a trace node |
-| 39 | `openl_get_trace_parameter` | Trace | ✅ Complete | trace parameter | Get a trace node parameter value |
-| 40 | `openl_export_trace` | Trace | ✅ Complete | trace export | Export a trace |
-| 41 | `openl_append_table_rows` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`append`/`rows`) | Append one or more rows to a table's raw source |
-| 42 | `openl_append_table_columns` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`append`/`columns`) | Append one or more columns |
-| 43 | `openl_insert_table_rows` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`insert`/`rows`) | Insert one or more rows at a position |
-| 44 | `openl_insert_table_columns` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`insert`/`columns`) | Insert one or more columns at a position |
-| 45 | `openl_delete_table_rows` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`delete`/`rows`) | Delete one or more rows from a position (count default 1) |
-| 46 | `openl_delete_table_columns` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`delete`/`columns`) | Delete one or more columns from a position (count default 1) |
-| 47 | `openl_update_table_row` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`update`/`row`) | Overwrite the row at a position |
-| 48 | `openl_update_table_column` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`update`/`column`) | Overwrite the column at a position |
-| 49 | `openl_update_table_cell` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`update`/`cell`) | Set a single cell's value |
-| 50 | `openl_update_table_range` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`update`/`range`) | Overwrite a rectangular range of cells |
-| 51 | `openl_merge_table_cells` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`merge`/`cells`) | Merge a rectangular range of cells |
-| 52 | `openl_unmerge_table_cells` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`unmerge`/`cells`) | Unmerge the cell covering a position |
-| 53 | `openl_delete_table` | Rules | ✅ Complete | `DELETE /projects/{projectId}/tables/{tableId}` | Delete an entire table from the project |
-| 54 | `openl_get_started` | Guidance | ✅ Complete | none (local) | Onboarding bootstrap: workflow protocol + workspace orientation |
-| 55 | `openl_list_guides` | Guidance | ✅ Complete | none (local guides bundle) | Metadata index of the bundled OpenL docs (filterable, paginated) |
-| 56 | `openl_get_guides` | Guidance | ✅ Complete | none (local guides bundle) | Full markdown bodies for requested guide ids |
+| 35 | `openl_start_trace` | Trace | ✅ Complete | `POST /projects/{projectId}/trace` (+ optional `PUT /trace/breakpoints`) | Start an interactive debug session and run to the first stop |
+| 36 | `openl_step_trace` | Trace | ✅ Complete | `POST /projects/{projectId}/trace/step?type={into|over|out}` | Step once and return the new stack |
+| 37 | `openl_resume_trace` | Trace | ✅ Complete | `POST /trace/resume` + `GET /trace/status` poll + `GET /trace/stack` | Run to the next breakpoint/exception/completion, waiting inside the call |
+| 38 | `openl_inspect_trace_frame` | Trace | ✅ Complete | `GET /trace/frames/{index}/variables?fields=…` (+ optional `/highlights` + raw table) | Freeze and read one suspended frame's variables |
+| 39 | `openl_set_trace_breakpoints` | Trace | ✅ Complete | `GET`/`PUT /trace/breakpoints` + `GET /trace/breakpoint-tables` | Read/replace the breakpoint set and list targets |
+| 40 | `openl_get_trace_value` | Trace | ✅ Complete | `GET /projects/{projectId}/trace/parameters/{parameterId}` | Expand a lazy parameter value |
+| 41 | `openl_stop_trace` | Trace | ✅ Complete | `DELETE /projects/{projectId}/trace` | Terminate the debug session (idempotent) |
+| 42 | `openl_append_table_rows` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`append`/`rows`) | Append one or more rows to a table's raw source |
+| 43 | `openl_append_table_columns` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`append`/`columns`) | Append one or more columns |
+| 44 | `openl_insert_table_rows` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`insert`/`rows`) | Insert one or more rows at a position |
+| 45 | `openl_insert_table_columns` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`insert`/`columns`) | Insert one or more columns at a position |
+| 46 | `openl_delete_table_rows` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`delete`/`rows`) | Delete one or more rows from a position (count default 1) |
+| 47 | `openl_delete_table_columns` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`delete`/`columns`) | Delete one or more columns from a position (count default 1) |
+| 48 | `openl_update_table_row` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`update`/`row`) | Overwrite the row at a position |
+| 49 | `openl_update_table_column` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`update`/`column`) | Overwrite the column at a position |
+| 50 | `openl_update_table_cell` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`update`/`cell`) | Set a single cell's value |
+| 51 | `openl_update_table_range` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`update`/`range`) | Overwrite a rectangular range of cells |
+| 52 | `openl_merge_table_cells` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`merge`/`cells`) | Merge a rectangular range of cells |
+| 53 | `openl_unmerge_table_cells` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`unmerge`/`cells`) | Unmerge the cell covering a position |
+| 54 | `openl_delete_table` | Rules | ✅ Complete | `DELETE /projects/{projectId}/tables/{tableId}` | Delete an entire table from the project |
+| 55 | `openl_get_started` | Guidance | ✅ Complete | none (local) | Onboarding bootstrap: workflow protocol + workspace orientation |
+| 56 | `openl_list_guides` | Guidance | ✅ Complete | none (local guides bundle) | Metadata index of the bundled OpenL docs (filterable, paginated) |
+| 57 | `openl_get_guides` | Guidance | ✅ Complete | none (local guides bundle) | Full markdown bodies for requested guide ids |
 
 **Legend:**
 - ✅ **Complete**: Tool is fully implemented and working
@@ -585,10 +586,10 @@ The server registers **56 tools**. All are listed below.
 
 | Status | Count | Tools |
 |--------|-------|-------|
-| ✅ Complete | 55 | All guidance, repository, project, file, table, raw table-source action, deployment, testing, and trace tools (excluding `openl_list_deployments`, which is partial). |
+| ✅ Complete | 56 | All guidance, repository, project, file, table, raw table-source action, deployment, testing, and trace tools (excluding `openl_list_deployments`, which is partial). |
 | ⚠️ Partial | 1 | `openl_list_deployments` (missing `repository` filter parameter) |
 
-Total registered tools: **56**.
+Total registered tools: **57**.
 
 ### Critical Issues
 

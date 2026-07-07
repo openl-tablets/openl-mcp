@@ -119,18 +119,19 @@ always JSON regardless.)
 
 ## Trace flows (cookie jar)
 
-The **trace** tools keep state on the server keyed by `JSESSIONID`: `start_trace` sets the cookie, and later
-`get_trace_nodes` / `get_trace_node_details` / `cancel_trace` must send the same one. Each `npx` run is a fresh
-process, so pass `--cookie-jar <path>` consistently across the flow — the CLI loads the cookie before each call
-and saves any the server sets.
+The **trace debugger** tools keep the debug session on the server keyed by `JSESSIONID`: `start_trace` sets the
+cookie, and later `step_trace` / `inspect_trace_frame` / `stop_trace` must send the same one. Each `npx` run is a
+fresh process, so pass `--cookie-jar <path>` consistently across the flow — the CLI loads the cookie before each
+call and saves any the server sets.
 
 ```bash
 JAR=/tmp/trace-$$.jar
 trap 'rm -f $JAR' EXIT
 
-npx -y openl-mcp start_trace     --cookie-jar $JAR '{"projectId":"…","tableId":"calcPremium_42"}'
-npx -y openl-mcp get_trace_nodes --cookie-jar $JAR '{"projectId":"…","response_format":"json"}'
-npx -y openl-mcp cancel_trace    --cookie-jar $JAR '{"projectId":"…"}'
+npx -y openl-mcp start_trace         --cookie-jar $JAR '{"projectId":"…","tableId":"calcPremium_42"}'
+npx -y openl-mcp step_trace          --cookie-jar $JAR '{"projectId":"…","type":"out"}'
+npx -y openl-mcp inspect_trace_frame --cookie-jar $JAR '{"projectId":"…","frameIndex":0}'
+npx -y openl-mcp stop_trace          --cookie-jar $JAR '{"projectId":"…"}'
 ```
 
 - The jar is bound to the server URL and user, written `0600`, and never replayed for a different server or user
@@ -188,6 +189,6 @@ done
 - **`Failed to parse tool arguments as JSON`** — malformed JSON; use `@file.json` or `--stdin` to dodge shell quoting.
 - **`Unknown tool: …`** — a typo, or a temporarily disabled tool. `--list-tools` is the source of truth for the active set.
 - **Output isn't JSON** — the default is markdown; pass `"response_format":"json"`.
-- **Trace returns empty / 404 after `start_trace`** — you're missing `--cookie-jar`; see [Trace flows](#trace-flows-cookie-jar).
+- **`step_trace` / `inspect_trace_frame` answer 404 (no debug session) after `start_trace`** — you're missing `--cookie-jar`; see [Trace flows](#trace-flows-cookie-jar).
 
 More: [general troubleshooting](troubleshooting.md).

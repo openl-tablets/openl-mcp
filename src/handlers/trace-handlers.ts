@@ -1,7 +1,15 @@
 /**
- * Trace tool handlers (BETA — Execution Trace API) — start a trace and read its
- * nodes, node details, and parameters; cancel and export traces. Owns the
- * process-wide active-trace registry and the STOMP wait-for-trace helper.
+ * Trace tool handlers (BETA — interactive Trace Debug API) — drive a real
+ * suspended execution: start a session, step into/over/out, run to a
+ * breakpoint, inspect a frame's variables, manage breakpoints, expand lazy
+ * values, and terminate.
+ *
+ * The debug session is server-side and bound to the HTTP session — the shared
+ * OpenLClient carries the JSESSIONID cookie across calls, so the whole flow
+ * must go through one server/CLI process (or a CLI --cookie-jar). Only
+ * `/resume` is asynchronous (202): openl_resume_trace polls the status
+ * endpoint inside the tool call and returns the stack of the next stop, so
+ * the agent never has to poll.
  */
 
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
@@ -10,137 +18,126 @@ import * as schemas from "../schemas.js";
 import { formatResponse } from "../formatters.js";
 import { validateResponseFormat } from "../validators.js";
 import { isAxiosError } from "../utils.js";
-import {
-  executeTraceReadWithWait,
-  TraceExecutionFailedError,
-  TraceWaitTimeoutError,
-  TraceWaitUnavailableError,
-  MAX_TRACE_WAIT_TIMEOUT_MS,
-} from "../stomp-waits.js";
 import { registerTool, type ToolResponse, type ToolHandlerExtra } from "./common.js";
 import type { OpenLClient } from "../client.js";
+import type * as Types from "../types.js";
+
+/** How often openl_resume_trace polls GET /status while the worker runs. */
+const RESUME_POLL_INTERVAL_MS = 250;
+/** Default bound on the openl_resume_trace wait (the backend's own step wait is ~30s). */
+const DEFAULT_RESUME_TIMEOUT_MS = 30_000;
 
 /**
- * Which table the most recent trace was started for, per project
- * (`projectId → tableId`). The studio publishes the trace lifecycle on a
- * PER-TABLE websocket topic (`/user/topic/projects/{id}/tables/{tableId}/trace/status`),
- * but the trace READ endpoints take only the projectId — so openl_start_trace
- * records the pair here and the read tools use it to subscribe while waiting
- * out the 409 window. Callers in a different process (e.g. separate CLI runs)
- * pass `tableId` explicitly instead. Bounded: oldest entries evicted first.
- * The studio itself keeps at most one trace per session, so one entry per
- * project is sufficient.
+ * Default `?fields=` projection for openl_inspect_trace_frame: everything the agent
+ * needs to reason (decision outcome, rule names, parameter/step/result values,
+ * errors, grid axis names) minus the bulk — value JSON schemas and profiling
+ * sub-trees. `full: true` lifts the trim.
  */
-const ACTIVE_TRACE_LIMIT = 500;
+const INSPECT_FIELDS =
+  "decision,ruleNames,errors,gridColumns,gridRows," +
+  "result(name,description,value)," +
+  "steps(ref,label,status,value(name,value))," +
+  "parameters(name,description,lazy,parameterId,value)," +
+  "context(name,description,lazy,parameterId,value)";
 
-const activeTraceTables = new Map<string, string>();
+function is404(error: unknown): boolean {
+  return isAxiosError(error) && error.response?.status === 404;
+}
 
-function recordActiveTrace(projectId: string, tableId: string): void {
-  activeTraceTables.delete(projectId); // re-insert to refresh eviction order
-  activeTraceTables.set(projectId, tableId);
-  while (activeTraceTables.size > ACTIVE_TRACE_LIMIT) {
-    const oldest = activeTraceTables.keys().next().value;
-    if (oldest === undefined) {
-      break;
+function is409(error: unknown): boolean {
+  return isAxiosError(error) && error.response?.status === 409;
+}
+
+/** Abortable sleep for the resume poll loop. */
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(makeAbortError());
+      return;
     }
-    activeTraceTables.delete(oldest);
-  }
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(makeAbortError());
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    if (typeof (timer as { unref?: () => void }).unref === "function") {
+      (timer as unknown as { unref: () => void }).unref();
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function makeAbortError(): Error {
+  const err = new Error("resume_trace aborted");
+  err.name = "AbortError";
+  return err;
 }
 
 /**
- * Run a trace read, waiting out the "trace still running" 409 window by
- * subscribing to the studio's trace-status websocket topic (EPBDS-16089) —
- * see {@link executeTraceReadWithWait} in wait-for-trace.ts for the mechanism.
- * An LLM agent cannot sleep between calls, so the waiting happens INSIDE the
- * tool call. This wrapper supplies the tool-layer glue: resolving the tableId
- * (explicit arg, or the one recorded by openl_start_trace), MCP progress
- * notifications, and mapping the wait outcomes to actionable McpErrors.
+ * Rethrow the trace API's two signature failures as actionable McpErrors:
+ * 404 = no active debug session (or it was reaped / lives in another HTTP
+ * session), or the referenced frame/parameter does not exist in it;
+ * 409 = the session is not suspended. Anything else passes through to the
+ * shared error handler.
  */
-async function readTraceWithWait<T>(
+function rethrowTraceStateError(error: unknown, action: string): never {
+  if (is404(error)) {
+    throw new McpError(
+      ErrorCode.InvalidRequest,
+      `The ${action} found no target: either there is no active debug session (sessions are per HTTP session, reaped after ~10 minutes idle, ` +
+        `and one started by another process is not visible here — start one with openl_start_trace), or the referenced frame index / parameter id ` +
+        `does not exist in the current session (lazy parameter ids are registered when openl_inspect_trace_frame freezes a frame, and cleared on restart).`,
+    );
+  }
+  if (is409(error)) {
+    throw new McpError(
+      ErrorCode.InvalidRequest,
+      `The debug session is not suspended, so ${action} is not possible right now. ` +
+        `While running, wait for the stop with openl_resume_trace; on a terminal status (completed/error/terminated) ` +
+        `the final state is in the last returned stack — restart with openl_start_trace or finish with openl_stop_trace.`,
+    );
+  }
+  throw error;
+}
+
+/**
+ * Poll the session status until it leaves running/pending, then read and
+ * return the stack. Bounded by `timeoutMs`; on expiry returns null so the
+ * caller reports the still-running status instead of failing.
+ */
+async function waitForStop(
   client: OpenLClient,
-  read: () => Promise<T>,
-  options: {
-    projectId: string;
-    tableId?: string;
-    wait: boolean;
-    timeoutMs?: number;
-    toolName: string;
-    extra?: ToolHandlerExtra;
-  },
-): Promise<T> {
-  if (!options.wait) {
-    return read();
-  }
-
-  const tableId = options.tableId ?? activeTraceTables.get(options.projectId);
-  if (!tableId) {
-    // Without the tableId there is no way to know the trace-status destination.
-    // Do the plain read; if the trace is still running, say how to enable waiting.
-    try {
-      return await read();
-    } catch (error) {
-      if (isAxiosError(error) && error.response?.status === 409) {
-        throw new McpError(
-          ErrorCode.InvalidRequest,
-          `Trace is still running (409 Conflict), and the table it was started for is unknown to this server instance, ` +
-            `so the studio's trace-status websocket cannot be joined to wait for completion. ` +
-            `Pass 'tableId' (the same id given to openl_start_trace) to enable the server-side wait, or retry shortly.`,
-        );
-      }
-      throw error;
-    }
-  }
-
-  const progressToken = options.extra?._meta?.progressToken;
-  const sendNotification = options.extra?.sendNotification;
+  projectId: string,
+  timeoutMs: number,
+  extra?: ToolHandlerExtra,
+): Promise<Types.DebugStackView | null> {
   const startedAt = Date.now();
-  const onProgress =
-    progressToken !== undefined && sendNotification
-      ? (status: string): void => {
-          // Notification failures are non-fatal — the wait resolves on the terminal frame.
-          void sendNotification({
-            method: "notifications/progress",
-            params: {
-              progressToken,
-              progress: Math.round((Date.now() - startedAt) / 1000),
-              message: `Trace ${status.toLowerCase()} — waiting for completion…`,
-            },
-          }).catch(() => { /* ignore */ });
-        }
-      : undefined;
+  const progressToken = extra?._meta?.progressToken;
+  const sendNotification = extra?.sendNotification;
 
-  try {
-    return await executeTraceReadWithWait(client, options.projectId, tableId, read, {
-      onProgress,
-      signal: options.extra?.signal,
-      timeoutMs: options.timeoutMs,
-    });
-  } catch (error) {
-    if (error instanceof TraceWaitTimeoutError) {
-      throw new McpError(
-        ErrorCode.InternalError,
-        `Trace is still running after waiting ${Math.round(error.waitedMs / 1000)}s (a cold project compile can take tens of seconds). ` +
-          `The trace keeps running server-side — call ${options.toolName} again (optionally with a larger waitTimeoutMs, max ${MAX_TRACE_WAIT_TIMEOUT_MS} ms), ` +
-          `or stop it with openl_cancel_trace.`,
-      );
+  for (;;) {
+    const { status } = await client.getTraceStatus(projectId);
+    if (status !== "running" && status !== "pending") {
+      return client.getTraceStack(projectId);
     }
-    if (error instanceof TraceExecutionFailedError) {
-      throw new McpError(
-        ErrorCode.InternalError,
-        `Trace execution failed in the studio: ${error.message} Start a new trace with openl_start_trace.`,
-      );
+    if (Date.now() - startedAt >= timeoutMs) {
+      return null;
     }
-    if (error instanceof TraceWaitUnavailableError) {
-      throw new McpError(
-        ErrorCode.InternalError,
-        `Trace is still running (409 Conflict), and waiting over the studio websocket is unavailable: ${error.message}. ` +
-          `Retry shortly, or stop the trace with openl_cancel_trace.`,
-      );
+    if (progressToken !== undefined && sendNotification) {
+      // Notification failures are non-fatal — the wait resolves on the status flip.
+      void sendNotification({
+        method: "notifications/progress",
+        params: {
+          progressToken,
+          progress: Math.round((Date.now() - startedAt) / 1000),
+          message: `Trace ${status} — waiting for the next stop…`,
+        },
+      }).catch(() => { /* ignore */ });
     }
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new McpError(ErrorCode.InvalidRequest, `${options.toolName}: request cancelled while waiting for the trace to complete.`);
-    }
-    throw error;
+    await delay(RESUME_POLL_INTERVAL_MS, extra?.signal);
   }
 }
 
@@ -148,9 +145,13 @@ export function registerTraceHandlers(): void {
   registerTool({
     name: "start_trace",
     category: "Trace",
-    title: "Start Rule Trace",
+    title: "Start Debug Session",
     description:
-      "Start trace execution for a table. Trace is asynchronous (returns 202 Accepted). For regular rules: provide inputJson with { params: {...}, runtimeContext?: {...} }. For test tables: use testRanges (e.g. '1-3,5'). After starting, call openl_get_trace_nodes once — while the trace is still running it subscribes to the studio's trace-status websocket and waits for completion server-side (no manual polling/retrying on 409 needed).",
+      "Start an interactive debug session for a table and run to the first stop. Returns the execution stack (status + frames root→current). " +
+      "Default stopAtEntry: true suspends at the entry of the first frame; from there use openl_step_trace / openl_resume_trace and openl_inspect_trace_frame. " +
+      "For test tables pass testRanges (e.g. '2'); for regular rules pass inputJson { params, runtimeContext? }; omitting both replays the previous run's remembered input. " +
+      "Cheapest way to understand a whole run: profiling: true with stopAtEntry: false and no breakpoints — completes in this one call and returns 'tree', the executed call tree with per-step timings (structure only, no values; to see values, restart with a breakpoint on the suspicious table). " +
+      "One active session per user — starting a new one terminates the previous. Idle sessions are reaped after ~10 minutes.",
     inputSchema: schemas.z.toJSONSchema(schemas.startTraceSchema) as Record<string, unknown>,
     annotations: {
       openWorldHint: true,
@@ -160,59 +161,217 @@ export function registerTraceHandlers(): void {
         projectId: string;
         tableId: string;
         testRanges?: string;
-        fromModule?: string;
         inputJson?: string | Record<string, unknown>;
-        response_format?: "json" | "markdown";
+        fromModule?: string;
+        stopAtEntry?: boolean;
+        profiling?: boolean;
+        breakpoints?: string[];
+        response_format?: string;
       };
 
       if (!typedArgs?.projectId || !typedArgs?.tableId) {
         throw new McpError(ErrorCode.InvalidParams, "Missing required arguments: projectId, tableId");
       }
 
-      await client.startTrace({
+      const format = validateResponseFormat(typedArgs.response_format);
+
+      if (typedArgs.breakpoints) {
+        await client.setTraceBreakpoints(typedArgs.projectId, typedArgs.breakpoints);
+      }
+
+      const stack = await client.startTrace({
         projectId: typedArgs.projectId,
         tableId: typedArgs.tableId,
         testRanges: typedArgs.testRanges,
         fromModule: typedArgs.fromModule,
         inputJson: typedArgs.inputJson,
+        stopAtEntry: typedArgs.stopAtEntry,
+        profiling: typedArgs.profiling,
       });
 
-      // The trace-status websocket topic is per-table; remember which table this
-      // trace runs for so the read tools can subscribe while waiting (EPBDS-16089).
-      recordActiveTrace(typedArgs.projectId, typedArgs.tableId);
-
-      const msg =
-        "Trace execution started (202 Accepted). Call openl_get_trace_nodes(projectId) once to retrieve results — " +
-        "while the trace is still running it waits for completion via the studio's trace-status websocket " +
-        "(default timeout 120s; tune with waitTimeoutMs). No manual polling or retrying on 409 is needed.";
-
       return {
-        content: [{ type: "text", text: msg }],
+        content: [{ type: "text", text: formatResponse(stack, format) }],
       };
     },
   });
 
   registerTool({
-    name: "get_trace_nodes",
+    name: "step_trace",
     category: "Trace",
-    title: "Get Trace Tree Nodes",
+    title: "Step (Into / Over / Out)",
     description:
-      "Get trace node children (or root nodes if nodeId omitted). Use openl_start_trace first. While the trace is still running the backend answers 409 Conflict; by DEFAULT this tool subscribes to the studio's trace-status websocket and waits (up to waitTimeoutMs, default 120s) until the trace completes — call it once after openl_start_trace, no manual polling needed. Pass 'tableId' (the id given to openl_start_trace) when the trace was started by a different server/CLI process; otherwise the table is remembered automatically. Set wait: false for the raw immediate-409 behavior.",
-    inputSchema: schemas.z.toJSONSchema(schemas.getTraceNodesSchema) as Record<string, unknown>,
+      "Step the suspended debug session once and return the new stack. type: 'into' enters the next call or sub-step; 'over' advances to the next sub-step of the current frame; " +
+      "'out' runs the current frame to its own exit. A step that finishes a frame first suspends at that frame's exit — the frame is still on the stack with completed: true and its " +
+      "result readable via openl_inspect_trace_frame; the next step continues in the caller. An exception suspends at the throwing frame before it propagates. Valid only while suspended.",
+    inputSchema: schemas.z.toJSONSchema(schemas.stepTraceSchema) as Record<string, unknown>,
     annotations: {
-      readOnlyHint: true,
-      idempotentHint: true,
+      openWorldHint: true,
+    },
+    handler: async (args, client): Promise<ToolResponse> => {
+      const typedArgs = args as {
+        projectId: string;
+        type: "into" | "over" | "out";
+        response_format?: string;
+      };
+
+      if (!typedArgs?.projectId || !typedArgs?.type) {
+        throw new McpError(ErrorCode.InvalidParams, "Missing required arguments: projectId, type");
+      }
+
+      const format = validateResponseFormat(typedArgs.response_format);
+
+      let stack: Types.DebugStackView;
+      try {
+        stack = await client.traceStep(typedArgs.projectId, typedArgs.type);
+      } catch (error) {
+        rethrowTraceStateError(error, "step");
+      }
+
+      return {
+        content: [{ type: "text", text: formatResponse(stack, format) }],
+      };
+    },
+  });
+
+  registerTool({
+    name: "resume_trace",
+    category: "Trace",
+    title: "Resume to Next Stop",
+    description:
+      "Resume the suspended debug session and wait (inside this call — no agent-side polling) until it stops again: at the next breakpoint, at an exception, or at completion. " +
+      "Returns the stack at the stop; on a terminal 'error' status it carries the structured 'error', and on 'completed' of a profiling run the executed 'tree'. " +
+      "On timeout (default 30s) the still-running status is returned — call openl_resume_trace again to keep waiting (it re-attaches without re-resuming), or openl_stop_trace to give up.",
+    inputSchema: schemas.z.toJSONSchema(schemas.resumeTraceSchema) as Record<string, unknown>,
+    annotations: {
       openWorldHint: true,
     },
     handler: async (args, client, extra): Promise<ToolResponse> => {
       const typedArgs = args as {
         projectId: string;
-        nodeId?: number;
-        showRealNumbers?: boolean;
-        tableId?: string;
-        wait?: boolean;
-        waitTimeoutMs?: number;
-        response_format?: "json" | "markdown";
+        timeoutMs?: number;
+        response_format?: string;
+      };
+
+      if (!typedArgs?.projectId) {
+        throw new McpError(ErrorCode.InvalidParams, "Missing required argument: projectId");
+      }
+
+      const format = validateResponseFormat(typedArgs.response_format);
+      const timeoutMs = typedArgs.timeoutMs ?? DEFAULT_RESUME_TIMEOUT_MS;
+
+      try {
+        await client.traceResume(typedArgs.projectId);
+      } catch (error) {
+        // Re-attach path: a previous resume timed out and the worker is still
+        // running — the 409 then only means "not suspended", so fall through
+        // to the wait instead of failing.
+        if (is409(error)) {
+          const { status } = await client.getTraceStatus(typedArgs.projectId);
+          if (status !== "running" && status !== "pending") {
+            rethrowTraceStateError(error, "resume");
+          }
+        } else {
+          rethrowTraceStateError(error, "resume");
+        }
+      }
+
+      const stack = await waitForStop(client, typedArgs.projectId, timeoutMs, extra);
+      if (stack === null) {
+        return {
+          content: [{
+            type: "text",
+            text:
+              `Trace is still running after waiting ${Math.round(timeoutMs / 1000)}s — the rule may be computing or looping. ` +
+              `Call openl_resume_trace again to keep waiting (optionally with a larger timeoutMs), or openl_stop_trace to terminate.`,
+          }],
+        };
+      }
+
+      return {
+        content: [{ type: "text", text: formatResponse(stack, format) }],
+      };
+    },
+  });
+
+  registerTool({
+    name: "inspect_trace_frame",
+    category: "Trace",
+    title: "Inspect Stack Frame",
+    description:
+      "Freeze and read the full state of one suspended stack frame: input parameters, runtime context, result (for a completed frame), sub-steps with computed values, and for a " +
+      "decision table the killer feature — 'decision' (which rule fired and how each condition evaluated per rule) plus 'ruleNames' (all rules, for per-rule breakpoints). " +
+      "Values may come lazy (lazy: true + parameterId) — expand with openl_get_trace_value. By default the response is trimmed (no value JSON schemas); full: true lifts the trim. " +
+      "withHighlights: true additionally returns the A1-keyed cell highlight overlay and the raw table grid to merge it with. Valid only while suspended (a terminal session answers 409 — read its final state from the last returned stack).",
+    inputSchema: schemas.z.toJSONSchema(schemas.inspectTraceFrameSchema) as Record<string, unknown>,
+    annotations: {
+      readOnlyHint: true,
+      openWorldHint: true,
+    },
+    handler: async (args, client): Promise<ToolResponse> => {
+      const typedArgs = args as {
+        projectId: string;
+        frameIndex: number;
+        withHighlights?: boolean;
+        full?: boolean;
+        response_format?: string;
+      };
+
+      if (!typedArgs?.projectId || typedArgs?.frameIndex == null) {
+        throw new McpError(ErrorCode.InvalidParams, "Missing required arguments: projectId, frameIndex");
+      }
+
+      const format = validateResponseFormat(typedArgs.response_format);
+
+      let variables: Types.DebugFrameVariables;
+      try {
+        variables = await client.getTraceFrameVariables(
+          typedArgs.projectId,
+          typedArgs.frameIndex,
+          typedArgs.full ? undefined : INSPECT_FIELDS,
+        );
+      } catch (error) {
+        rethrowTraceStateError(error, "frame inspection");
+      }
+
+      let result: unknown = variables;
+      if (typedArgs.withHighlights) {
+        const [highlights, stack] = await Promise.all([
+          client.getTraceFrameHighlights(typedArgs.projectId, typedArgs.frameIndex),
+          client.getTraceStack(typedArgs.projectId),
+        ]);
+        // The overlay is keyed by A1 cell address; the grid to paint it on comes
+        // from the shared Tables API raw view, resolved via the frame's tableId.
+        const frame = stack.frames.find((f) => f.index === typedArgs.frameIndex);
+        const grid = frame
+          ? await client.getTable(typedArgs.projectId, frame.tableId, true)
+          : undefined;
+        result = { ...variables, highlights, grid };
+      }
+
+      return {
+        content: [{ type: "text", text: formatResponse(result, format) }],
+      };
+    },
+  });
+
+  registerTool({
+    name: "set_trace_breakpoints",
+    category: "Trace",
+    title: "Read / Replace Breakpoints",
+    description:
+      "Read the active breakpoint keys and the available targets (rule tables, deduplicated by name; with an active session only tables reachable from the traced one). " +
+      "When 'set' is provided it REPLACES the whole set first (empty array clears all). Key forms: '<name>' stops at entry of every same-named table version; '<uri>' at that exact table " +
+      "(uri from frames[].uri); '<uri>#R{r}C{c}' at a spreadsheet cell; '<uri>#rule' when ANY rule of that decision table fires; '<uri>#<ruleName>' when a specific rule fires " +
+      "(rule names from openl_inspect_trace_frame ruleNames/decision). Works without a session — set breakpoints before openl_start_trace; changes during a session apply at the next frame enter or line change.",
+    inputSchema: schemas.z.toJSONSchema(schemas.setTraceBreakpointsSchema) as Record<string, unknown>,
+    annotations: {
+      openWorldHint: true,
+    },
+    handler: async (args, client): Promise<ToolResponse> => {
+      const typedArgs = args as {
+        projectId: string;
+        set?: string[];
+        response_format?: string;
       };
 
       if (!typedArgs?.projectId) {
@@ -221,76 +380,29 @@ export function registerTraceHandlers(): void {
 
       const format = validateResponseFormat(typedArgs.response_format);
 
-      const nodes = await readTraceWithWait(
-        client,
-        () =>
-          client.getTraceNodes(typedArgs.projectId, {
-            nodeId: typedArgs.nodeId,
-            showRealNumbers: typedArgs.showRealNumbers,
-          }),
-        {
-          projectId: typedArgs.projectId,
-          tableId: typedArgs.tableId,
-          wait: typedArgs.wait !== false,
-          timeoutMs: typedArgs.waitTimeoutMs,
-          toolName: "get_trace_nodes",
-          extra,
-        },
-      );
-
-      const formattedResult = formatResponse(nodes, format);
-      return {
-        content: [{ type: "text", text: formattedResult }],
-      };
-    },
-  });
-
-  registerTool({
-    name: "get_trace_node_details",
-    category: "Trace",
-    title: "Get Trace Node Details",
-    description:
-      "Get detailed trace node including parameters, context, result, and errors. Node IDs come from openl_get_trace_nodes.",
-    inputSchema: schemas.z.toJSONSchema(schemas.getTraceNodeDetailsSchema) as Record<string, unknown>,
-    annotations: {
-      readOnlyHint: true,
-      idempotentHint: true,
-      openWorldHint: true,
-    },
-    handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        nodeId: number;
-        showRealNumbers?: boolean;
-        response_format?: "json" | "markdown";
-      };
-
-      if (!typedArgs?.projectId || typedArgs?.nodeId == null) {
-        throw new McpError(ErrorCode.InvalidParams, "Missing required arguments: projectId, nodeId");
+      if (typedArgs.set) {
+        await client.setTraceBreakpoints(typedArgs.projectId, typedArgs.set);
       }
 
-      const format = validateResponseFormat(typedArgs.response_format);
+      const [breakpoints, targets] = await Promise.all([
+        client.getTraceBreakpoints(typedArgs.projectId),
+        client.getTraceBreakpointTables(typedArgs.projectId),
+      ]);
 
-      const node = await client.getTraceNodeDetails(
-        typedArgs.projectId,
-        typedArgs.nodeId,
-        typedArgs.showRealNumbers ?? false
-      );
-
-      const formattedResult = formatResponse(node, format);
       return {
-        content: [{ type: "text", text: formattedResult }],
+        content: [{ type: "text", text: formatResponse({ breakpoints, targets }, format) }],
       };
     },
   });
 
   registerTool({
-    name: "get_trace_parameter",
+    name: "get_trace_value",
     category: "Trace",
-    title: "Get Trace Parameter Value",
+    title: "Expand Lazy Value",
     description:
-      "Get lazy-loaded parameter value. Use when a TraceParameterValue has lazy:true and parameterId set.",
-    inputSchema: schemas.z.toJSONSchema(schemas.getTraceParameterSchema) as Record<string, unknown>,
+      "Fetch the full value of a parameter that openl_inspect_trace_frame returned lazily (lazy: true with a parameterId). Valid while the debug session is alive. " +
+      "By default only name, description, and value are returned; withSchema: true adds the value's JSON Schema (large — request it only when the type structure itself matters).",
+    inputSchema: schemas.z.toJSONSchema(schemas.getTraceValueSchema) as Record<string, unknown>,
     annotations: {
       readOnlyHint: true,
       idempotentHint: true,
@@ -300,7 +412,8 @@ export function registerTraceHandlers(): void {
       const typedArgs = args as {
         projectId: string;
         parameterId: number;
-        response_format?: "json" | "markdown";
+        withSchema?: boolean;
+        response_format?: string;
       };
 
       if (!typedArgs?.projectId || typedArgs?.parameterId == null) {
@@ -309,83 +422,45 @@ export function registerTraceHandlers(): void {
 
       const format = validateResponseFormat(typedArgs.response_format);
 
-      const param = await client.getTraceParameter(typedArgs.projectId, typedArgs.parameterId);
-
-      const formattedResult = formatResponse(param, format);
-      return {
-        content: [{ type: "text", text: formattedResult }],
-      };
-    },
-  });
-
-  registerTool({
-    name: "cancel_trace",
-    category: "Trace",
-    title: "Cancel Ongoing Trace",
-    description: "Cancel ongoing trace execution for a project.",
-    inputSchema: schemas.z.toJSONSchema(schemas.cancelTraceSchema) as Record<string, unknown>,
-    annotations: { openWorldHint: true },
-    handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as { projectId: string; response_format?: "json" | "markdown" };
-
-      if (!typedArgs?.projectId) {
-        throw new McpError(ErrorCode.InvalidParams, "Missing required argument: projectId");
+      let param: Types.TraceParameterValue;
+      try {
+        param = await client.getTraceParameter(
+          typedArgs.projectId,
+          typedArgs.parameterId,
+          typedArgs.withSchema ? undefined : "name,description,value",
+        );
+      } catch (error) {
+        rethrowTraceStateError(error, "lazy value fetch");
       }
 
-      await client.cancelTrace(typedArgs.projectId);
-
       return {
-        content: [{ type: "text", text: "Trace cancelled." }],
+        content: [{ type: "text", text: formatResponse(param, format) }],
       };
     },
   });
 
   registerTool({
-    name: "export_trace",
+    name: "stop_trace",
     category: "Trace",
-    title: "Export Trace as Text",
+    title: "Terminate Debug Session",
     description:
-      "Export trace as plain text. Returns full trace content. Use release: true to clear trace from memory after export. While the trace is still running the backend answers 409 Conflict; by DEFAULT this tool subscribes to the studio's trace-status websocket and waits (up to waitTimeoutMs, default 120s) until the trace completes. Pass 'tableId' (the id given to openl_start_trace) when the trace was started by a different server/CLI process; otherwise the table is remembered automatically. Set wait: false for the raw immediate-409 behavior.",
-    inputSchema: schemas.z.toJSONSchema(schemas.exportTraceSchema) as Record<string, unknown>,
+      "Terminate the debug session and free its worker and lazy-value registry. Idempotent — succeeds even when no session is active. Breakpoints survive (they are session-scoped, not run-scoped).",
+    inputSchema: schemas.z.toJSONSchema(schemas.stopTraceSchema) as Record<string, unknown>,
     annotations: {
-      readOnlyHint: true,
       idempotentHint: true,
       openWorldHint: true,
     },
-    handler: async (args, client, extra): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        showRealNumbers?: boolean;
-        release?: boolean;
-        tableId?: string;
-        wait?: boolean;
-        waitTimeoutMs?: number;
-        response_format?: "json" | "markdown";
-      };
+    handler: async (args, client): Promise<ToolResponse> => {
+      const typedArgs = args as { projectId: string; response_format?: string };
 
       if (!typedArgs?.projectId) {
         throw new McpError(ErrorCode.InvalidParams, "Missing required argument: projectId");
       }
 
-      const text = await readTraceWithWait(
-        client,
-        () =>
-          client.exportTrace(typedArgs.projectId, {
-            showRealNumbers: typedArgs.showRealNumbers,
-            release: typedArgs.release,
-          }),
-        {
-          projectId: typedArgs.projectId,
-          tableId: typedArgs.tableId,
-          wait: typedArgs.wait !== false,
-          timeoutMs: typedArgs.waitTimeoutMs,
-          toolName: "export_trace",
-          extra,
-        },
-      );
+      await client.stopTrace(typedArgs.projectId);
 
       return {
-        content: [{ type: "text", text }],
+        content: [{ type: "text", text: "Debug session terminated." }],
       };
     },
   });

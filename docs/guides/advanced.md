@@ -47,7 +47,7 @@ All logs go to **stderr**. Set a flag to `true` to turn it on.
 |----------------|--------------------------------------------------------------|
 | `DEBUG`        | General verbose logging                                      |
 | `DEBUG_AUTH`   | Auth detail (adds the failing URL and error code on a `401`) |
-| `DEBUG_STOMP`  | The STOMP WebSocket wait (compile/trace status)              |
+| `DEBUG_STOMP`  | The STOMP WebSocket wait (compile status)                    |
 | `DEBUG_COOKIE` | Session-cookie handling                                      |
 
 ## Authentication

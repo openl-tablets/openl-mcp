@@ -16,7 +16,7 @@ System (BRMS). Through its tools you can:
 - **Read** project structure, table definitions, and rule logic
 - **Modify** rules, tables, and project files
 - **Test** rules and inspect results
-- **Trace** rule execution
+- **Debug** rule execution interactively (breakpoints, stepping, live inspection)
 - **Deploy** projects, and manage Git-based history
 
 ## How it talks to OpenL Studio
@@ -24,11 +24,10 @@ System (BRMS). Through its tools you can:
 The server calls the OpenL Studio REST API (JSON, optional Personal Access Token).
 For the studio's asynchronous work it also opens a STOMP WebSocket so a single tool
 call can wait for the result instead of polling — project compilation
-(`openl_project_status` with `wait: true`) and trace execution
-(`openl_get_trace_nodes` / `openl_export_trace` while a trace runs). Details:
+(`openl_project_status` with `wait: true`). Details:
 [docs/development/websockets.md](docs/development/websockets.md).
 
-## Tools (56 Total)
+## Tools (57 Total)
 
 All tools are prefixed with `openl_` and share the server's version.
 
@@ -98,13 +97,32 @@ Operate on ANY file in a project by exact project-relative path (not just Excel 
 - `openl_copy_project_file` - Copy a file within the project (no overwrite — destination collision returns 409)
 - `openl_move_project_file` - Move or rename a file within the project
 
-### Trace Tools (6, BETA)
-- `openl_start_trace` - Start trace execution for a table
-- `openl_get_trace_nodes` - Get trace tree nodes (root or children)
-- `openl_get_trace_node_details` - Get node details (parameters, context, result)
-- `openl_get_trace_parameter` - Get lazy-loaded parameter value
-- `openl_cancel_trace` - Cancel ongoing trace
-- `openl_export_trace` - Export trace as text
+### Trace Tools (7, BETA)
+An **interactive debugger** for rules: the rule runs on a server-side worker that
+suspends at breakpoints and step points, and the tools inspect that live, suspended
+execution. The debug session is bound to the MCP server's HTTP session — the whole
+flow must go through one server instance (or one CLI `--cookie-jar`). One active
+session per user (a new start terminates the previous); idle sessions are reaped
+after ~10 minutes.
+
+- `openl_start_trace` - Start a debug session for a table (test case via `testRanges`, or `inputJson`; omit both to replay the remembered input) and run to the first stop; optional initial `breakpoints`
+- `openl_step_trace` - Step `into` / `over` / `out` and return the new stack (a frame-finishing step first suspends at the frame's own exit with its result inspectable)
+- `openl_resume_trace` - Run to the next breakpoint / exception / completion, waiting inside the call (re-invoke after a timeout to keep waiting)
+- `openl_inspect_trace_frame` - Freeze one stack frame: parameters, context, result, sub-step values; for decision tables `decision` (which rule fired, how each condition evaluated) and `ruleNames`; optional A1-keyed cell `highlights` + raw grid
+- `openl_set_trace_breakpoints` - Read the active breakpoint keys and available targets; `set` replaces the whole set. Key forms: `<name>`, `<uri>`, `<uri>#R{r}C{c}`, `<uri>#rule` (any rule fires), `<uri>#<ruleName>` (specific rule)
+- `openl_get_trace_value` - Expand a lazy value (`lazy: true` + `parameterId`) from openl_inspect_trace_frame; returns name/description/value only — `withSchema: true` adds the value's (large) JSON Schema
+- `openl_stop_trace` - Terminate the session (idempotent; breakpoints survive)
+
+Lifecycle (status values are lowercase): `running ⇄ suspended → completed | error | terminated`.
+Stepping and inspection are valid only while `suspended`; on a terminal status read the
+final state (structured `error`, profiling `tree`) from the stack that the last
+start/step/resume call already returned.
+
+Cheapest whole-run overview: `openl_start_trace` with `profiling: true`,
+`stopAtEntry: false` and no breakpoints completes in one call and returns `tree` —
+the executed call tree with per-step timings (structure only, no values). To see
+values inside a suspicious branch, restart with a breakpoint on that table (the
+input is remembered) and inspect live.
 
 ### Deployment (4)
 - `openl_list_deploy_repositories` - List deployment repositories

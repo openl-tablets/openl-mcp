@@ -8,7 +8,7 @@ Documentation for developers contributing to the OpenL MCP Server.
 
 - **[Contributing Guide](contributing.md)** - How to contribute to the project
 - **[Architecture](architecture.md)** - System architecture and design
-- **[WebSockets (STOMP)](websockets.md)** - Why and how the server waits for async studio work (compile & trace status) over WebSocket
+- **[WebSockets (STOMP)](websockets.md)** - Why and how the server waits for async studio work (compile status) over WebSocket
 - **[Testing Guide](testing.md)** - Testing strategy and how to run tests
 - **[Code Standards](code-standards.md)** - Best practices and coding standards
 - **[Tool Review](tool-review.md)** - Technical review of MCP tools vs OpenL API

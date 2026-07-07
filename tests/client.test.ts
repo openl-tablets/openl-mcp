@@ -2350,12 +2350,29 @@ describe("OpenLClient — additional method coverage", () => {
     });
   });
 
-  describe("Trace API (BETA, gap)", () => {
+  describe("Trace Debug API (BETA)", () => {
     const projectId = "p1";
     const projectPath = `/projects/${encodeURIComponent(projectId)}`;
 
+    const suspendedStack: Types.DebugStackView = {
+      status: "suspended",
+      frames: [
+        {
+          index: 0,
+          depth: 1,
+          uri: "P/Rules.xlsx?sheet=Main&range=B2:D8",
+          tableId: "calc_42",
+          name: "CalcRule",
+          kind: "spreadsheet",
+          active: true,
+          completed: false,
+          error: false,
+        },
+      ],
+    };
+
     describe("startTrace", () => {
-      it("POSTs to /trace with tableId in the query and the inputJson object serialized as the JSON body", async () => {
+      it("POSTs to /trace with tableId in the query, the inputJson serialized as JSON body, and returns the initial stack", async () => {
         let seenUrl = "";
         let body: unknown;
         let contentType: string | undefined;
@@ -2363,10 +2380,10 @@ describe("OpenLClient — additional method coverage", () => {
           seenUrl = config.url || "";
           body = config.data;
           contentType = (config.headers?.["Content-Type"] ?? config.headers?.["content-type"]) as string;
-          return [202];
+          return [200, suspendedStack];
         });
 
-        await client.startTrace({
+        const stack = await client.startTrace({
           projectId,
           tableId: "calc_42",
           inputJson: { params: { age: 30 } },
@@ -2376,121 +2393,173 @@ describe("OpenLClient — additional method coverage", () => {
         expect(seenUrl).toContain("tableId=calc_42");
         expect(JSON.parse(body as string)).toEqual({ params: { age: 30 } });
         expect(contentType).toBe("application/json");
+        expect(stack.status).toBe("suspended");
+        expect(stack.frames[0].tableId).toBe("calc_42");
       });
 
-      it("threads testRanges into the query string for test-suite traces", async () => {
+      it("threads testRanges, stopAtEntry and profiling into the query string and sends no body when inputJson is omitted", async () => {
         let seenUrl = "";
+        let body: unknown;
         mockAxios.onPost(/\/projects\/p1\/trace\?/).reply((config) => {
           seenUrl = config.url || "";
-          return [202];
+          body = config.data;
+          return [200, { status: "completed", frames: [] }];
         });
 
-        await client.startTrace({ projectId, tableId: "MyTest", testRanges: "1-3,5" });
+        await client.startTrace({
+          projectId,
+          tableId: "MyTest",
+          testRanges: "1-3,5",
+          stopAtEntry: false,
+          profiling: true,
+        });
 
         expect(seenUrl).toContain("tableId=MyTest");
         // URLSearchParams encodes the comma in "1-3,5".
         expect(seenUrl).toContain("testRanges=1-3%2C5");
+        expect(seenUrl).toContain("stopAtEntry=false");
+        expect(seenUrl).toContain("profiling=true");
+        expect(body).toBeUndefined();
       });
     });
 
-    describe("getTraceNodes", () => {
-      it("GETs /trace/nodes with showRealNumbers defaulting to 'false' and no id when nodeId is omitted", async () => {
-        let params: Record<string, unknown> | undefined;
-        const nodes: Types.TraceNodeView[] = [
-          { key: 1, title: "root", tooltip: "", type: "node", lazy: false, extraClasses: "" },
-        ];
-        mockAxios.onGet(`${projectPath}/trace/nodes`).reply((config) => {
-          params = config.params;
-          return [200, nodes];
-        });
+    describe("getTraceStatus / getTraceStack", () => {
+      it("GETs /trace/status and returns the lightweight status", async () => {
+        mockAxios.onGet(`${projectPath}/trace/status`).reply(200, { status: "running" });
 
-        const result = await client.getTraceNodes(projectId);
-        expect(params).toEqual({ showRealNumbers: "false" });
-        expect(result).toEqual(nodes);
+        const status = await client.getTraceStatus(projectId);
+        expect(status).toEqual({ status: "running" });
       });
 
-      it("passes id (stringified) and showRealNumbers=true when both options are provided", async () => {
-        let params: Record<string, unknown> | undefined;
-        mockAxios.onGet(`${projectPath}/trace/nodes`).reply((config) => {
-          params = config.params;
-          return [200, []];
-        });
+      it("GETs /trace/stack and returns the frames", async () => {
+        mockAxios.onGet(`${projectPath}/trace/stack`).reply(200, suspendedStack);
 
-        await client.getTraceNodes(projectId, { nodeId: 7, showRealNumbers: true });
-        expect(params).toEqual({ showRealNumbers: "true", id: "7" });
+        const stack = await client.getTraceStack(projectId);
+        expect(stack.frames).toHaveLength(1);
+        expect(stack.frames[0].name).toBe("CalcRule");
       });
     });
 
-    describe("getTraceNodeDetails", () => {
-      it("GETs /trace/nodes/{nodeId} and forwards showRealNumbers", async () => {
+    describe("traceStep", () => {
+      it("POSTs /trace/step with the step type as a query param and returns the new stack", async () => {
         let params: Record<string, unknown> | undefined;
-        const node: Types.TraceNodeView = {
-          key: 9,
-          title: "detail",
-          tooltip: "",
-          type: "node",
-          lazy: false,
-          extraClasses: "",
+        mockAxios.onPost(`${projectPath}/trace/step`).reply((config) => {
+          params = config.params;
+          return [200, suspendedStack];
+        });
+
+        const stack = await client.traceStep(projectId, "into");
+        expect(params).toEqual({ type: "into" });
+        expect(stack.status).toBe("suspended");
+      });
+    });
+
+    describe("traceResume", () => {
+      it("POSTs /trace/resume and resolves on 202 without a body", async () => {
+        mockAxios.onPost(`${projectPath}/trace/resume`).reply(202);
+
+        await expect(client.traceResume(projectId)).resolves.toBeUndefined();
+        expect(mockAxios.history.post).toHaveLength(1);
+      });
+    });
+
+    describe("getTraceFrameVariables", () => {
+      it("GETs /trace/frames/{index}/variables forwarding the fields projection", async () => {
+        let params: Record<string, unknown> | undefined;
+        const variables: Types.DebugFrameVariables = {
+          parameters: [{ name: "age", description: "Integer", value: 30 }],
+          steps: [],
+          errors: [],
         };
-        mockAxios.onGet(`${projectPath}/trace/nodes/9`).reply((config) => {
+        mockAxios.onGet(`${projectPath}/trace/frames/2/variables`).reply((config) => {
           params = config.params;
-          return [200, node];
+          return [200, variables];
         });
 
-        const result = await client.getTraceNodeDetails(projectId, 9, true);
-        expect(params).toEqual({ showRealNumbers: true });
-        expect(result.key).toBe(9);
+        const result = await client.getTraceFrameVariables(projectId, 2, "decision,ruleNames");
+        expect(params).toEqual({ fields: "decision,ruleNames" });
+        expect(result.parameters[0].name).toBe("age");
+      });
+
+      it("omits the fields param when no projection is given", async () => {
+        let params: Record<string, unknown> | undefined;
+        mockAxios.onGet(`${projectPath}/trace/frames/0/variables`).reply((config) => {
+          params = config.params;
+          return [200, { parameters: [], steps: [], errors: [] }];
+        });
+
+        await client.getTraceFrameVariables(projectId, 0);
+        expect(params).toBeUndefined();
+      });
+    });
+
+    describe("getTraceFrameHighlights", () => {
+      it("GETs /trace/frames/{index}/highlights and returns the A1-keyed overlay", async () => {
+        const highlights: Types.CellHighlight[] = [{ cell: "C5", state: "current" }];
+        mockAxios.onGet(`${projectPath}/trace/frames/1/highlights`).reply(200, highlights);
+
+        const result = await client.getTraceFrameHighlights(projectId, 1);
+        expect(result).toEqual(highlights);
+      });
+    });
+
+    describe("breakpoints", () => {
+      it("GETs /trace/breakpoints and returns the active keys", async () => {
+        mockAxios.onGet(`${projectPath}/trace/breakpoints`).reply(200, ["MyDT#rule"]);
+
+        const result = await client.getTraceBreakpoints(projectId);
+        expect(result).toEqual(["MyDT#rule"]);
+      });
+
+      it("PUTs /trace/breakpoints with the uris wrapped in a BreakpointsRequest body", async () => {
+        let body: unknown;
+        mockAxios.onPut(`${projectPath}/trace/breakpoints`).reply((config) => {
+          body = config.data;
+          return [204];
+        });
+
+        await client.setTraceBreakpoints(projectId, ["CalcRule", "uri#R0C1"]);
+        expect(JSON.parse(body as string)).toEqual({ uris: ["CalcRule", "uri#R0C1"] });
+      });
+
+      it("GETs /trace/breakpoint-tables and returns the targets", async () => {
+        const targets: Types.BreakpointTableView[] = [{ name: "CalcRule", kind: "spreadsheet" }];
+        mockAxios.onGet(`${projectPath}/trace/breakpoint-tables`).reply(200, targets);
+
+        const result = await client.getTraceBreakpointTables(projectId);
+        expect(result).toEqual(targets);
       });
     });
 
     describe("getTraceParameter", () => {
-      it("GETs /trace/parameters/{parameterId} and returns the lazy value", async () => {
+      it("GETs /trace/parameters/{parameterId} forwarding the fields projection, omitting it when not given", async () => {
+        const fieldsSeen: Array<string | undefined> = [];
         const param: Types.TraceParameterValue = {
           name: "premium",
           description: "computed premium",
-          lazy: true,
-          parameterId: 5,
           value: 1000,
         };
-        mockAxios.onGet(`${projectPath}/trace/parameters/5`).reply(200, param);
+        mockAxios.onGet(`${projectPath}/trace/parameters/5`).reply((config) => {
+          fieldsSeen.push(config.params?.fields);
+          return [200, param];
+        });
 
-        const result = await client.getTraceParameter(projectId, 5);
+        const result = await client.getTraceParameter(projectId, 5, "name,description,value");
         expect(result).toEqual(param);
+        expect(fieldsSeen[0]).toBe("name,description,value");
+
+        await client.getTraceParameter(projectId, 5);
+        expect(fieldsSeen[1]).toBeUndefined();
       });
     });
 
-    describe("cancelTrace", () => {
+    describe("stopTrace", () => {
       it("DELETEs /trace", async () => {
         mockAxios.onDelete(`${projectPath}/trace`).reply(204);
 
-        await expect(client.cancelTrace(projectId)).resolves.toBeUndefined();
+        await expect(client.stopTrace(projectId)).resolves.toBeUndefined();
         expect(mockAxios.history.delete).toHaveLength(1);
         expect(mockAxios.history.delete[0].url).toBe(`${projectPath}/trace`);
-      });
-    });
-
-    describe("exportTrace", () => {
-      it("GETs /trace/export as text and returns the body string, omitting params by default", async () => {
-        let params: Record<string, unknown> | undefined;
-        mockAxios.onGet(`${projectPath}/trace/export`).reply((config) => {
-          params = config.params;
-          return [200, "TRACE-TEXT"];
-        });
-
-        const text = await client.exportTrace(projectId);
-        expect(text).toBe("TRACE-TEXT");
-        expect(params).toBeUndefined();
-      });
-
-      it("sends showRealNumbers and release as 'true' string params when requested", async () => {
-        let params: Record<string, unknown> | undefined;
-        mockAxios.onGet(`${projectPath}/trace/export`).reply((config) => {
-          params = config.params;
-          return [200, "X"];
-        });
-
-        await client.exportTrace(projectId, { showRealNumbers: true, release: true });
-        expect(params).toEqual({ showRealNumbers: "true", release: "true" });
       });
     });
   });
