@@ -12,10 +12,11 @@ the publication date. Nothing breaks on day one: the current `2025-11-25`
 protocol keeps working, and every deprecation carries a minimum twelve-month
 window.
 
-**Target: the whole plan is scheduled to complete by September 1, 2026** — see
-the [Schedule](#schedule--target-september-1-2026). Items gated on external
-releases (the TypeScript SDK, client adoption, studio-side API work) carry an
-explicit "what ships by the deadline" definition and a fallback.
+**Target: the whole plan completes by September 2026** — see the
+[Schedule](#schedule--target-september-2026). The schedule is ordered steps
+with gates, not calendar dates. Items gated on external releases (the
+TypeScript SDK, client adoption, studio-side API work) carry an explicit
+"what ships by the deadline" definition and a fallback.
 
 ---
 
@@ -95,12 +96,12 @@ switch.
 
 ---
 
-## Phase 1 — The stateless protocol core (Jul–Aug 2026)
+## Phase 1 — The stateless protocol core
 
 The protocol *switch* is gated on the TypeScript SDK shipping `2026-07-28`
 support (likely a major version). The bulk of P1.1/P1.2, however, is
 SDK-independent restructuring — it is scheduled **ahead** of the SDK release
-(weeks 2–3) so the eventual flip stays small. Client adoption will lag, so the
+(steps 2–3) so the eventual flip stays small. Client adoption will lag, so the
 HTTP transport must serve **both** protocols during the transition — sessionful
 `2025-11-25` clients and stateless `2026-07-28` clients — for as long as the
 SDK's negotiation supports it.
@@ -168,7 +169,7 @@ flat schemas were a deliberate compatibility choice.
 
 ---
 
-## Phase 2 — Authorization direction (Aug 2026)
+## Phase 2 — Authorization direction
 
 The hardening SEPs are mostly client obligations, but they signal where MCP
 authorization is heading: HTTP servers are expected to speak the standard OAuth
@@ -230,51 +231,53 @@ it.
 
 ---
 
-## Schedule — target: September 1, 2026
+## Schedule — target: September 2026
 
-Eight working weeks from July 7. The schedule front-loads everything that does
-not depend on the SDK release, so the week the SDK lands is spent flipping the
-protocol, not restructuring the server underneath it.
+Ordered steps with gates, not calendar dates: each step starts when the
+previous one lands (or its external gate opens). The ordering front-loads
+everything that does not depend on the SDK release, so the step after the SDK
+lands is spent flipping the protocol, not restructuring the server underneath
+it. Everything below is targeted to complete by September 2026.
 
-| Week | Dates | Work |
+| Step | Work | Gate |
 |---|---|---|
-| W1 | Jul 7–11 | **P0 complete**: `iss` validation (P0.1), issuer in the token cache (P0.2), docs pointer (P0.3). File the studio-side request for token-addressable debug sessions (the external half of P1.2). |
-| W2 | Jul 14–18 | Stateless-ready refactor, SDK-independent: per-request auth extraction and the credential-fingerprint client pool with TTL/size cap on the HTTP transport (subsumes [improvement-plans Plan 1](improvement-plans.md)); sessions remain at the transport layer for now. |
-| W3 | Jul 21–25 | Trace affinity moved onto the pool; replica constraint documented; integration tests over both auth paths. Buffer for W2 spillover. |
-| W4 | Jul 28–Aug 1 | Final spec publishes Jul 28. Evaluate TS SDK status. P2.1 design; add Keycloak to `compose.yaml` for authorization integration tests. |
-| W5 | Aug 4–8 | **P1 protocol switch**: SDK major upgrade; stateless path + legacy-session path side by side; `server/discover`; `ttlMs`/`cacheScope` on list results (P1.3). |
-| W6 | Aug 11–15 | **P2.1**: `401` + `WWW-Authenticate`, `/.well-known/oauth-protected-resource`, JWKS bearer validation — PAT header path preserved. |
-| W7 | Aug 18–22 | **P2.3** refresh-token renewal (opt-in) and **P2.2** CIMD-readiness docs; **P1.4** schema audit with explicit go/no-go criteria per client. |
-| W8 | Aug 25–29 | **P3** spikes: Tasks design + prototype if the extension is implementable in the SDK (P3.1); timeboxed MCP Apps spike (P3.2). Docs sweep (AGENTS.md, guides), release prep. |
+| 1 | **P0 complete**: `iss` validation (P0.1), issuer in the token cache (P0.2), docs pointer (P0.3). File the studio-side request for token-addressable debug sessions (the external half of P1.2). | — (✅ done except the studio request) |
+| 2 | Stateless-ready refactor, SDK-independent: per-request auth extraction and the credential-fingerprint client pool with TTL/size cap on the HTTP transport (subsumes [improvement-plans Plan 1](improvement-plans.md)); sessions remain at the transport layer for now. | — |
+| 3 | Trace affinity moved onto the pool; replica constraint documented; integration tests over both auth paths. | Step 2 |
+| 4 | **P2.1 design**: authorization flow design; add Keycloak to `compose.yaml` for authorization integration tests. | — (parallel to steps 2–3) |
+| 5 | **P1 protocol switch**: SDK major upgrade; stateless path + legacy-session path side by side; `server/discover`; `ttlMs`/`cacheScope` on list results (P1.3). | TS SDK ships `2026-07-28` support |
+| 6 | **P2.1 implementation**: `401` + `WWW-Authenticate`, `/.well-known/oauth-protected-resource`, JWKS bearer validation — PAT header path preserved. | Step 4 |
+| 7 | **P2.3** refresh-token renewal (opt-in) and **P2.2** CIMD-readiness docs; **P1.4** schema audit with explicit go/no-go criteria per client. | — |
+| 8 | **P3** spikes: Tasks design + prototype if the extension is implementable in the SDK (P3.1); timeboxed MCP Apps spike (P3.2). Docs sweep (AGENTS.md, guides), release prep. | Everything above |
 
 ### Risks and fallbacks
 
-- **TS SDK slips past mid-August** → W5 shrinks to upgrade groundwork and the
-  protocol flip moves past the deadline. Everything else is SDK-independent by
-  design and still lands; the flip itself is small once W2–W3 are done. This is
-  the only slip that moves a committed item.
+- **The TS SDK release is the long pole**: if it arrives too late in the
+  window, the protocol flip (step 5) is the only committed item that can miss
+  the target — everything else is SDK-independent by design and still lands.
+  The flip itself is small once steps 2–3 are done.
 - **Client adoption can't be forced** (P1.4 composed schemas, P3 extensions).
-  The September deliverable for these is the audit/design/spike plus explicit
-  flip criteria — not features enabled by default that flagship clients would
+  The deliverable for these is the audit/design/spike plus explicit flip
+  criteria — not features enabled by default that flagship clients would
   reject.
 - **Studio-side token-addressable debug sessions** run on the studio team's
-  timeline. By September we ship pool-based affinity plus the documented
-  replica constraint; the handle-based API follows whenever the studio lands it.
+  timeline. We ship pool-based affinity plus the documented replica
+  constraint; the handle-based API follows whenever the studio lands it.
 - **Keycloak CIMD support** is external; P2.2 is deliberately docs-only.
 
 ## Summary
 
-| # | Plan | Target | Priority | Effort | Status |
-|---|------|--------|----------|--------|--------|
-| P0.1 | `iss` validation in login | W1 | High | Low | ✅ Done |
-| P0.2 | Issuer recorded in token cache | W1 | Low | Low | ✅ Done |
-| P0.3 | Protocol version cross-linked in docs | W1 | Low | Low | ✅ Done |
-| P1.1 | Stateless HTTP, credential-keyed client pool | W2–W5 | High | High | Planned |
-| P1.2 | Explicit trace-session affinity / handles | W1, W3 | High | Medium | Planned |
-| P1.3 | `ttlMs`/`cacheScope` on list results | W5 | Medium | Low | Planned |
-| P1.4 | JSON Schema 2020-12 audit | W7 | Low | Low | Planned |
-| P2.1 | Standard OAuth on the HTTP transport | W4–W6 | High | High | Planned |
-| P2.2 | CIMD-ready client registration story | W7 | Medium | Low | Planned |
-| P2.3 | Refresh-token PAT renewal | W7 | Medium | Medium | Planned |
-| P3.1 | Tasks extension design + spike | W8 | Medium | Medium | Planned |
-| P3.2 | MCP Apps timeboxed spike | W8 | Low | High | Planned |
+| # | Plan | Step | Priority | Effort | Status |
+|---|------|------|----------|--------|--------|
+| P0.1 | `iss` validation in login | 1 | High | Low | ✅ Done |
+| P0.2 | Issuer recorded in token cache | 1 | Low | Low | ✅ Done |
+| P0.3 | Protocol version cross-linked in docs | 1 | Low | Low | ✅ Done |
+| P1.1 | Stateless HTTP, credential-keyed client pool | 2–5 | High | High | Planned |
+| P1.2 | Explicit trace-session affinity / handles | 1, 3 | High | Medium | Planned |
+| P1.3 | `ttlMs`/`cacheScope` on list results | 5 | Medium | Low | Planned |
+| P1.4 | JSON Schema 2020-12 audit | 7 | Low | Low | Planned |
+| P2.1 | Standard OAuth on the HTTP transport | 4, 6 | High | High | Planned |
+| P2.2 | CIMD-ready client registration story | 7 | Medium | Low | Planned |
+| P2.3 | Refresh-token PAT renewal | 7 | Medium | Medium | Planned |
+| P3.1 | Tasks extension design + spike | 8 | Medium | Medium | Planned |
+| P3.2 | MCP Apps timeboxed spike | 8 | Low | High | Planned |
