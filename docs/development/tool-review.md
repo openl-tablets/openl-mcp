@@ -550,7 +550,7 @@ The server registers **58 tools**. All are listed below.
 | 33 | `openl_get_test_results` | Testing | ✅ Complete | `GET /projects/{projectId}/tests/summary` | Get full test execution results |
 | 34 | `openl_get_test_results_by_table` | Testing | ✅ Complete | `GET /projects/{projectId}/tests/summary` + filtering | Get test results filtered by table |
 | 35 | `openl_start_trace` | Trace | ✅ Complete | `POST /projects/{projectId}/trace` (+ optional `PUT /trace/breakpoints`) | Start a debug session and run to the first stop; profiling returns the bounded `profile` overview (includeTree=false) |
-| 36 | `openl_step_trace` | Trace | ✅ Complete | `POST /projects/{projectId}/trace/step?type={into|over|out}&view=compact` (+ optional `GET /frames/{i}/variables`) | Step once; compact stack, optional bundled active-frame values |
+| 36 | `openl_step_trace` | Trace | ✅ Complete | `POST /projects/{projectId}/trace/step?type={into\|over\|out}&view=compact` (+ optional `GET /frames/{i}/variables`) | Step once; compact stack, optional bundled active-frame values |
 | 37 | `openl_resume_trace` | Trace | ✅ Complete | `POST /trace/resume` + `GET /trace/status` poll + `GET /trace/stack?view=compact` | Run to the next breakpoint/exception/completion, waiting inside the call |
 | 38 | `openl_inspect_trace_frame` | Trace | ✅ Complete | `GET /trace/frames/{index}/variables?fields=…` (+ optional `/highlights` + raw table) | Freeze one frame's variables; optional client-side step filter |
 | 39 | `openl_set_trace_breakpoints` | Trace | ✅ Complete | `GET`/`PUT /trace/breakpoints` + `GET /trace/breakpoint-tables` | Read/replace the breakpoint set and list targets |

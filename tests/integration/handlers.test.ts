@@ -3471,8 +3471,9 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
     });
 
     it("openl_step_trace steps compact by default and returns the new stack", async () => {
+      let stepParams: Record<string, unknown> | undefined;
       mockAxios.onPost(`/projects/${encoded}/trace/step`).reply((config) => {
-        expect(config.params).toEqual({ type: "over", view: "compact" });
+        stepParams = config.params;
         return [200, suspendedStack];
       });
 
@@ -3481,6 +3482,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
         { projectId, type: "over", response_format: "json" },
         client
       );
+      expect(stepParams).toEqual({ type: "over", view: "compact" });
       expect(result.content[0].text).toContain("CalcRule");
     });
 
@@ -3558,18 +3560,32 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       ).rejects.toThrow(/not suspended/i);
     });
 
-    it("openl_resume_trace reports a still-running trace on timeout instead of erroring", async () => {
+    it("openl_resume_trace reports a still-running trace on timeout as a structured status, not erroring", async () => {
       mockAxios.onPost(`/projects/${encoded}/trace/resume`).reply(202);
       mockAxios.onGet(`/projects/${encoded}/trace/status`).reply(200, { status: "running" });
 
       const result = await executeTool(
         "resume_trace",
-        { projectId, timeoutMs: 1 },
+        { projectId, timeoutMs: 1, response_format: "json" },
         client
       );
 
-      expect(result.content[0].text).toMatch(/still running/);
-      expect(result.content[0].text).toContain("openl_stop_trace");
+      const body = JSON.parse(result.content[0].text) as { data: { status?: string; message?: string } };
+      // The actual status is carried through (not lost), and JSON consumers get a real object.
+      expect(body.data.status).toBe("running");
+      expect(body.data.message).toMatch(/still running/);
+      expect(body.data.message).toContain("openl_stop_trace");
+    });
+
+    it("openl_resume_trace maps a session reaped mid-poll (404) to the actionable no-session message", async () => {
+      mockAxios.onPost(`/projects/${encoded}/trace/resume`).reply(202);
+      // First poll shows running; the session is then reaped and status 404s.
+      const statuses = [() => [200, { status: "running" }], () => [404, { message: "trace.execution.task.message" }]];
+      mockAxios.onGet(`/projects/${encoded}/trace/status`).reply(() => (statuses.shift() ?? (() => [404, {}]))());
+
+      await expect(
+        executeTool("resume_trace", { projectId, timeoutMs: 5000 }, client)
+      ).rejects.toThrow(/openl_start_trace/);
     });
 
     it("openl_inspect_trace_frame trims the response via ?fields by default and lifts the trim with full: true", async () => {
@@ -3623,8 +3639,9 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       mockAxios.onGet(`/projects/${encoded}/trace/frames/0/variables`).reply(200, { parameters: [], steps: [], errors: [] });
       mockAxios.onGet(`/projects/${encoded}/trace/frames/0/highlights`).reply(200, [{ cell: "C5", state: "current" }]);
       mockAxios.onGet(`/projects/${encoded}/trace/stack`).reply(200, suspendedStack);
+      let tableParams: Record<string, unknown> | undefined;
       mockAxios.onGet(new RegExp(`/projects/${encoded}/tables/calc_42`)).reply((config) => {
-        expect(config.params?.raw).toBe(true);
+        tableParams = config.params;
         return [200, { view: "raw", cells: [["Header"], ["=A1*2"]] }];
       });
 
@@ -3634,6 +3651,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
         client
       );
 
+      expect(tableParams?.raw).toBe(true);
       const text = result.content[0].text;
       expect(text).toContain('"C5"');
       expect(text).toContain("=A1*2");
@@ -3723,7 +3741,13 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
     it("openl_watch_trace_cells sets the watches, runs the table, and returns the collected series", async () => {
       const calls: string[] = [];
       let putBody: unknown;
+      let clearedBreakpoints: unknown;
       let startParams: Record<string, string> = {};
+      // Watch clears breakpoints first so the run reaches completion.
+      mockAxios.onPut(`/projects/${encoded}/trace/breakpoints`).reply((config) => {
+        clearedBreakpoints = config.data;
+        return [204];
+      });
       mockAxios.onPut(`/projects/${encoded}/trace/watches`).reply((config) => {
         putBody = config.data;
         calls.push("put");
@@ -3757,6 +3781,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       );
 
       expect(calls).toEqual(["put", "run", "watch"]); // set → run → read
+      expect(JSON.parse(clearedBreakpoints as string)).toEqual({ uris: [] }); // breakpoints cleared first
       expect(JSON.parse(putBody as string)).toEqual({ cells: ["$VehiclePriceFactor"] });
       expect(startParams.stopAtEntry).toBe("false");
       // The run to completion materializes lazy branches on its own — no
@@ -3769,28 +3794,31 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       expect(result.content[0].text).toContain("83.372");
     });
 
-    it("openl_watch_trace_cells caps points per series to maxPoints and reports the total", async () => {
+    it("openl_watch_trace_cells surfaces the server's truncation (total + a note) when the series is capped", async () => {
+      mockAxios.onPut(`/projects/${encoded}/trace/breakpoints`).reply(204);
       mockAxios.onPut(`/projects/${encoded}/trace/watches`).reply(204);
       mockAxios.onPost(new RegExp(`/projects/${encoded}/trace\\?`)).reply(200, { status: "completed", frames: [] });
-      // A deep combinatorial cell fires many times.
-      const points = Array.from({ length: 5000 }, (_, i) => ({ instance: i, value: { name: "$ClaimCost", value: i } }));
+      // The server caps points per series and reports the full execution count via `total`.
+      const points = Array.from({ length: 200 }, (_, i) => ({ instance: i, value: { name: "$ClaimCost", value: i } }));
       mockAxios.onGet(`/projects/${encoded}/trace/watch`).reply(200, {
-        series: [{ name: "$ClaimCost", table: "ClaimCostPerBenefitPerAgeBand", points }],
+        truncated: true,
+        series: [{ name: "$ClaimCost", table: "ClaimCostPerBenefitPerAgeBand", total: 11200, points }],
       });
 
       const result = await executeTool(
         "watch_trace_cells",
-        { projectId, tableId: "calc_42", cells: ["$ClaimCost"], maxPoints: 100, response_format: "json" },
+        { projectId, tableId: "calc_42", cells: ["$ClaimCost"], response_format: "json" },
         client
       );
 
       const body = JSON.parse(result.content[0].text) as {
-        data: { series: Array<{ points: unknown[]; totalPoints?: number; pointsTruncated?: boolean }>; note?: string };
+        data: { series: Array<{ points: unknown[]; total?: number }>; truncated?: boolean; note?: string };
       };
-      expect(body.data.series[0].points).toHaveLength(100);
-      expect(body.data.series[0].totalPoints).toBe(5000);
-      expect(body.data.series[0].pointsTruncated).toBe(true);
-      expect(body.data.note).toMatch(/maxPoints=100/);
+      // The tool passes the server's points/total through untouched and adds guidance.
+      expect(body.data.series[0].points).toHaveLength(200);
+      expect(body.data.series[0].total).toBe(11200);
+      expect(body.data.truncated).toBe(true);
+      expect(body.data.note).toMatch(/truncated|@N/);
     });
   });
 });

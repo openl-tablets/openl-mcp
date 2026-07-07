@@ -17,7 +17,7 @@ import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import * as schemas from "../schemas.js";
 import { formatResponse } from "../formatters.js";
 import { validateResponseFormat } from "../validators.js";
-import { isAxiosError } from "../utils.js";
+import { isAxiosError, isNotFoundError } from "../utils.js";
 import { registerTool, type ToolResponse, type ToolHandlerExtra } from "./common.js";
 import type { OpenLClient } from "../client.js";
 import type * as Types from "../types.js";
@@ -26,10 +26,6 @@ import type * as Types from "../types.js";
 const RESUME_POLL_INTERVAL_MS = 250;
 /** Default bound on the openl_resume_trace wait (the backend's own step wait is ~30s). */
 const DEFAULT_RESUME_TIMEOUT_MS = 30_000;
-/** Default cap on points returned per watch series (a deep combinatorial cell fires many thousands of times). */
-const DEFAULT_WATCH_MAX_POINTS = 500;
-/** Reject a watch response larger than this up front, before it can OOM the parse (defense in depth). */
-const WATCH_MAX_CONTENT_BYTES = 64 * 1024 * 1024;
 
 /**
  * Default `?fields=` projection for openl_inspect_trace_frame: everything the agent
@@ -52,11 +48,32 @@ const INSPECT_FIELDS =
  * parameterId so openl_get_trace_value can expand it). `withSchema` lifts it.
  */
 const WATCH_FIELDS =
-  "truncated,series(name,table,tableUri," +
+  "truncated,series(name,table,tableUri,total," +
   "points(instance,label,ref,path,value(name,description,lazy,parameterId,value)))";
 
 function isScalar(v: unknown): v is number | string | boolean {
   return typeof v === "number" || typeof v === "string" || typeof v === "boolean";
+}
+
+/** Max concurrent lazy-value fetches when resolving steps for excludeStepValues. */
+const LAZY_RESOLVE_CONCURRENCY = 8;
+
+/** Map over `items` running at most `limit` async calls at once (order preserved). */
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
 }
 
 /**
@@ -78,8 +95,8 @@ async function filterSteps(
   client: OpenLClient,
   projectId: string,
 ): Promise<Types.DebugFrameVariables> {
-  const exclude = opts.excludeValues ?? [];
-  if (!opts.onlyExecuted && exclude.length === 0) {
+  const exclude = new Set<number | string | boolean>(opts.excludeValues ?? []);
+  if (!opts.onlyExecuted && exclude.size === 0) {
     return variables;
   }
 
@@ -88,38 +105,34 @@ async function filterSteps(
     steps = steps.filter((step) => step.status === "executed");
   }
 
-  if (exclude.length === 0) {
+  if (exclude.size === 0) {
     return { ...variables, steps };
   }
 
   // Resolve the scalar of each step (materializing lazy values) so the compare
-  // sees the real number, not an absent lazy placeholder.
-  const scalars = await Promise.all(
-    steps.map(async (step): Promise<unknown> => {
-      const value = step.value;
-      if (!value) return undefined;
-      if (value.value !== undefined) return value.value;
-      if (value.lazy && value.parameterId != null) {
-        try {
-          const resolved = await client.getTraceParameter(projectId, value.parameterId, "value");
-          return resolved.value;
-        } catch {
-          return undefined; // couldn't resolve → keep the step (don't drop blindly)
-        }
+  // sees the real number, not an absent lazy placeholder. Bounded concurrency —
+  // a wide table can have hundreds of lazy steps, and firing them all at once
+  // would swamp the single server-side debug session.
+  const scalars = await mapLimit(steps, LAZY_RESOLVE_CONCURRENCY, async (step): Promise<unknown> => {
+    const value = step.value;
+    if (!value) return undefined;
+    if (value.value !== undefined) return value.value;
+    if (value.lazy && value.parameterId != null) {
+      try {
+        const resolved = await client.getTraceParameter(projectId, value.parameterId, "value");
+        return resolved.value;
+      } catch {
+        return undefined; // couldn't resolve → keep the step (don't drop blindly)
       }
-      return undefined;
-    }),
-  );
+    }
+    return undefined;
+  });
 
   const kept = steps.filter((_step, i) => {
     const scalar = scalars[i];
-    return !(isScalar(scalar) && exclude.some((e) => e === scalar));
+    return !(isScalar(scalar) && exclude.has(scalar));
   });
   return { ...variables, steps: kept };
-}
-
-function is404(error: unknown): boolean {
-  return isAxiosError(error) && error.response?.status === 404;
 }
 
 function is409(error: unknown): boolean {
@@ -162,7 +175,7 @@ function makeAbortError(): Error {
  * shared error handler.
  */
 function rethrowTraceStateError(error: unknown, action: string): never {
-  if (is404(error)) {
+  if (isNotFoundError(error)) {
     throw new McpError(
       ErrorCode.InvalidRequest,
       `The ${action} found no target: either there is no active debug session (sessions are per HTTP session, reaped after ~10 minutes idle, ` +
@@ -182,9 +195,9 @@ function rethrowTraceStateError(error: unknown, action: string): never {
 }
 
 /**
- * Poll the session status until it leaves running/pending, then read and
- * return the stack. Bounded by `timeoutMs`; on expiry returns null so the
- * caller reports the still-running status instead of failing.
+ * Poll the session status until it leaves running/pending, then read and return
+ * the stack (`{ stack }`). Bounded by `timeoutMs`; on expiry returns the last
+ * still-running status (`{ stillRunning }`) so the caller can report it.
  */
 async function waitForStop(
   client: OpenLClient,
@@ -192,7 +205,7 @@ async function waitForStop(
   timeoutMs: number,
   extra?: ToolHandlerExtra,
   stackOptions?: { view?: "full" | "compact"; includeTree?: boolean; profileTop?: number },
-): Promise<Types.DebugStackView | null> {
+): Promise<{ stack: Types.DebugStackView } | { stillRunning: Types.DebugStatus }> {
   const startedAt = Date.now();
   const progressToken = extra?._meta?.progressToken;
   const sendNotification = extra?.sendNotification;
@@ -200,10 +213,10 @@ async function waitForStop(
   for (;;) {
     const { status } = await client.getTraceStatus(projectId);
     if (status !== "running" && status !== "pending") {
-      return client.getTraceStack(projectId, stackOptions);
+      return { stack: await client.getTraceStack(projectId, stackOptions) };
     }
     if (Date.now() - startedAt >= timeoutMs) {
-      return null;
+      return { stillRunning: status };
     }
     if (progressToken !== undefined && sendNotification) {
       // Notification failures are non-fatal — the wait resolves on the status flip.
@@ -230,6 +243,7 @@ export function registerTraceHandlers(): void {
       "Default stopAtEntry: true suspends at the entry of the first frame; from there use openl_step_trace / openl_resume_trace and openl_inspect_trace_frame. " +
       "For test tables pass testRanges (e.g. '2'); for regular rules pass inputJson { params, runtimeContext? }; omitting both replays the previous run's remembered input. " +
       "Cheapest way to understand a whole run: profiling: true with stopAtEntry: false and no breakpoints — completes in this one call and returns 'profile', a constant-size overview of the top-N slowest tables (selfMillis/totalMillis/count) plus nodeCount/distinctTables/totalMillis. " +
+      "For a profiling overview pass inputJson (or testRanges) together with profiling: true and stopAtEntry: false EXPLICITLY every time — do not rely on replay (omitting the input): a replay only reproduces the compact profile if the remembered run was itself a profiling run, otherwise it can return a much larger stack that overflows the response limit. " +
       "Find the hot or unexpected table in profile.hotspots, then replay into it with a breakpoint to inspect live values. The full executed 'tree' is omitted by default (it can exceed the 1 MB limit); set includeTree: true only to browse a specific branch's structure. " +
       "One active session per user — starting a new one terminates the previous. Idle sessions are reaped after ~10 minutes.",
     inputSchema: schemas.z.toJSONSchema(schemas.startTraceSchema) as Record<string, unknown>,
@@ -316,13 +330,14 @@ export function registerTraceHandlers(): void {
 
       // Bundle the active frame's variables so a `step out → inspect` cycle is
       // one call. Only meaningful while suspended with a frame on the stack.
+      let result: unknown = stack;
       if (typedArgs.withValues && stack.status === "suspended" && stack.frames.length > 0) {
         const active = stack.frames.find((f) => f.active) ?? stack.frames[stack.frames.length - 1];
         const variables = await client.getTraceFrameVariables(typedArgs.projectId, active.index, INSPECT_FIELDS);
-        return { content: [{ type: "text", text: formatResponse({ ...stack, variables }, format) }] };
+        result = { ...stack, variables };
       }
 
-      return { content: [{ type: "text", text: formatResponse(stack, format) }] };
+      return { content: [{ type: "text", text: formatResponse(result, format) }] };
     },
   });
 
@@ -370,23 +385,36 @@ export function registerTraceHandlers(): void {
         }
       }
 
-      const stack = await waitForStop(client, typedArgs.projectId, timeoutMs, extra, {
-        view: "compact",
-        includeTree: typedArgs.includeTree ?? false,
-        profileTop: typedArgs.profileTop,
-      });
-      if (stack === null) {
-        return {
-          content: [{
-            type: "text",
-            text:
-              `Trace is still running after waiting ${Math.round(timeoutMs / 1000)}s — the rule may be computing or looping. ` +
-              `Call openl_resume_trace again to keep waiting (optionally with a larger timeoutMs), or openl_stop_trace to terminate.`,
-          }],
-        };
+      let outcome: { stack: Types.DebugStackView } | { stillRunning: Types.DebugStatus };
+      try {
+        outcome = await waitForStop(client, typedArgs.projectId, timeoutMs, extra, {
+          view: "compact",
+          includeTree: typedArgs.includeTree ?? false,
+          profileTop: typedArgs.profileTop,
+        });
+      } catch (error) {
+        // A client cancellation surfaces as an AbortError from the poll's delay.
+        if (error instanceof Error && error.name === "AbortError") {
+          throw new McpError(ErrorCode.InvalidRequest, "resume_trace: request cancelled while waiting for the next stop.");
+        }
+        // The session can be reaped or the studio can blip mid-poll — map the
+        // 404/409 to the same actionable message the other trace tools give.
+        rethrowTraceStateError(error, "resume");
       }
 
-      return { content: [{ type: "text", text: formatResponse(stack, format) }] };
+      if ("stillRunning" in outcome) {
+        // Timed out — report the actual status in the same format as a stop, so
+        // JSON consumers stay consistent and can read `status`.
+        const timedOut = {
+          status: outcome.stillRunning,
+          message:
+            `Trace is still ${outcome.stillRunning} after waiting ${Math.round(timeoutMs / 1000)}s — the rule may be computing or looping. ` +
+            `Call openl_resume_trace again to keep waiting (optionally with a larger timeoutMs), or openl_stop_trace to terminate.`,
+        };
+        return { content: [{ type: "text", text: formatResponse(timedOut, format) }] };
+      }
+
+      return { content: [{ type: "text", text: formatResponse(outcome.stack, format) }] };
     },
   });
 
@@ -422,6 +450,17 @@ export function registerTraceHandlers(): void {
 
       const format = validateResponseFormat(typedArgs.response_format);
 
+      // The highlight overlay and the stack only need projectId/frameIndex, so
+      // fire them alongside the variables fetch (which may itself do lazy-value
+      // round-trips) instead of after it. (compact omits every frame's steps —
+      // only the frame's tableId is needed.)
+      const highlightsP = typedArgs.withHighlights
+        ? client.getTraceFrameHighlights(typedArgs.projectId, typedArgs.frameIndex)
+        : undefined;
+      const stackP = typedArgs.withHighlights
+        ? client.getTraceStack(typedArgs.projectId, { view: "compact" })
+        : undefined;
+
       let variables: Types.DebugFrameVariables;
       try {
         variables = await client.getTraceFrameVariables(
@@ -430,6 +469,8 @@ export function registerTraceHandlers(): void {
           typedArgs.full ? undefined : INSPECT_FIELDS,
         );
       } catch (error) {
+        // Don't leak the in-flight parallel fetches as unhandled rejections.
+        void Promise.allSettled([highlightsP, stackP]);
         rethrowTraceStateError(error, "frame inspection");
       }
 
@@ -441,11 +482,8 @@ export function registerTraceHandlers(): void {
       );
 
       let result: unknown = variables;
-      if (typedArgs.withHighlights) {
-        const [highlights, stack] = await Promise.all([
-          client.getTraceFrameHighlights(typedArgs.projectId, typedArgs.frameIndex),
-          client.getTraceStack(typedArgs.projectId),
-        ]);
+      if (highlightsP && stackP) {
+        const [highlights, stack] = await Promise.all([highlightsP, stackP]);
         // The overlay is keyed by A1 cell address; the grid to paint it on comes
         // from the shared Tables API raw view, resolved via the frame's tableId.
         const frame = stack.frames.find((f) => f.index === typedArgs.frameIndex);
@@ -578,10 +616,10 @@ export function registerTraceHandlers(): void {
     category: "Trace",
     title: "Watch Cells Across a Run",
     description:
-      "Answer 'show me this factor across all coverages/iterations' in one call, without dumping frames. Watches the named cells (e.g. ['$VehiclePriceFactor']), runs the table to completion, and returns a WatchView: " +
-      "one 'series' per cell with a 'points' array holding the cell's value at every execution of its table (each point carries instance/label/ref/path; value is serialized like any traced value and may come lazy — expand a large one with openl_get_trace_value using its parameterId). " +
+      "Answer 'show me this factor across all coverages/iterations' in one call, without dumping frames. Watch SCALAR cells (a single number/string factor, e.g. '$VehiclePriceFactor') — NOT a cell whose value is a big aggregate object (a whole spreadsheet result like '$RateCardPremium'), which makes every captured point huge and can overflow the response; drill into an aggregate with a breakpoint + openl_inspect_trace_frame instead. " +
+      "Runs the table to completion and returns a WatchView: one 'series' per cell with a 'points' array holding the cell's value at each execution of its table (each point carries instance/label/ref/path; value is serialized like any traced value and may come lazy — expand a large one with openl_get_trace_value using its parameterId). " +
       "Read the series, spot the outlier (e.g. 83.372 among 1.0s), then jump straight to that pass: set a breakpoint '<point.ref>@<point.instance>' (the '@N' suffix targets the N-th execution — same 0-based numbering as the series' 'instance') and replay + openl_inspect_trace_frame to see why. Value JSON Schemas are omitted by default (withSchema: true restores them). " +
-      "Captures cells inside lazy result branches too (nested SpreadsheetResult[]) — the run materializes the whole result. A cell deep in a combinatorial branch (benefit × gender × age-band …) can fire thousands of times; each series is capped at maxPoints (default 500) points, and a truncated series reports its totalPoints. Pass testRanges for a test table or inputJson for a regular rule (omit both to replay the remembered input). This starts a fresh session (terminates any previous one).",
+      "Captures cells inside lazy result branches too (nested SpreadsheetResult[]) — the run materializes the whole result. The server caps points per series for a cell deep in a combinatorial branch (benefit × gender × age-band …); each series reports 'total' (the full execution count) and WatchView.truncated flags that some late executions were dropped — inspect a specific one with a '<ref>@N' breakpoint. Pass testRanges for a test table or inputJson for a regular rule (omit both to replay the remembered input). This starts a fresh session (terminates any previous one) and clears breakpoints so the run reaches completion.",
     inputSchema: schemas.z.toJSONSchema(schemas.watchTraceCellsSchema) as Record<string, unknown>,
     annotations: {
       openWorldHint: true,
@@ -595,7 +633,6 @@ export function registerTraceHandlers(): void {
         inputJson?: string | Record<string, unknown>;
         fromModule?: string;
         withSchema?: boolean;
-        maxPoints?: number;
         response_format?: string;
       };
 
@@ -604,13 +641,18 @@ export function registerTraceHandlers(): void {
       }
 
       const format = validateResponseFormat(typedArgs.response_format);
-      const maxPoints = typedArgs.maxPoints ?? DEFAULT_WATCH_MAX_POINTS;
+
+      // Clear any breakpoints left set earlier in this session — they are
+      // session-scoped and would suspend the run mid-way, so the watch would
+      // capture only a partial series. The watch needs a run to completion.
+      await client.setTraceBreakpoints(typedArgs.projectId, []);
 
       // Set the watch cells, run the whole table to completion, then read the
       // collected series. The run fully materializes the traced method's result,
       // so cells inside lazy result branches (nested SpreadsheetResult[]) are
       // evaluated and captured — no profiling needed (profiling would only make
-      // the studio build and retain a large call tree this tool discards).
+      // the studio build and retain a large call tree this tool discards). The
+      // server caps points per series, so the response is bounded.
       await client.setTraceWatches(typedArgs.projectId, typedArgs.cells);
       await client.startTrace({
         projectId: typedArgs.projectId,
@@ -623,42 +665,22 @@ export function registerTraceHandlers(): void {
 
       let watch: Types.WatchView;
       try {
-        watch = await client.getTraceWatch(
-          typedArgs.projectId,
-          typedArgs.withSchema ? undefined : WATCH_FIELDS,
-          WATCH_MAX_CONTENT_BYTES,
-        );
+        watch = await client.getTraceWatch(typedArgs.projectId, typedArgs.withSchema ? undefined : WATCH_FIELDS);
       } catch (error) {
-        // axios flags an over-limit body as ERR_BAD_RESPONSE with a
-        // "maxContentLength size of N exceeded" message.
-        if (isAxiosError(error) && typeof error.message === "string" && error.message.includes("maxContentLength")) {
-          throw new McpError(
-            ErrorCode.InvalidRequest,
-            `The watch collected more data than can be returned safely (a watched cell in a combinatorial branch can fire hundreds of thousands of times). ` +
-              `Watch a higher-level cell, narrow the input, or target one pass with a '<ref>@N' breakpoint + openl_inspect_trace_frame.`,
-          );
-        }
         rethrowTraceStateError(error, "watch read");
       }
 
-      // Cap points PER SERIES before serializing — a deep combinatorial cell can
-      // produce tens of thousands of points, and stringifying all of them can
-      // exceed V8's max string size and crash the process.
-      let truncatedSeries = 0;
-      const series = (watch.series ?? []).map((s) => {
-        const points = s.points ?? [];
-        if (points.length > maxPoints) {
-          truncatedSeries += 1;
-          return { ...s, totalPoints: points.length, pointsTruncated: true, points: points.slice(0, maxPoints) };
-        }
-        return s;
-      });
-      const payload: Record<string, unknown> = { ...watch, series };
-      if (truncatedSeries > 0) {
-        payload.note =
-          `${truncatedSeries} series exceeded maxPoints=${maxPoints} and were cut to the first ${maxPoints} points ` +
-          `(each such series reports its totalPoints). A cell deep in a combinatorial branch executes thousands of times — ` +
-          `raise maxPoints, watch a higher-level cell, or target one pass with a '<ref>@N' breakpoint.`;
+      // The server truncates when a cell fires more times than the capture cap.
+      // Surface guidance to reach a dropped execution (each series' `total` gives
+      // the full count).
+      let payload: unknown = watch;
+      if (watch.truncated) {
+        payload = {
+          ...watch,
+          note:
+            "Some series were truncated by the server (their 'total' exceeds the returned points, so late executions are missing). " +
+            "Inspect a specific execution with a '<ref>@N' breakpoint, or watch a higher-level cell.",
+        };
       }
 
       return {

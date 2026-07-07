@@ -697,7 +697,6 @@ export const watchTraceCellsSchema = z.object({
   inputJson: z.union([z.string(), z.record(z.string(), z.any())]).optional().describe("For regular rules: JSON input { params, runtimeContext? }. Omit BOTH inputJson and testRanges to replay the previous run's remembered input."),
   fromModule: z.string().optional().describe("Module name to run in the context of a specific opened module. Usually omit."),
   withSchema: z.boolean().optional().describe("Include each watched value's JSON Schema (default false — the schema is large and rarely needed; a value that came lazy still carries its parameterId for openl_get_trace_value)."),
-  maxPoints: z.number().int().min(1).max(50000).optional().describe("Cap the number of points returned per series (default 500). A cell deep in a combinatorial branch (benefit × gender × age-band …) executes thousands of times; a truncated series reports its totalPoints. Raise this for more, watch a higher-level cell, or target one pass with a '<ref>@N' breakpoint."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
