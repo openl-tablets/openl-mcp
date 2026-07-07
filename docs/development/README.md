@@ -12,6 +12,7 @@ Documentation for developers contributing to the OpenL MCP Server.
 - **[Testing Guide](testing.md)** - Testing strategy and how to run tests
 - **[Code Standards](code-standards.md)** - Best practices and coding standards
 - **[Tool Review](tool-review.md)** - Technical review of MCP tools vs OpenL API
+- **[MCP Spec Alignment Plan](mcp-spec-alignment.md)** - Phased plan for the MCP 2026-07-28 specification (stateless core, authorization hardening, extensions)
 
 ## Quick Start for Developers
 
