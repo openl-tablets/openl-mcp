@@ -57,9 +57,12 @@ correct `total_count`/`has_more`/`next_offset`.
 
 `client.listTables` puts a `string[]` into `params.kind`; axios's default
 serializer emits `kind[]=a&kind[]=b`, which the studio does not bind — the agent
-gets *every* table while believing the filter applied. Fix: configure the axios
-instance with `paramsSerializer: { indexes: null }` (emits repeated `kind=a&kind=b`)
-or comma-join as `readProjectFile` already does for `extensions`.
+gets *every* table while believing the filter applied. Fix: scope the encoding to
+`listTables` — pass a per-request `paramsSerializer: { indexes: null }` (emits
+repeated `kind=a&kind=b`) or comma-join the values as `readProjectFile` already
+does for `extensions`. Leave the shared axios instance's serializer unchanged
+unless repeated-array encoding is deliberately adopted for every future array
+param.
 
 ### A3. STOMP compile-wait: dropped terminal frames, unsettleable promises, ignored aborts [P0, M]
 
