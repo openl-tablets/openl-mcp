@@ -72,8 +72,8 @@ The token is the only credential the server understands: an explicit
 `OPENL_PERSONAL_ACCESS_TOKEN` / `--token` when present, otherwise requests are
 anonymous (single-user Studio). A blank/whitespace token is treated as absent, so an
 empty setting never sends an empty credential. (Browser sign-in — `openl-mcp login`
-with its `~/.config/openl-mcp/credentials.json` cache — existed in 1.x and was
-removed in 2.0.0.)
+with its `~/.config/openl-mcp/credentials.json` cache — existed in 1.x releases
+and has been removed.)
 
 ### Where the token goes
 
