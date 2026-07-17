@@ -143,11 +143,11 @@ Restart Cursor. **Settings → MCP** shows `openl`.
 Run this in a terminal:
 
 ```bash
-# With a login token:
+# With a Personal Access Token:
 claude mcp add openl --env OPENL_PERSONAL_ACCESS_TOKEN=<your-token> \
   -- npx -y openl-mcp http://localhost:8080/webstudio
 
-# No login (single-user Studio):
+# No token (single-user Studio):
 claude mcp add openl -- npx -y openl-mcp http://localhost:8080/webstudio
 ```
 

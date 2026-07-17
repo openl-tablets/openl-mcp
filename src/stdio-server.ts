@@ -16,8 +16,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 import { OpenLClient } from "./client.js";
 import { createConfiguredServer } from "./mcp-core.js";
-import { getCachedToken, normalizeToken } from "./token-cache.js";
-import { sanitizeError } from "./utils.js";
+import { normalizeToken, sanitizeError } from "./utils.js";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { ParsedArgs } from "./cli.js";
 import type * as Types from "./types.js";
@@ -105,15 +104,13 @@ export async function loadConfigFromEnv(
     timeout = parsedTimeout;
   }
 
-  // Token precedence: an explicit token (flag/env) always wins; otherwise fall
-  // back to a credential cached by `openl-mcp login`; otherwise anonymous.
-  // A blank/whitespace token (e.g. an unset `${user_config.studio_token}` that
-  // expands to "") is treated as absent so it can't mask a valid cached login.
-  const explicitToken = normalizeToken(overrides.personalAccessToken ?? process.env.OPENL_PERSONAL_ACCESS_TOKEN);
-  const cachedToken = explicitToken ? undefined : await getCachedToken(baseUrl);
+  // An explicit token (flag/env) or nothing: a blank/whitespace token (e.g. an
+  // unset `${user_config.studio_token}` that expands to "") is treated as
+  // absent, so it never sends an empty credential; without a token requests
+  // are anonymous (single-user Studio).
   const config: Types.OpenLConfig = {
     baseUrl,
-    personalAccessToken: explicitToken ?? cachedToken,
+    personalAccessToken: normalizeToken(overrides.personalAccessToken ?? process.env.OPENL_PERSONAL_ACCESS_TOKEN),
     timeout,
   };
 
@@ -122,7 +119,7 @@ export async function loadConfigFromEnv(
   // reported. Confirm only when a token is present (its value stays hidden).
   if (config.personalAccessToken) {
     console.error(`[Config] Authentication:`);
-    console.error(`[Config]   - Personal Access Token: configured (hidden${cachedToken ? ", from saved login" : ""})`);
+    console.error(`[Config]   - Personal Access Token: configured (hidden)`);
   }
 
   return config;

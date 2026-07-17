@@ -25,8 +25,6 @@ openl-mcp <url> <tool> [args] [flags]     # base URL as a positional argument
 openl-mcp <tool> [args] [flags]           # base URL via --base-url / OPENL_BASE_URL
 openl-mcp <tool> --help                   # one tool's description + schema
 openl-mcp --help | --list-tools | --version
-openl-mcp login <url> [--issuer <url>]    # sign in via browser, cache a token
-openl-mcp logout [<url>]                  # remove cached login token(s)
 ```
 
 Run it with `npx -y openl-mcp …` (no install), a global install (`npm i -g openl-mcp`), or a clone
@@ -34,9 +32,6 @@ Run it with `npx -y openl-mcp …` (no install), a global install (`npm i -g ope
 
 **Tool names drop the `openl_` prefix on the CLI** — type `list_repositories`, not `openl_list_repositories`.
 The prefix is added only on the MCP wire; the registry, `--help`, and `--list-tools` all use bare names.
-
-> `login` / `logout` sign you in through the browser and cache a token so calls authenticate automatically. See
-> [Advanced → Sign in from the browser](advanced.md#sign-in-from-the-browser-openl-mcp-login).
 
 ## Discovery
 
@@ -75,20 +70,18 @@ bareword `http(s)` URL is always the base URL, never a tool name.
 
 ## Authentication
 
-Auth is **optional**. Token precedence: `--token` / `OPENL_PERSONAL_ACCESS_TOKEN` → a token cached by
-`openl-mcp login` → anonymous (no `Authorization` header). A server that requires auth answers `401`, which the
-CLI reports as exit code `77`.
+Auth is **optional**: `--token` / `OPENL_PERSONAL_ACCESS_TOKEN` when supplied, otherwise anonymous (no
+`Authorization` header). A server that requires auth answers `401`, which the CLI reports as exit code `77`.
 
 ```bash
 npx -y openl-mcp list_repositories --token <your-token>   # explicit PAT
-npx -y openl-mcp list_repositories                        # anonymous, or a cached login token
+npx -y openl-mcp list_repositories                        # anonymous (single-user Studio)
 ```
 
-Create a PAT in OpenL Studio under **User Settings → Personal Access Tokens**, or use `openl-mcp login`. Details
+Create a PAT in OpenL Studio under **User Settings → Personal Access Tokens**. Details
 in [Authentication](advanced.md#authentication).
 
-> Passing `--token` puts the secret in process listings (`ps aux`). Prefer an env var or `openl-mcp login` on
-> shared hosts.
+> Passing `--token` puts the secret in process listings (`ps aux`). Prefer an env var on shared hosts.
 
 ## Passing tool arguments
 
@@ -178,7 +171,7 @@ done
 
 ## Security
 
-- Prefer env vars or `openl-mcp login` over `--token` on shared hosts (the flag value shows in `ps aux`).
+- Prefer env vars over `--token` on shared hosts (the flag value shows in `ps aux`).
 - The cookie jar holds a session id — `0600` is applied automatically; don't share or commit it.
 - Errors written to stderr are sanitized: PATs and credentials are redacted.
 - In CI, inject secrets from your platform's secret store; don't commit `.env` files.

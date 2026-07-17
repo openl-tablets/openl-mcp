@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING:** the `openl-mcp login` / `openl-mcp logout` browser sign-in commands and the
+  credential cache (`~/.config/openl-mcp/credentials.json`) are removed. Authentication is now
+  explicit-token-only: `OPENL_PERSONAL_ACCESS_TOKEN` / `--token` when supplied, otherwise
+  anonymous (single-user Studio). A blank/whitespace token is still treated as absent. Anyone who
+  relied on the cached browser sign-in should create a Personal Access Token in OpenL Studio
+  (**User → Personal Access Tokens**) and pass it explicitly; a leftover cache file can be deleted
+  manually. Rationale: the loopback OAuth flow only worked with the browser and the CLI on the
+  same machine, and the silent cache fallback made "cleared token setting" look signed-out while
+  requests kept authenticating.
+
+## [1.1.0] - 2026-07-06
+
 ### Added
 
 - `openl_get_started` onboarding tool — read-only, meant to be called once per session before any other tool. It returns the mandatory workflow protocol (load the project's agent context before working on it, consult reference docs on demand, edit → validate → save) plus a short orientation over the bundled documentation.
