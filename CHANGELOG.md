@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   explicit-token-only: `OPENL_PERSONAL_ACCESS_TOKEN` / `--token` when supplied, otherwise
   anonymous (single-user Studio). A blank/whitespace token is still treated as absent. Anyone who
   relied on the cached browser sign-in should create a Personal Access Token in OpenL Studio
-  (**User → Personal Access Tokens**) and pass it explicitly; a leftover cache file can be deleted
+  (**User Settings → Personal Access Tokens**) and pass it explicitly; a leftover cache file can be deleted
   manually. Rationale: the loopback OAuth flow only worked with the browser and the CLI on the
   same machine, and the silent cache fallback made "cleared token setting" look signed-out while
   requests kept authenticating.
@@ -155,5 +155,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Supported transports: stdio, HTTP SSE, streamablehttp
 - Supported authentication: Basic Auth and Personal Access Token (PAT)
 
-[Unreleased]: https://github.com/openl-tablets/openl-mcp/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/openl-tablets/openl-mcp/releases/tag/v1.0.0
+[Unreleased]: https://github.com/openl-tablets/openl-mcp/compare/1.1.0...HEAD
+[1.1.0]: https://github.com/openl-tablets/openl-mcp/releases/tag/1.1.0
+[1.0.0]: https://github.com/openl-tablets/openl-mcp/releases/tag/1.0.0

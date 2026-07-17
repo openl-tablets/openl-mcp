@@ -78,8 +78,8 @@ npx -y openl-mcp list_repositories --token <your-token>   # explicit PAT
 npx -y openl-mcp list_repositories                        # anonymous (single-user Studio)
 ```
 
-Create a PAT in OpenL Studio under **User Settings → Personal Access Tokens**. Details
-in [Authentication](advanced.md#authentication).
+Create a token as in [Quick Start → Step 1](quick-start.md#step-1-create-an-access-token);
+auth details in [Authentication](advanced.md#authentication).
 
 > Passing `--token` puts the secret in process listings (`ps aux`). Prefer an env var on shared hosts.
 

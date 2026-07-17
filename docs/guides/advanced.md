@@ -72,7 +72,7 @@ The token is the only credential the server understands: an explicit
 `OPENL_PERSONAL_ACCESS_TOKEN` / `--token` when present, otherwise requests are
 anonymous (single-user Studio). A blank/whitespace token is treated as absent, so an
 empty setting never sends an empty credential. (Browser sign-in — `openl-mcp login`
-with its `~/.config/openl-mcp/credentials.json` cache — existed in 1.x releases
+with its `~/.config/openl-mcp/credentials.json` cache — existed in the 1.1.0 release
 and has been removed.)
 
 ### Where the token goes
@@ -188,32 +188,8 @@ It does not support deprecated SSE transport.
 
 ## CLI mode
 
-The same binary doubles as a command-line tool for direct API calls — handy for scripting, CI/CD, or debugging one
-call without an MCP client. Give it a tool name (or a discovery flag) and it runs in CLI mode; give it nothing (or
-just a URL) and it starts the stdio server.
-
-```bash
-# Discover (no config needed)
-npx -y openl-mcp --help                       # human catalog
-npx -y openl-mcp --list-tools | jq '.[].name' # machine-readable
-
-# One call — markdown by default
-npx -y openl-mcp http://localhost:8080 list_repositories --token <your-token>
-
-# JSON for jq pipelines
-npx -y openl-mcp http://localhost:8080 \
-  list_projects '{"status":"OPENED","response_format":"json"}' \
-  --token <your-token> | jq '.data[].name'
-```
-
-Key points:
-
-- **Tool names drop the `openl_` prefix** — `list_repositories`, not `openl_list_repositories`.
-- Pass arguments as inline JSON, `@file.json`, or `--stdin`.
-- Output is **markdown** by default; request `response_format: "json"` to pipe into `jq`.
-- Auth: `--token` or `OPENL_PERSONAL_ACCESS_TOKEN` (omit for a single-user server).
-- Exit codes follow `sysexits.h` (e.g. `77` = auth failure, `78` = bad config) so CI can tell apart don't-retry
-  from might-retry failures.
-
-Full reference — every flag, argument-passing modes, recipes, exit codes, and cross-platform notes:
+The same binary doubles as a command-line tool: give it a tool name
+(`npx -y openl-mcp <url> list_repositories`) and it makes one direct API call instead
+of starting the server — handy for scripting, CI/CD, or debugging. Full reference —
+configuration, flags, argument passing, output formats, recipes, and exit codes:
 **[CLI Guide](cli.md)**.

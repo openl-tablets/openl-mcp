@@ -2,57 +2,6 @@
 
 Common problems and how to fix them.
 
-## See the server's logs
-
-All MCP server logs go to **stderr**, so they never corrupt the JSON-RPC stream on stdout.
-
-**Run it directly in a terminal** — the fastest way to see everything. Run the same command your client runs:
-
-```bash
-# Auth is optional — set it only if your Studio requires it
-export OPENL_PERSONAL_ACCESS_TOKEN="openl_pat_your-token"
-npx -y openl-mcp http://localhost:8080
-```
-
-Press `Ctrl+C` to stop. For more detail set `DEBUG=1` (or `DEBUG_AUTH=true` for auth, `DEBUG_STOMP=true` for the
-WebSocket wait).
-
-**Client log files:**
-
-| Client         | Where                                                              |
-|----------------|--------------------------------------------------------------------|
-| Claude Code    | `claude mcp list` shows status; start `claude --debug` for details |
-| Claude Desktop | `~/Library/Logs/Claude/*.log` (macOS)                              |
-| Cursor         | `~/Library/Logs/Cursor/*.log` (macOS)                              |
-| VS Code        | Output panel → "GitHub Copilot Chat" / MCP server output           |
-
-Filter by log prefix — `[Config]`, `[Auth]`, `[Error]`:
-
-```bash
-tail -f ~/Library/Logs/Claude/*.log | grep -E "\[Error\]|\[Auth\]|\[Config\]"
-```
-
-## Quick checks
-
-```bash
-# 1. The package runs (downloads + prints the tool catalog)
-npx -y openl-mcp --help
-
-# 2. OpenL Studio is reachable
-curl http://localhost:8080
-
-# 3. The server connects to it — watch the startup logs
-npx -y openl-mcp http://localhost:8080
-```
-
-A healthy start logs:
-
-```
-[Config] Resolving configuration (positional <url> / flags / environment)...
-[Config] Authentication:
-[Config]   - Personal Access Token: configured (hidden)
-```
-
 ## Common issues
 
 ### Client doesn't list the server / "not connected"
@@ -82,6 +31,57 @@ Set `DEBUG_AUTH=true` to log the failing request URL and the API error code.
 1. The client shows the server **connected** in its MCP panel.
 2. (VS Code / Copilot) enable the OpenL tools in the Agent tools picker.
 3. Ask explicitly: "Use the OpenL tools to list repositories."
+
+## Quick checks
+
+```bash
+# 1. The package runs (downloads + prints the tool catalog)
+npx -y openl-mcp --help
+
+# 2. OpenL Studio is reachable
+curl http://localhost:8080
+
+# 3. The server connects to it — watch the startup logs
+npx -y openl-mcp http://localhost:8080
+```
+
+A healthy start logs:
+
+```
+[Config] Resolving configuration (positional <url> / flags / environment)...
+[Config] Authentication:
+[Config]   - Personal Access Token: configured (hidden)
+```
+
+## See the server's logs
+
+All MCP server logs go to **stderr**, so they never corrupt the JSON-RPC stream on stdout.
+
+**Run it directly in a terminal** — the fastest way to see everything. Run the same command your client runs:
+
+```bash
+# Auth is optional — set it only if your Studio requires it
+export OPENL_PERSONAL_ACCESS_TOKEN="openl_pat_your-token"
+npx -y openl-mcp http://localhost:8080
+```
+
+Press `Ctrl+C` to stop. For more detail set `DEBUG=1` (or `DEBUG_AUTH=true` for auth, `DEBUG_STOMP=true` for the
+WebSocket wait).
+
+**Client log files:**
+
+| Client         | Where                                                              |
+|----------------|--------------------------------------------------------------------|
+| Claude Code    | `claude mcp list` shows status; start `claude --debug` for details |
+| Claude Desktop | `~/Library/Logs/Claude/*.log` (macOS)                              |
+| Cursor         | `~/Library/Logs/Cursor/*.log` (macOS)                              |
+| VS Code        | Output panel → "GitHub Copilot Chat" / MCP server output           |
+
+Filter by log prefix — `[Config]`, `[Auth]`, `[Error]`:
+
+```bash
+tail -f ~/Library/Logs/Claude/*.log | grep -E "\[Error\]|\[Auth\]|\[Config\]"
+```
 
 ## Docker / compose
 
