@@ -2449,6 +2449,64 @@ describe("OpenLClient — additional method coverage", () => {
       });
     });
 
+    describe("getTraceTreeChildren", () => {
+      it("GETs /trace/tree/children, forwarding uri/instance/step/offset/limit as (string) query params, and returns the page", async () => {
+        let params: Record<string, unknown> | undefined;
+        const page: Types.TreeChildrenView = {
+          children: [
+            {
+              uri: "P/Rules.xlsx?sheet=Rules&range=A1:B4",
+              name: "AgeFactor",
+              kind: "decisionTable",
+              instance: 0,
+              durationMillis: 2,
+              selfMillis: 2,
+              steps: [{ ref: "R1C0", label: "$Factor", status: "executed", childrenTotal: 0 }],
+              notRetained: 5,
+            },
+          ],
+          total: 4,
+        };
+        mockAxios.onGet(`${projectPath}/trace/tree/children`).reply((config) => {
+          params = config.params;
+          return [200, page];
+        });
+
+        const result = await client.getTraceTreeChildren(projectId, {
+          uri: "P/Rules.xlsx?sheet=Main&range=B2:D8",
+          instance: 3,
+          step: "R1C0",
+          offset: 100,
+          limit: 50,
+        });
+
+        // Every value is a string and passed via axios `params` so the URI's own
+        // ?sheet=…&range=… is percent-encoded, not merged into the request path.
+        expect(params).toEqual({
+          uri: "P/Rules.xlsx?sheet=Main&range=B2:D8",
+          instance: "3",
+          step: "R1C0",
+          offset: "100",
+          limit: "50",
+        });
+        expect(result.total).toBe(4);
+        expect(result.children[0].notRetained).toBe(5);
+        expect(result.children[0].steps[0].childrenTotal).toBe(0);
+      });
+
+      it("omits offset/limit from the query when not given (backend defaults apply)", async () => {
+        let params: Record<string, unknown> | undefined;
+        mockAxios.onGet(`${projectPath}/trace/tree/children`).reply((config) => {
+          params = config.params;
+          return [200, { children: [], total: 0 }];
+        });
+
+        await client.getTraceTreeChildren(projectId, { uri: "P/R.xlsx", instance: 0, step: "R1C0" });
+
+        expect(params).toEqual({ uri: "P/R.xlsx", instance: "0", step: "R1C0" });
+      });
+    });
+
     describe("traceStep", () => {
       it("POSTs /trace/step with the step type and view as query params and returns the new stack", async () => {
         let params: Record<string, unknown> | undefined;

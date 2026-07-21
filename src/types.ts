@@ -1014,8 +1014,19 @@ export interface StepValueView {
   status: "executed" | "current" | "pending";
   /** Frozen computed value (variables endpoint only). */
   value?: TraceParameterValue;
-  /** What this step called or referenced, in execution order (profiling). */
+  /**
+   * Tables this step called, in execution order — embedded only for an already
+   * expanded branch (profiling). In the lazy call tree (the /stack `tree` root
+   * and every openl_expand_trace_tree page) the children are omitted and only
+   * `childrenTotal` is set; load them with openl_expand_trace_tree.
+   */
   children?: CallNodeView[];
+  /**
+   * Total tables this step called, set when `children` is not embedded (the lazy
+   * tree). > 0 means the step is expandable — pass the owning node's uri+instance
+   * and this step's `ref` to openl_expand_trace_tree.
+   */
+  childrenTotal?: number;
   durationMillis?: number;
   selfMillis?: number;
 }
@@ -1027,7 +1038,8 @@ export interface CallNodeView {
   kind: FrameKind;
   /**
    * Zero-based execution index of this table in the run — combine with the
-   * breakpoint key as `uri@N` to replay this exact iteration.
+   * breakpoint key as `uri@N` to replay this exact iteration, and pass it as
+   * `instance` to openl_expand_trace_tree to expand this node's steps.
    */
   instance?: number;
   durationMillis: number;
@@ -1036,6 +1048,24 @@ export interface CallNodeView {
   dispatch?: DispatchInfo;
   /** For kind=stepRef: the ref of the original step this node points at. */
   refStep?: string;
+  /**
+   * Sub-calls this node made that ran but were dropped from the retained tree
+   * once it hit its size limit — absent when every sub-call was kept. Surface as
+   * "+N not retained (tree too large)".
+   */
+  notRetained?: number;
+}
+
+/**
+ * One page of a step's executed sub-calls — the lazy profiling call tree loaded
+ * one level at a time (openl_expand_trace_tree). Each child is itself shallow:
+ * its steps carry `childrenTotal`, not embedded `children`.
+ */
+export interface TreeChildrenView {
+  /** This page of the step's sub-calls, starting at the requested offset. */
+  children: CallNodeView[];
+  /** The step's full sub-call count — page again while it exceeds offset + children.length. */
+  total: number;
 }
 
 /** One frame of the live execution stack. */
@@ -1108,7 +1138,11 @@ export interface DebugStackView {
   /** Frames ordered root (index 0) → current; empty after completion. */
   frames: DebugFrameView[];
   error?: DebugError;
-  /** Whole executed call tree after completion (profiling; only when includeTree). */
+  /**
+   * The executed call tree's ROOT node after completion (profiling; only when
+   * includeTree). One level deep — each step carries `childrenTotal`, not nested
+   * `children`; drill down with openl_expand_trace_tree.
+   */
   tree?: CallNodeView;
   /** Bounded profile overview after completion (profiling) — prefer this over `tree`. */
   profile?: ProfileSummaryView;
@@ -1192,7 +1226,7 @@ export interface StartTraceRequest {
   stopAtEntry?: boolean;
   /** Retain the executed call tree — structure and timings, no values (default false). */
   profiling?: boolean;
-  /** Include the full (possibly >1 MB) `tree` in the response; false returns only the bounded `profile`. */
+  /** Include the `tree` root node (one level — steps carry `childrenTotal`) in the response; false returns only the bounded `profile`. Drill down with getTraceTreeChildren. */
   includeTree?: boolean;
   /** Number of hotspots in the profile overview (backend default 20). */
   profileTop?: number;

@@ -3470,6 +3470,105 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       expect(params?.includeTree).toBe("true");
     });
 
+    it("openl_expand_trace_tree loads one level of the lazy tree and flags the next page", async () => {
+      let params: Record<string, unknown> | undefined;
+      mockAxios.onGet(`/projects/${encoded}/trace/tree/children`).reply((config) => {
+        params = config.params;
+        return [200, {
+          children: [
+            { uri: "u1", name: "AgeFactor", kind: "decisionTable", instance: 0, durationMillis: 1, selfMillis: 1, steps: [{ ref: "R1C0", status: "executed", childrenTotal: 0 }] },
+            { uri: "u2", name: "AgeFactor", kind: "decisionTable", instance: 1, durationMillis: 1, selfMillis: 1, steps: [{ ref: "R1C0", status: "executed", childrenTotal: 2 }], notRetained: 7 },
+          ],
+          total: 4,
+        }];
+      });
+
+      const result = await executeTool(
+        "expand_trace_tree",
+        { projectId, uri: "P/Rules.xlsx?sheet=Main&range=B2:D8", instance: 0, step: "R2C0", response_format: "json" },
+        client
+      );
+
+      // uri/instance/step forwarded (URI kept intact for axios to percent-encode).
+      expect(params).toMatchObject({ uri: "P/Rules.xlsx?sheet=Main&range=B2:D8", instance: "0", step: "R2C0" });
+      const parsed = JSON.parse(result.content[0].text).data;
+      expect(parsed.total).toBe(4);
+      expect(parsed.children).toHaveLength(2);
+      // total 4 > offset 0 + 2 returned → more pages, with the next offset computed.
+      expect(parsed.hasMore).toBe(true);
+      expect(parsed.nextOffset).toBe(2);
+      expect(parsed.children[1].notRetained).toBe(7);
+    });
+
+    it("openl_expand_trace_tree does not flag hasMore when the page is the last", async () => {
+      mockAxios.onGet(`/projects/${encoded}/trace/tree/children`).reply(200, {
+        children: [{ uri: "u1", name: "AgeFactor", kind: "decisionTable", instance: 2, durationMillis: 1, selfMillis: 1, steps: [] }],
+        total: 3,
+      });
+
+      const result = await executeTool(
+        "expand_trace_tree",
+        { projectId, uri: "u", instance: 0, step: "R1C0", offset: 2, response_format: "json" },
+        client
+      );
+
+      const parsed = JSON.parse(result.content[0].text).data;
+      expect(parsed.hasMore).toBe(false);
+      expect(parsed.nextOffset).toBeUndefined();
+    });
+
+    it("openl_expand_trace_tree normalizes a childless step (backend returns { total: 0 }, no children) to an empty list", async () => {
+      // A step that made no sub-calls answers 200 with just { total: 0 } — the
+      // backend omits the children array — so the tool fills in children: [].
+      mockAxios.onGet(`/projects/${encoded}/trace/tree/children`).reply(200, { total: 0 });
+
+      const result = await executeTool(
+        "expand_trace_tree",
+        { projectId, uri: "u", instance: 0, step: "R9C9", response_format: "json" },
+        client
+      );
+
+      const parsed = JSON.parse(result.content[0].text).data;
+      expect(parsed.children).toEqual([]);
+      expect(parsed.total).toBe(0);
+      expect(parsed.hasMore).toBe(false);
+    });
+
+    it("openl_expand_trace_tree stops paging when a page comes back empty even though total still exceeds offset (dropped sub-calls)", async () => {
+      // A step whose sub-calls were dropped at the retained-tree size cap: total
+      // counts them but they can never be paged to, so an offset past the retained
+      // children returns []. hasMore must be false — otherwise nextOffset freezes
+      // and an agent following it re-requests the same page forever.
+      mockAxios.onGet(`/projects/${encoded}/trace/tree/children`).reply(200, { children: [], total: 500 });
+
+      const result = await executeTool(
+        "expand_trace_tree",
+        { projectId, uri: "u", instance: 0, step: "R1C0", offset: 100, response_format: "json" },
+        client
+      );
+
+      const parsed = JSON.parse(result.content[0].text).data;
+      expect(parsed.hasMore).toBe(false);
+      expect(parsed.nextOffset).toBeUndefined();
+      expect(parsed.total).toBe(500);
+    });
+
+    it("openl_expand_trace_tree maps a 404 to an actionable no-session / profiling-required message", async () => {
+      mockAxios.onGet(`/projects/${encoded}/trace/tree/children`).reply(404, { message: "trace.execution.task.message" });
+
+      await expect(
+        executeTool("expand_trace_tree", { projectId, uri: "u", instance: 0, step: "R1C0" }, client)
+      ).rejects.toThrow(/openl_start_trace|profiling/);
+    });
+
+    it("openl_expand_trace_tree maps a 409 to an actionable 'run still in progress' message", async () => {
+      mockAxios.onGet(`/projects/${encoded}/trace/tree/children`).reply(409, { message: "trace.execution.not.suspended.message" });
+
+      await expect(
+        executeTool("expand_trace_tree", { projectId, uri: "u", instance: 0, step: "R1C0" }, client)
+      ).rejects.toThrow(/still in progress|openl_resume_trace/);
+    });
+
     it("openl_step_trace steps compact by default and returns the new stack", async () => {
       let stepParams: Record<string, unknown> | undefined;
       mockAxios.onPost(`/projects/${encoded}/trace/step`).reply((config) => {

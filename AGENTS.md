@@ -97,7 +97,7 @@ Operate on ANY file in a project by exact project-relative path (not just Excel 
 - `openl_copy_project_file` - Copy a file within the project (no overwrite — destination collision returns 409)
 - `openl_move_project_file` - Move or rename a file within the project
 
-### Trace Tools (8, BETA)
+### Trace Tools (9, BETA)
 An **interactive debugger** for rules: the rule runs on a server-side worker that
 suspends at breakpoints and step points, and the tools inspect that live, suspended
 execution. The debug session is bound to the MCP server's HTTP session — the whole
@@ -111,6 +111,7 @@ after ~10 minutes.
 - `openl_inspect_trace_frame` - Freeze one stack frame: parameters, context, result, sub-step values; for decision tables `decision` (which rule fired, how each condition evaluated) and `ruleNames`; optional A1-keyed cell `highlights` + raw grid. Filter steps with `onlyExecutedSteps` / `excludeStepValues` (e.g. `[1]`) to surface an outlier among neutral factors
 - `openl_set_trace_breakpoints` - Read the active breakpoint keys and available targets; `set` replaces the whole set. Key forms: `<name>`, `<uri>`, `<uri>#R{r}C{c}`, `<uri>#rule` (any rule fires), `<uri>#<ruleName>` (specific rule). Append `@N` to any key to break only on the table's N-th execution (0-based) — e.g. `<uri>#R48C0@3`; without it a cell breakpoint hits every pass of a table that runs many times. `N` matches `frames[].instance` and a watch series' `instance`
 - `openl_get_trace_value` - Expand a lazy value (`lazy: true` + `parameterId`) from openl_inspect_trace_frame; returns name/description/value only — `withSchema: true` adds the value's (large) JSON Schema
+- `openl_expand_trace_tree` - Load one level of a **profiling** run's executed call tree on demand — it comes back lazy, so each step carries a `childrenTotal` count instead of nested `children`. Expand a step whose `childrenTotal` > 0 by its node (`uri` + `instance`) and step `ref`; returns `{ children, total }` where each child is itself shallow (expand again). Page a loop's many sub-calls with `offset`/`limit` (the reply flags `hasMore`/`nextOffset`); a node's `notRetained` counts sub-calls dropped once the tree hit its size limit. Start from the `tree` root (`includeTree: true`)
 - `openl_watch_trace_cells` - Watch **scalar** cells (a single number/string factor, e.g. `['$VehiclePriceFactor']`) across a whole run and return one series per cell with its value at every execution of its table — "show me this factor across all coverages" without dumping frames; spot the outlier, then jump straight to that pass with a `<point.ref>@<point.instance>` breakpoint + replay. Do NOT watch a cell whose value is a big aggregate object (a whole spreadsheet result like `$RateCardPremium`) — it makes every point huge; drill into an aggregate with a breakpoint + inspect instead. Captures cells inside lazy result branches too. Each point's value is a ParameterValue (lazy when large — expand with `openl_get_trace_value`); value JSON Schemas are omitted unless `withSchema: true`. The server caps points per series for a cell deep in a combinatorial branch — each series reports `total` (full execution count) and `WatchView.truncated` flags dropped late executions (reach a specific one with a `<ref>@N` breakpoint)
 - `openl_stop_trace` - Terminate the session (idempotent; breakpoints survive)
 
@@ -123,15 +124,19 @@ Cheapest whole-run overview: `openl_start_trace` with `profiling: true`,
 `stopAtEntry: false` and no breakpoints completes in one call and returns `profile` —
 a **constant-size** overview: the top-N slowest tables (`hotspots` with
 `selfMillis`/`totalMillis`/`count`) plus `nodeCount`/`distinctTables`/`totalMillis`.
-It stays small regardless of project size (the full call `tree` is omitted by default
-because it can exceed the 1 MB response limit; `profileTop` tunes the hotspot count).
+It stays small regardless of project size (the call `tree` is omitted by default;
+`profileTop` tunes the hotspot count). The `hotspots[].count` counts every table
+call, so it is accurate even on a huge run whose tree was truncated, and
+`profile.truncated` flags a tree that hit its node cap.
 For a profiling overview always pass `inputJson`/`testRanges` with `profiling: true`
 and `stopAtEntry: false` **explicitly** — don't rely on replay (omitting the input):
 a replay only reproduces the compact profile if the remembered run was itself a
 profiling run, otherwise it can return a much larger stack that overflows the limit.
 Find the hot or unexpected table in `hotspots`, then restart with a breakpoint on it
-(the input is remembered) and inspect live for values. Pull the full `tree` only to
-browse one branch's structure, with `includeTree: true`.
+(the input is remembered) and inspect live for values. To browse a branch's call
+structure, set `includeTree: true` for the **one-level** `tree` root (its steps carry
+a `childrenTotal` count, not nested children — a huge run is no longer returned whole)
+and walk it level by level with `openl_expand_trace_tree`.
 
 ### Deployment (4)
 - `openl_list_deploy_repositories` - List deployment repositories

@@ -2509,6 +2509,41 @@ export class OpenLClient {
   }
 
   /**
+   * One page of a step's executed sub-calls — the profiling call tree loaded one
+   * level at a time instead of all at once. Address the parent node by its `uri`
+   * + `instance` (from the `tree` root or an earlier page) and name the `step`
+   * (its `ref`); page a loop's many sub-calls with `offset`/`limit`. Each child
+   * comes back shallow — its steps carry `childrenTotal`, expanded by the same
+   * call. Available only for a profiling run (only then is the tree retained).
+   */
+  async getTraceTreeChildren(
+    projectId: string,
+    options: {
+      uri: string;
+      instance: number;
+      step: string;
+      offset?: number;
+      limit?: number;
+    }
+  ): Promise<Types.TreeChildrenView> {
+    const projectPath = this.buildProjectPath(projectId);
+    // Pass every value through axios `params` so the URI's own query characters
+    // (?sheet=…&range=…) are percent-encoded rather than merged into the path.
+    const params: Record<string, string> = {
+      uri: options.uri,
+      instance: String(options.instance),
+      step: options.step,
+    };
+    if (options.offset != null) params.offset = String(options.offset);
+    if (options.limit != null) params.limit = String(options.limit);
+    const response = await this.axiosInstance.get<Types.TreeChildrenView>(
+      `${projectPath}/trace/tree/children`,
+      { params }
+    );
+    return response.data;
+  }
+
+  /**
    * Step once (into / over / out) and return the new stack once the worker
    * re-suspends (the backend waits synchronously, bounded ~30s). `view:
    * "compact"` (the tool default) keeps steps only on the active frame.
