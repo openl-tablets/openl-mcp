@@ -56,8 +56,13 @@ The token looks like this: `openl_pat_AbC123.dEf456`.
 Find your AI client below and copy the whole configuration block. Then, in what you pasted:
 
 - Replace `http://localhost:8080/webstudio` with your own OpenL Studio address (from **Before you start**).
-- Replace `<your-token>` with the token from Step 1. If you skipped Step 1: delete the whole
-  `env` line **and** the comma at the end of the line above it.
+- Replace `<your-token>` with the token from Step 1. If you skipped Step 1 (single-user Studio),
+  remove the token setting entirely — how depends on the block's format:
+  - **JSON** (Claude Desktop, Cursor, VS Code): delete the whole `env` line **and** the comma at
+    the end of the line above it.
+  - **Codex** (TOML): delete the `[mcp_servers.openl.env]` line **and** the
+    `OPENL_PERSONAL_ACCESS_TOKEN` line under it (there is no comma to remove).
+  - **Claude Code**: use the **No token** command shown in that section instead.
 
 ### Claude Desktop
 
