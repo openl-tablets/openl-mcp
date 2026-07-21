@@ -174,12 +174,19 @@ function makeAbortError(): Error {
  * 409 = the session is not suspended. Anything else passes through to the
  * shared error handler.
  */
+/**
+ * Shared 404 guidance: the debug session is per HTTP session and idle-reaped.
+ * Interpolated by both rethrow helpers so the wording stays in one place.
+ */
+const NO_ACTIVE_SESSION =
+  "there is no active debug session (sessions are per HTTP session, reaped after ~10 minutes idle, " +
+  "and one started by another process is not visible here — start one with openl_start_trace)";
+
 function rethrowTraceStateError(error: unknown, action: string): never {
   if (isNotFoundError(error)) {
     throw new McpError(
       ErrorCode.InvalidRequest,
-      `The ${action} found no target: either there is no active debug session (sessions are per HTTP session, reaped after ~10 minutes idle, ` +
-        `and one started by another process is not visible here — start one with openl_start_trace), or the referenced frame index / parameter id ` +
+      `The ${action} found no target: either ${NO_ACTIVE_SESSION}, or the referenced frame index / parameter id ` +
         `does not exist in the current session (lazy parameter ids are registered when openl_inspect_trace_frame freezes a frame, and cleared on restart).`,
     );
   }
@@ -189,6 +196,29 @@ function rethrowTraceStateError(error: unknown, action: string): never {
       `The debug session is not suspended, so ${action} is not possible right now. ` +
         `While running, wait for the stop with openl_resume_trace; on a terminal status (completed/error/terminated) ` +
         `the final state is in the last returned stack — restart with openl_start_trace or finish with openl_stop_trace.`,
+    );
+  }
+  throw error;
+}
+
+/**
+ * Map the tree-children endpoint's signature failures to actionable McpErrors.
+ * Unlike a frame read, expanding the tree does NOT need a suspended session (it
+ * reads the retained tree of a completed profiling run), so 404 is about the
+ * session or the node reference, and 409 means the tree is not ready yet.
+ */
+function rethrowTraceTreeError(error: unknown): never {
+  if (isNotFoundError(error)) {
+    throw new McpError(
+      ErrorCode.InvalidRequest,
+      `Call-tree expansion found no target: either ${NO_ACTIVE_SESSION}, ` +
+        "or the uri/instance/step does not name a retained node. The executed tree exists only for a profiling run (openl_start_trace with profiling: true), and a step is expandable only when its childrenTotal > 0; take the uri/instance from the /stack `tree` root (includeTree: true) or an earlier openl_expand_trace_tree page.",
+    );
+  }
+  if (is409(error)) {
+    throw new McpError(
+      ErrorCode.InvalidRequest,
+      "The executed call tree is not available yet — the profiling run is still in progress. Wait for it to finish with openl_resume_trace, then expand the tree.",
     );
   }
   throw error;
@@ -244,7 +274,7 @@ export function registerTraceHandlers(): void {
       "For test tables pass testRanges (e.g. '2'); for regular rules pass inputJson { params, runtimeContext? }; omitting both replays the previous run's remembered input. " +
       "Cheapest way to understand a whole run: profiling: true with stopAtEntry: false and no breakpoints — completes in this one call and returns 'profile', a constant-size overview of the top-N slowest tables (selfMillis/totalMillis/count) plus nodeCount/distinctTables/totalMillis. " +
       "For a profiling overview pass inputJson (or testRanges) together with profiling: true and stopAtEntry: false EXPLICITLY every time — do not rely on replay (omitting the input): a replay only reproduces the compact profile if the remembered run was itself a profiling run, otherwise it can return a much larger stack that overflows the response limit. " +
-      "Find the hot or unexpected table in profile.hotspots, then replay into it with a breakpoint to inspect live values. The full executed 'tree' is omitted by default (it can exceed the 1 MB limit); set includeTree: true only to browse a specific branch's structure. " +
+      "Find the hot or unexpected table in profile.hotspots, then replay into it with a breakpoint to inspect live values. The executed 'tree' is omitted by default; set includeTree: true to get its ROOT node (one level — each step carries a childrenTotal count) and browse a branch level by level with openl_expand_trace_tree. " +
       "One active session per user — starting a new one terminates the previous. Idle sessions are reaped after ~10 minutes.",
     inputSchema: schemas.z.toJSONSchema(schemas.startTraceSchema) as Record<string, unknown>,
     annotations: {
@@ -347,7 +377,7 @@ export function registerTraceHandlers(): void {
     title: "Resume to Next Stop",
     description:
       "Resume the suspended debug session and wait (inside this call — no agent-side polling) until it stops again: at the next breakpoint, at an exception, or at completion. Unlike openl_step_trace(out), which only runs the current frame to its exit, resume runs to the NEXT breakpoint or the end. " +
-      "Returns the stack (compact — steps for the active frame only) at the stop; on a terminal 'error' status it carries the structured 'error', and on 'completed' of a profiling run the constant-size 'profile' overview (set includeTree: true for the full 'tree'). " +
+      "Returns the stack (compact — steps for the active frame only) at the stop; on a terminal 'error' status it carries the structured 'error', and on 'completed' of a profiling run the constant-size 'profile' overview (set includeTree: true for the one-level 'tree' root, then drill in with openl_expand_trace_tree). " +
       "On timeout (default 30s) the still-running status is returned — call openl_resume_trace again to keep waiting (it re-attaches without re-resuming), or openl_stop_trace to give up.",
     inputSchema: schemas.z.toJSONSchema(schemas.resumeTraceSchema) as Record<string, unknown>,
     annotations: {
@@ -582,6 +612,72 @@ export function registerTraceHandlers(): void {
       return {
         content: [{ type: "text", text: formatResponse(param, format) }],
       };
+    },
+  });
+
+  registerTool({
+    name: "expand_trace_tree",
+    category: "Trace",
+    title: "Expand Call-Tree Node",
+    description:
+      "Load one level of a profiling run's executed call tree on demand. The tree is lazy: the /stack `tree` root (a profiling openl_start_trace / openl_resume_trace with includeTree: true) and every node returned here are ONE level deep — each step carries a `childrenTotal` count instead of nested `children`. " +
+      "Expand a step whose childrenTotal > 0 by naming its node (uri + instance) and the step's ref; the reply is a TreeChildrenView { children, total } where each child is itself shallow (its own steps' childrenTotal), expanded by calling this tool again. " +
+      "Page a loop's many sub-calls with offset/limit (default 100): when total > offset + children.length the reply sets hasMore: true and nextOffset — call again with that offset to get the next page. A returned node may also carry `notRetained` — sub-calls that ran but were dropped once the retained tree hit its size limit (report as '+N not retained'). " +
+      "Requires a profiling run (profiling: true retains the tree). To find what's slow use the constant-size `profile` overview instead; use this to walk one branch's call structure. Valid while the debug session is alive (including after the run completes).",
+    inputSchema: schemas.z.toJSONSchema(schemas.expandTraceTreeSchema) as Record<string, unknown>,
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    handler: async (args, client): Promise<ToolResponse> => {
+      const typedArgs = args as {
+        projectId: string;
+        uri: string;
+        instance: number;
+        step: string;
+        offset?: number;
+        limit?: number;
+        response_format?: string;
+      };
+
+      if (!typedArgs?.projectId || !typedArgs?.uri || typedArgs?.instance == null || !typedArgs?.step) {
+        throw new McpError(ErrorCode.InvalidParams, "Missing required arguments: projectId, uri, instance, step");
+      }
+
+      const format = validateResponseFormat(typedArgs.response_format);
+
+      let view: Types.TreeChildrenView;
+      try {
+        view = await client.getTraceTreeChildren(typedArgs.projectId, {
+          uri: typedArgs.uri,
+          instance: typedArgs.instance,
+          step: typedArgs.step,
+          offset: typedArgs.offset,
+          limit: typedArgs.limit,
+        });
+      } catch (error) {
+        rethrowTraceTreeError(error);
+      }
+
+      // Normalize the page defensively: the backend omits `children` for a
+      // childless step (reporting total 0), a 200 body could even be literal null,
+      // and a non-compliant client could send a non-numeric offset. Then surface
+      // pagination so the agent can page a loop's children (a step can make
+      // thousands) without redoing the offset math.
+      const children = Array.isArray(view?.children) ? view.children : [];
+      const total = typeof view?.total === "number" ? view.total : 0;
+      const offset = Number(typedArgs.offset) || 0;
+      // Stop as soon as a page returns nothing: `total` counts a step's FULL
+      // sub-calls, INCLUDING ones dropped at the tree's size cap that can never be
+      // paged to, so keying `hasMore` on `total` alone would loop forever with a
+      // frozen nextOffset. An empty page means there is no next page.
+      const hasMore = children.length > 0 && offset + children.length < total;
+      const payload = hasMore
+        ? { children, total, hasMore, nextOffset: offset + children.length }
+        : { children, total, hasMore };
+
+      return { content: [{ type: "text", text: formatResponse(payload, format) }] };
     },
   });
 

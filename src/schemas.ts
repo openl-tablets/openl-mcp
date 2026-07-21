@@ -626,11 +626,11 @@ export const EDITABLE_TABLE_TYPES: readonly string[] = discriminatorValues(
 
 /**
  * Shaping a profiling run's response. The backend returns a constant-size
- * `profile` overview (top-N slowest tables) plus, only when asked, the full
- * `tree` — which on a real project easily exceeds the 1 MB tool-result limit.
+ * `profile` overview (top-N slowest tables) plus, only when asked, the `tree` —
+ * now just the ROOT node (one level), the entry point for lazy drill-down.
  */
 const traceProfileParams = {
-  includeTree: z.boolean().optional().describe("Also return the FULL executed call tree ('tree'), not just the bounded 'profile' overview (default false). The full tree can exceed the 1 MB response limit on a mid-size project — leave it off and use 'profile' to find the hot table, then replay into it with a breakpoint."),
+  includeTree: z.boolean().optional().describe("Also return the executed call tree's ROOT node ('tree'), not just the bounded 'profile' overview (default false). Against a current OpenL Studio the tree is lazy — one level deep: the root's steps each carry a 'childrenTotal' count instead of nested children, so a large run is no longer returned whole. Drill into a branch with openl_expand_trace_tree; to find the hot table use 'profile' and replay into it with a breakpoint."),
   profileTop: z.number().int().min(1).max(500).optional().describe("Number of hotspots (slowest tables) in the 'profile' overview (backend default 20)."),
 };
 
@@ -641,7 +641,7 @@ export const startTraceSchema = z.object({
   inputJson: z.union([z.string(), z.record(z.string(), z.any())]).optional().describe("For regular rules: JSON input. Use object with params (required) and runtimeContext (optional). E.g. { params: { age: 25 }, runtimeContext: { lob: 'Auto' } }. Omit BOTH inputJson and testRanges to replay the previous run's remembered input (e.g. restarting with profiling or new breakpoints)."),
   fromModule: z.string().optional().describe("Module name to trace in the context of a specific opened module. Usually omit."),
   stopAtEntry: z.boolean().optional().describe("Suspend at the entry of the first frame (default true). Set false to run straight to the first breakpoint — or, with no breakpoints, to completion."),
-  profiling: z.boolean().optional().describe("Retain the executed call tree — structure and timings, NO values (default false). With stopAtEntry: false and no breakpoints the run completes in this single call and returns a constant-size 'profile' overview (top-N slowest tables); the full 'tree' comes only with includeTree: true."),
+  profiling: z.boolean().optional().describe("Retain the executed call tree — structure and timings, NO values (default false). With stopAtEntry: false and no breakpoints the run completes in this single call and returns a constant-size 'profile' overview (top-N slowest tables); the tree's root node comes with includeTree: true and is browsed level by level with openl_expand_trace_tree."),
   breakpoints: z.array(z.string()).optional().describe("Initial breakpoint set — REPLACES the current set before starting. Key forms: '<name>' (entry of any same-named table), '<uri>' (entry of that table), '<uri>#R{r}C{c}' (spreadsheet cell), '<uri>#rule' (any decision-table rule fires), '<uri>#<ruleName>' (specific rule fires). Append '@N' to any key to break only on the table's N-th execution (0-based) — e.g. '<uri>#R48C0@3' hits the 4th run; N matches frames[].instance and a watch series' instance, so a watch outlier at instance 3 is reached with '@3'. Without '@N' a cell breakpoint hits EVERY pass."),
   ...traceProfileParams,
   response_format: ResponseFormat.optional(),
@@ -681,6 +681,16 @@ export const getTraceValueSchema = z.object({
   projectId: projectIdSchema,
   parameterId: z.number().int().nonnegative().describe("Parameter ID from a lazy ParameterValue (lazy: true) returned by openl_inspect_trace_frame."),
   withSchema: z.boolean().optional().describe("Also return the value's JSON Schema (default false — the schema is large and rarely needed; the value itself already shows the structure)."),
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+export const expandTraceTreeSchema = z.object({
+  projectId: projectIdSchema,
+  uri: z.string().describe("Source URI of the node whose step to expand: the root node's `uri` from the /stack `tree` (a profiling openl_start_trace / openl_resume_trace with includeTree: true), or a child node's `uri` from an earlier openl_expand_trace_tree page."),
+  instance: z.number().int().nonnegative().describe("Zero-based execution index of that node in the run (its `instance`; 0 for the root) — picks the exact loop iteration when the table ran more than once."),
+  step: z.string().describe("Reference of the step within that node to expand, e.g. 'R1C0' — a step whose `childrenTotal` > 0 (a step with childrenTotal 0 or absent made no sub-calls)."),
+  offset: z.number().int().nonnegative().optional().describe("Index of the first sub-call to return, for paging a loop's thousands of children (default 0). When the response's total exceeds offset + returned children, call again with offset advanced by the returned count (the reply's nextOffset)."),
+  limit: z.number().int().min(1).max(200).optional().describe("How many sub-calls to return per page (backend default 100). Keep it modest — a page of many wide nodes can still be large."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
