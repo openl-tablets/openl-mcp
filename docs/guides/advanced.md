@@ -19,14 +19,15 @@ OPENL_BASE_URL=http://localhost:8080 npx -y openl-mcp
 
 ### Environment variables and flags
 
-Each environment variable has a matching flag that overrides it. Both are read in every run mode — stdio, HTTP, and CLI.
+Most environment variables have a matching flag that overrides them, and are read in every run mode — stdio, HTTP, and CLI — except where the table notes otherwise (e.g. `MCP_MAX_BODY_SIZE` applies to the HTTP transport only).
 
-| Environment variable          | Flag                         | Purpose                                 |
-|-------------------------------|------------------------------|-----------------------------------------|
-| `OPENL_BASE_URL`              | `<url>` / `--base-url <url>` | OpenL Studio URL (required)             |
-| `OPENL_PERSONAL_ACCESS_TOKEN` | `--token <pat>`              | Personal Access Token                   |
-| `OPENL_TIMEOUT`               | `--timeout <ms>`             | Timeout to REST API, `30000` by default |
-| `PORT`                        | `--http <port>`              | HTTP port, `3000` by default            |
+| Environment variable          | Flag                         | Purpose                                              |
+|-------------------------------|------------------------------|------------------------------------------------------|
+| `OPENL_BASE_URL`              | `<url>` / `--base-url <url>` | OpenL Studio URL (required)                          |
+| `OPENL_PERSONAL_ACCESS_TOKEN` | `--token <pat>`              | Personal Access Token                                |
+| `OPENL_TIMEOUT`               | `--timeout <ms>`             | Timeout to REST API, `30000` by default              |
+| `PORT`                        | `--http <port>`              | HTTP port, `3000` by default                         |
+| `MCP_MAX_BODY_SIZE`           | —                            | Max HTTP request-body size, `5mb` by default (HTTP transport only; e.g. a large trace `inputJson`) |
 
 ### Transports
 

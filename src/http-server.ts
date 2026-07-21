@@ -25,9 +25,41 @@ import type * as Types from './types.js';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+/**
+ * Inbound JSON body cap for the HTTP / Streamable HTTP transport. Express's
+ * default is 100 KB, which a large tool-call argument — a trace `inputJson`
+ * (a rating census / policy object) or a table payload — can exceed, and the
+ * request is then rejected with HTTP 413 before it ever reaches the MCP handler.
+ * Raised to 5 MB; override with MCP_MAX_BODY_SIZE (e.g. "10mb"). This does not
+ * affect the stdio transport, which is unbounded. It also cannot lift a client's
+ * own output-size limit (an agent's max tool-call size lives on the client side).
+ */
+const DEFAULT_MAX_BODY_SIZE = "5mb";
+
+/**
+ * Validate MCP_MAX_BODY_SIZE before it reaches express.json(). A raw value is
+ * dangerous: body-parser's bytes() reads an unknown-unit string ("unlimited") as
+ * null → NO limit (a memory-exhaustion DoS the 100 KB default prevented), and a
+ * spelled-out or space-separated unit ("5 megabytes") as a handful of BYTES → every
+ * real request 413s. So trim, accept only a plain byte count or a number + size
+ * unit (matching what bytes() understands), and otherwise warn and fall back.
+ */
+function resolveMaxBodySize(): string {
+  const raw = process.env.MCP_MAX_BODY_SIZE?.trim();
+  if (!raw) return DEFAULT_MAX_BODY_SIZE;
+  if (/^\d+$/.test(raw) || /^\d+(\.\d+)?\s*(b|kb|mb|gb|tb|pb)$/i.test(raw)) return raw;
+  console.warn(
+    `⚠️  Ignoring invalid MCP_MAX_BODY_SIZE "${raw}" — falling back to ${DEFAULT_MAX_BODY_SIZE}. ` +
+      `Use a byte count (e.g. 5242880) or a number with a unit (e.g. "5mb").`,
+  );
+  return DEFAULT_MAX_BODY_SIZE;
+}
+
+const MAX_BODY_SIZE = resolveMaxBodySize();
+
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: MAX_BODY_SIZE }));
 
 // Initialize OpenL client (default from environment)
 let defaultClient: OpenLClient | null = null;
