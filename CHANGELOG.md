@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `openl-mcp login` / `openl-mcp logout`: browser-based sign-in that mints and caches an OpenL Personal Access Token, so the server authenticates automatically without manually copy-pasting a token. Requires an OpenL Studio in OAuth2 mode; an explicit `OPENL_PERSONAL_ACCESS_TOKEN` / `--token` still takes precedence over the cached login.
 - `openl_delete_table` tool to delete an entire table from a project (`DELETE /projects/{projectId}/tables/{tableId}`).
 - `openl_get_table` raw view options: `startRow`/`maxRows` read a large table in row slices (a windowed response reports the table's `totalRows`), and `styles=true` returns each cell's Excel style (background/font colour, bold/italic/underline, alignment, indent, borders).
+- A development plan for aligning the server with the upcoming MCP 2026-07-28 specification (stateless protocol core, authorization hardening, extensions): [docs/development/mcp-spec-alignment.md](docs/development/mcp-spec-alignment.md).
 
 ### Changed
 
@@ -103,6 +104,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Resolved all known `npm audit` advisories in the dependency tree, including the high-severity `hono` path-traversal issue (pulled in transitively via the MCP SDK) and a `js-yaml` denial-of-service issue in the test toolchain (pinned to a patched version via an override). `npm audit` now reports zero vulnerabilities.
+- `openl-mcp login` now validates the `iss` parameter of the OAuth authorization response (RFC 9207) against the configured issuer, rejecting authorization-server mix-up attempts, and records the issuer alongside the cached token. The loopback result page also HTML-escapes callback-derived text, so a crafted callback can't inject markup into the browser tab.
 
 ## [1.0.0] - 2026-02-23
 

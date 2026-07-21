@@ -57,6 +57,20 @@ function base64url(buf: Buffer): string {
   return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+/**
+ * Escape a string for interpolation into the loopback result page. The failure
+ * text can embed callback query parameters (`error`, `iss`) an attacker can
+ * influence — unescaped, that is reflected XSS in the user's browser.
+ */
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 /** Open `url` in the system browser; best-effort, non-fatal. */
 function openInBrowser(url: string): void {
   try {
@@ -88,6 +102,55 @@ export function formatExpiry(date: Date): string {
 interface OidcMetadata {
   authorization_endpoint: string;
   token_endpoint: string;
+}
+
+/**
+ * Normalize an issuer identifier for comparison: lower-case the scheme and
+ * host (case-insensitive per URL rules) and strip trailing slashes, keeping
+ * the path's case (realm names are case-sensitive). Non-URL values fall back
+ * to trailing-slash stripping.
+ */
+function normalizeIssuer(issuer: string): string {
+  try {
+    const u = new URL(issuer);
+    const path = u.pathname.replace(/\/+$/, "");
+    return `${u.protocol}//${u.host}${path}`;
+  } catch {
+    return issuer.replace(/\/+$/, "");
+  }
+}
+
+/**
+ * Validate the authorization-response parameters delivered to the loopback
+ * callback and return the authorization code.
+ *
+ * Rejects (by throwing) when the IdP reported an `error`, when the `state`
+ * does not match the one this login sent (CSRF), or when an `iss` parameter is
+ * present but names a different authorization server than the configured
+ * issuer (RFC 9207 — defends against authorization-server mix-up in exactly
+ * our shape: one CLI talking to many deployments/IdPs). An absent `iss` is
+ * accepted, since IdPs predating RFC 9207 don't send it.
+ */
+export function validateAuthorizationCallback(
+  params: URLSearchParams,
+  expected: { state: string; issuer: string },
+): string {
+  const err = params.get("error");
+  if (err) throw new Error(`Authorization denied: ${err}`);
+  const returnedState = params.get("state");
+  if (!returnedState || returnedState !== expected.state) {
+    throw new Error("OAuth state mismatch — aborting");
+  }
+  const iss = params.get("iss");
+  if (iss !== null && normalizeIssuer(iss) !== normalizeIssuer(expected.issuer)) {
+    throw new Error(
+      `OAuth issuer mismatch: the authorization response names ${iss}, ` +
+        `but this login was started against ${expected.issuer} — aborting`,
+    );
+  }
+  const code = params.get("code");
+  if (!code) throw new Error("No authorization code in callback");
+  return code;
 }
 
 /** Fetch OIDC discovery metadata from the issuer. */
@@ -128,9 +191,10 @@ export async function assertPatSupported(baseUrl: string): Promise<void> {
 /**
  * Run the loopback listener: start on an ephemeral 127.0.0.1 port, return the
  * redirect URI and a promise that resolves with the `code` once the browser is
- * redirected back. Validates `state` to defend against CSRF/mix-up.
+ * redirected back. The authorization response is checked by
+ * {@link validateAuthorizationCallback} (CSRF `state`, RFC 9207 `iss`).
  */
-function startLoopback(expectedState: string, timeoutMs: number): Promise<{ redirectUri: string; code: Promise<string> }> {
+function startLoopback(expected: { state: string; issuer: string }, timeoutMs: number): Promise<{ redirectUri: string; code: Promise<string> }> {
   return new Promise((resolveSetup, rejectSetup) => {
     let resolveCode!: (code: string) => void;
     let rejectCode!: (err: Error) => void;
@@ -142,20 +206,22 @@ function startLoopback(expectedState: string, timeoutMs: number): Promise<{ redi
         res.writeHead(404).end();
         return;
       }
-      const err = reqUrl.searchParams.get("error");
-      const returnedState = reqUrl.searchParams.get("state");
-      const returnedCode = reqUrl.searchParams.get("code");
       const finish = (ok: boolean, msg: string): void => {
         res.writeHead(ok ? 200 : 400, { "Content-Type": "text/html; charset=utf-8" });
         res.end(`<!doctype html><meta charset=utf-8><title>OpenL MCP</title>` +
           `<body style="font-family:system-ui;padding:3rem;text-align:center">` +
           `<h2>${ok ? "✅ Connected to OpenL Studio" : "❌ Login failed"}</h2>` +
-          `<p>${msg}</p><p>You can close this tab and return to your terminal.</p>`);
+          `<p>${escapeHtml(msg)}</p><p>You can close this tab and return to your terminal.</p>`);
         setTimeout(() => server.close(), 100);
       };
-      if (err) { finish(false, `Authorization error: ${err}`); rejectCode(new Error(`Authorization denied: ${err}`)); return; }
-      if (!returnedState || returnedState !== expectedState) { finish(false, "State mismatch."); rejectCode(new Error("OAuth state mismatch — aborting")); return; }
-      if (!returnedCode) { finish(false, "No authorization code returned."); rejectCode(new Error("No authorization code in callback")); return; }
+      let returnedCode: string;
+      try {
+        returnedCode = validateAuthorizationCallback(reqUrl.searchParams, expected);
+      } catch (error) {
+        finish(false, (error as Error).message);
+        rejectCode(error as Error);
+        return;
+      }
       finish(true, "Authorization complete.");
       resolveCode(returnedCode);
     });
@@ -287,7 +353,7 @@ export async function runLoginCli(argv: string[]): Promise<number> {
     const challenge = base64url(createHash("sha256").update(verifier).digest());
     const state = base64url(randomBytes(16));
 
-    const { redirectUri, code: codePromise } = await startLoopback(state, opts.authTimeoutMs);
+    const { redirectUri, code: codePromise } = await startLoopback({ state, issuer: opts.issuer }, opts.authTimeoutMs);
 
     const authUrl = new URL(meta.authorization_endpoint);
     authUrl.search = new URLSearchParams({
@@ -308,7 +374,7 @@ export async function runLoginCli(argv: string[]): Promise<number> {
     const accessToken = await exchangeCode(meta, { clientId: opts.clientId, code, redirectUri, verifier });
     const pat = await mintPat(opts.baseUrl, accessToken, opts.tokenName, opts.tokenTtlSeconds);
 
-    await setCachedToken(opts.baseUrl, { token: pat.token, loginName: pat.loginName, expiresAt: pat.expiresAt });
+    await setCachedToken(opts.baseUrl, { token: pat.token, loginName: pat.loginName, expiresAt: pat.expiresAt, issuer: opts.issuer });
 
     console.error(`\n✅ Signed in as "${pat.loginName}". A Personal Access Token "${opts.tokenName}" was created and cached.`);
     console.error(`   It expires ${pat.expiresAt}. Run "openl-mcp logout" to remove it.`);

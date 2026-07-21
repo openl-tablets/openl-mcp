@@ -187,7 +187,8 @@ Omit `headers` for a single-user Studio. For remote access, put the server behin
 the token isn't sent in the clear.
 
 In `--http` mode the server uses the MCP **Streamable HTTP** transport (MCP spec 2025-11-25).
-It does not support deprecated SSE transport.
+It does not support deprecated SSE transport. The path to the next protocol revision
+(2026-07-28) is planned in the [MCP Spec Alignment Plan](../development/mcp-spec-alignment.md).
 
 ### Docker tips
 

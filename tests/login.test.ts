@@ -21,6 +21,8 @@ import {
   exchangeCode,
   mintPat,
   runLoginCli,
+  validateAuthorizationCallback,
+  escapeHtml,
 } from "../src/login.js";
 
 /** Build a minimal Response-like object for the fetch stub. */
@@ -180,6 +182,60 @@ describe("mintPat", () => {
   it("rejects on a non-OK mint response", async () => {
     fetchMock.mockResolvedValue(fakeResponse({ ok: false, status: 403, text: "forbidden" }) as never);
     await expect(mintPat("http://s", "AT", "n", 60)).rejects.toThrow(/Minting.*HTTP 403/s);
+  });
+});
+
+describe("validateAuthorizationCallback", () => {
+  const expected = { state: "s1", issuer: "https://idp.example.com/realms/openl" };
+  const params = (q: Record<string, string>): URLSearchParams => new URLSearchParams(q);
+
+  it("returns the code when state matches and no iss is present (pre-RFC 9207 IdP)", () => {
+    expect(validateAuthorizationCallback(params({ state: "s1", code: "c1" }), expected)).toBe("c1");
+  });
+
+  it("accepts a matching iss regardless of trailing slash and host case", () => {
+    const iss = "https://IDP.example.com/realms/openl/";
+    expect(validateAuthorizationCallback(params({ state: "s1", code: "c1", iss }), expected)).toBe("c1");
+  });
+
+  it("rejects an iss naming a different authorization server (mix-up defense, RFC 9207)", () => {
+    const iss = "https://attacker.example.com/realms/openl";
+    expect(() => validateAuthorizationCallback(params({ state: "s1", code: "c1", iss }), expected))
+      .toThrow(/issuer mismatch/i);
+  });
+
+  it("rejects an iss naming a different realm on the same host", () => {
+    const iss = "https://idp.example.com/realms/other";
+    expect(() => validateAuthorizationCallback(params({ state: "s1", code: "c1", iss }), expected))
+      .toThrow(/issuer mismatch/i);
+  });
+
+  it("rejects a state mismatch even when the iss and code are valid", () => {
+    const iss = "https://idp.example.com/realms/openl";
+    expect(() => validateAuthorizationCallback(params({ state: "evil", code: "c1", iss }), expected))
+      .toThrow(/state mismatch/i);
+  });
+
+  it("surfaces an IdP-reported error before anything else", () => {
+    expect(() => validateAuthorizationCallback(params({ error: "access_denied", state: "s1", code: "c1" }), expected))
+      .toThrow(/access_denied/);
+  });
+
+  it("rejects a callback that carries no authorization code", () => {
+    expect(() => validateAuthorizationCallback(params({ state: "s1" }), expected))
+      .toThrow(/no authorization code/i);
+  });
+});
+
+describe("escapeHtml", () => {
+  it("neutralizes HTML metacharacters so callback-derived text can't inject markup", () => {
+    // The shape of a reflected-XSS attempt via the `error`/`iss` query params.
+    expect(escapeHtml(`<script>alert("x&y")</script>'`))
+      .toBe("&lt;script&gt;alert(&quot;x&amp;y&quot;)&lt;/script&gt;&#39;");
+  });
+
+  it("passes plain failure text through unchanged", () => {
+    expect(escapeHtml("OAuth state mismatch — aborting")).toBe("OAuth state mismatch — aborting");
   });
 });
 

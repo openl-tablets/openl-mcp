@@ -26,6 +26,14 @@ export interface CachedCredential {
   loginName?: string;
   /** ISO-8601 expiry, when known. A past value means "treat as absent". */
   expiresAt?: string;
+  /**
+   * Issuer (authorization server) whose access token minted this PAT, when the
+   * credential came from the browser `login` flow. Provenance today; becomes
+   * required keying material the moment credentials issued by the AS itself
+   * (e.g. refresh tokens) are cached — those must be keyed by issuer and never
+   * replayed against a different one (MCP SEP-2352).
+   */
+  issuer?: string;
 }
 
 /** File shape: a map of normalized base URL → credential. */
