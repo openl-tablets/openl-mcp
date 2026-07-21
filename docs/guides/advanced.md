@@ -68,23 +68,12 @@ You create a PAT in the OpenL Studio UI; your Studio must use **OAuth2, SAML, or
 - Shown **once** — copy it right away.
 - Revoke or expire it any time from the UI.
 
-### Sign in from the browser (`openl-mcp login`)
-
-For OAuth2 deployments you can skip the manual copy/paste and let the CLI sign you in:
-
-```bash
-openl-mcp login <openl-url> --issuer <idp-realm-url> [--client-id openl-cli]
-```
-
-This runs an OAuth 2.0 Authorization Code + PKCE flow (RFC 7636) over a loopback
-redirect (RFC 8252): your browser opens, you approve, and the CLI mints a PAT and
-caches it at `~/.config/openl-mcp/credentials.json` (mode `0600`), keyed per Studio
-URL. The server then picks it up automatically — no `env` token needed.
-
-- `--issuer` is your identity provider's realm URL (e.g. `https://idp.example.com/realms/openlstudio`); also settable via `OPENL_OAUTH_ISSUER`. `--client-id` defaults to `openl-cli` (`OPENL_OAUTH_CLIENT_ID`). Your IdP must register that client as a public client with PKCE and a loopback redirect (`http://127.0.0.1/*`), and issue tokens whose audience Studio accepts.
-- Precedence when the server starts: an explicit `OPENL_PERSONAL_ACCESS_TOKEN` / `--token` wins; otherwise a cached login token is used; otherwise the request is anonymous.
-- `openl-mcp logout [<openl-url>]` removes the cached token (all servers if the URL is omitted).
-- Run `openl-mcp login --no-browser` on a headless host to print the URL instead of opening a browser.
+The token is the only credential the server understands: an explicit
+`OPENL_PERSONAL_ACCESS_TOKEN` / `--token` when present, otherwise requests are
+anonymous (single-user Studio). A blank/whitespace token is treated as absent, so an
+empty setting never sends an empty credential. (Browser sign-in — `openl-mcp login`
+with its `~/.config/openl-mcp/credentials.json` cache — existed in the 1.1.0 release
+and has been removed.)
 
 ### Where the token goes
 
@@ -199,32 +188,8 @@ It does not support deprecated SSE transport.
 
 ## CLI mode
 
-The same binary doubles as a command-line tool for direct API calls — handy for scripting, CI/CD, or debugging one
-call without an MCP client. Give it a tool name (or a discovery flag) and it runs in CLI mode; give it nothing (or
-just a URL) and it starts the stdio server.
-
-```bash
-# Discover (no config needed)
-npx -y openl-mcp --help                       # human catalog
-npx -y openl-mcp --list-tools | jq '.[].name' # machine-readable
-
-# One call — markdown by default
-npx -y openl-mcp http://localhost:8080 list_repositories --token <your-token>
-
-# JSON for jq pipelines
-npx -y openl-mcp http://localhost:8080 \
-  list_projects '{"status":"OPENED","response_format":"json"}' \
-  --token <your-token> | jq '.data[].name'
-```
-
-Key points:
-
-- **Tool names drop the `openl_` prefix** — `list_repositories`, not `openl_list_repositories`.
-- Pass arguments as inline JSON, `@file.json`, or `--stdin`.
-- Output is **markdown** by default; request `response_format: "json"` to pipe into `jq`.
-- Auth: `--token` or `OPENL_PERSONAL_ACCESS_TOKEN` (omit for a single-user server).
-- Exit codes follow `sysexits.h` (e.g. `77` = auth failure, `78` = bad config) so CI can tell apart don't-retry
-  from might-retry failures.
-
-Full reference — every flag, argument-passing modes, recipes, exit codes, and cross-platform notes:
+The same binary doubles as a command-line tool: give it a tool name
+(`npx -y openl-mcp <url> list_repositories`) and it makes one direct API call instead
+of starting the server — handy for scripting, CI/CD, or debugging. Full reference —
+configuration, flags, argument passing, output formats, recipes, and exit codes:
 **[CLI Guide](cli.md)**.

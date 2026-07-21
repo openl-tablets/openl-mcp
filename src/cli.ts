@@ -22,8 +22,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { OpenLClient } from "./client.js";
 import { SERVER_INFO, TOOL_CATEGORIES } from "./constants.js";
 import { executeTool, getAllTools, registerAllTools } from "./handlers/index.js";
-import { getCachedToken, normalizeToken } from "./token-cache.js";
-import { hashFingerprint, sanitizeError } from "./utils.js";
+import { hashFingerprint, sanitizeError, normalizeToken } from "./utils.js";
 import type * as Types from "./types.js";
 
 /**
@@ -352,8 +351,8 @@ function buildConfig(
   // Authentication is optional, matching the stdio server: not supplying a
   // token simply means an unauthenticated (anonymous) request. There is no
   // separate flag for that — it is the absence of `--token`. A blank/whitespace
-  // token is treated as absent (via normalizeToken) so it can't mask the cached
-  // login fallback below.
+  // token is treated as absent (via normalizeToken) so it never sends an empty
+  // credential.
   const personalAccessToken = normalizeToken(overrides.token ?? env.OPENL_PERSONAL_ACCESS_TOKEN);
 
   let timeout = overrides.timeout;
@@ -630,8 +629,6 @@ function renderHelp(): string {
     ``,
     `Usage:`,
     `  openl-mcp <url>                                  start the MCP server (stdio) for <url>`,
-    `  openl-mcp login <url> [--issuer <url>]           sign in via browser; cache a Personal Access Token`,
-    `  openl-mcp logout [<url>]                          remove cached login token(s)`,
     `  openl-mcp <url> <tool-name> [args] [flags]       run one tool against <url>`,
     `  openl-mcp <tool-name> [args] [flags]             run one tool (url via --base-url / OPENL_BASE_URL)`,
     `  openl-mcp <tool-name> --help                     detailed help for a tool`,
@@ -803,13 +800,6 @@ export async function runCli(options: RunCliOptions): Promise<number> {
         EXIT_CODES.CONFIG,
       );
     }
-    // No explicit token (flag/env)? Fall back to a credential cached by
-    // `openl-mcp login`, mirroring the stdio server's precedence.
-    if (!config.personalAccessToken) {
-      const cached = await getCachedToken(config.baseUrl);
-      if (cached) config.personalAccessToken = cached;
-    }
-
     const client = (options.clientFactory ?? ((c) => new OpenLClient(c)))(config);
 
     // Cookie-jar: restore JSESSIONID from previous invocation so

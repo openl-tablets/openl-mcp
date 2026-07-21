@@ -1,62 +1,59 @@
 # openl-mcp
 
-[Model Context Protocol](https://modelcontextprotocol.io/) server for [OpenL Studio](https://github.com/openl-tablets/openl-tablets) — the open-source Business Rules Management System.
+Let an AI assistant work with your [OpenL Studio](https://openl-tablets.org/)
+business rules — ask Claude, Cursor, or VS Code Copilot in plain language to view,
+edit, test, and deploy rules. This package is the connector (an
+[MCP](https://modelcontextprotocol.io/) server) between your AI client and OpenL
+Studio.
 
-Exposes OpenL Studio repositories, projects, rules tables, tests, and deployments as MCP tools and expert-guidance prompts, so Claude Desktop, Cursor, and any other MCP-compatible client can manage rules end-to-end.
+**Setting this up for Claude, Cursor, or VS Code? Follow the
+[Quick Start](https://github.com/openl-tablets/openl-mcp/blob/main/docs/guides/quick-start.md)**
+— you paste one configuration block into your AI client; the client runs this
+package for you via `npx`. The sections below are for manual and advanced use.
 
-## Install
+## What you get
 
-Run ad-hoc with `npx` (recommended for MCP clients) — pass your OpenL Studio URL as the argument:
+- **Tools** covering OpenL Studio repositories, projects, files, rules tables,
+  tests, an interactive rule debugger (tracing), and deployments (all prefixed `openl_`)
+- **14 expert-guidance prompts** (`create_rule`, `deploy_project`, `run_test`, …) for complex OpenL Studio workflows
+- **Multiple response formats** — `json`, `markdown`, `markdown_concise`, `markdown_detailed`
+
+Details and tool reference: [Usage Examples](https://github.com/openl-tablets/openl-mcp/blob/main/docs/guides/examples.md).
+
+## Install & configure (manual use)
+
+Run ad-hoc with `npx` — pass your OpenL Studio URL as the argument (this starts
+the MCP server on stdio and waits for an MCP client; it is not meant to be used
+interactively on its own):
 
 ```bash
 npx -y openl-mcp http://localhost:8080
 ```
 
-Or install globally:
+Or install globally: `npm install -g openl-mcp`, then `openl-mcp <url>`.
 
-```bash
-npm install -g openl-mcp
-openl-mcp http://localhost:8080
-```
-
-> The base URL can also come from the `OPENL_BASE_URL` environment variable instead of the positional argument (the positional wins if both are set).
+- The base URL can also come from the `OPENL_BASE_URL` environment variable
+  (the positional argument wins if both are set).
+- Authentication is **optional** — single-user OpenL Studio accepts
+  unauthenticated requests. To authenticate, set
+  `OPENL_PERSONAL_ACCESS_TOKEN=<your-token>` (or pass `--token`); create the
+  token in OpenL Studio under **User Settings → Personal Access Tokens**.
+- Other settings: `OPENL_TIMEOUT` / `--timeout`, and more in the
+  [Advanced Guide](https://github.com/openl-tablets/openl-mcp/blob/main/docs/guides/advanced.md#server-settings).
 
 **Requirements:** Node.js **≥ 24** — or just Docker, see [No Node.js? Use Docker](#no-nodejs-use-docker).
 
-## Configure
-
-Point the server at your OpenL Studio instance with a **positional URL** (preferred) or the `OPENL_BASE_URL` environment variable:
-
-```bash
-# Base URL as the positional argument (preferred)
-npx -y openl-mcp http://localhost:8080
-
-# …or via the environment variable
-OPENL_BASE_URL=http://localhost:8080 npx -y openl-mcp
-```
-
-Authentication is **optional** — OpenL Studio single-user mode accepts unauthenticated requests. To authenticate, set a Personal Access Token (env var or matching CLI flag):
-
-```bash
-# Personal Access Token
-OPENL_PERSONAL_ACCESS_TOKEN=<your-token>   # or --token
-
-# Optional
-OPENL_TIMEOUT=60000              # or --timeout
-```
-
-Full auth guide: [Authentication](https://github.com/openl-tablets/openl-mcp/blob/main/docs/guides/advanced.md#authentication).
-
 ## Use with Claude Desktop
 
-Add to `claude_desktop_config.json`:
+Add to `claude_desktop_config.json` (in Claude Desktop: **Settings → Developer →
+Edit Config**):
 
 ```json
 {
   "mcpServers": {
     "openl": {
       "command": "npx",
-      "args": ["-y", "openl-mcp", "<your-openl-studio-host>"],
+      "args": ["-y", "openl-mcp", "<your-openl-studio-url>"],
       "env": {
         "OPENL_PERSONAL_ACCESS_TOKEN": "<your-token>"
       }
@@ -65,43 +62,22 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
-The base URL is passed as the positional argument. Alternatively, drop it from `args` and set `OPENL_BASE_URL` in `env`. The `env` block holds auth and is optional — omit it for single-user servers that don't require credentials.
+The base URL is passed as the positional argument. The `env` block holds auth —
+omit it for single-user servers that don't require credentials.
 
 For Claude Code (`claude mcp add openl -- npx -y openl-mcp <url>`), Cursor, and VS Code, see the [Quick Start](https://github.com/openl-tablets/openl-mcp/blob/main/docs/guides/quick-start.md).
 
 ## Use as a CLI (direct API calls, no MCP client)
 
-The same binary can invoke any `openl_*` tool directly from the shell — useful for scripting, CI, and ad-hoc debugging without setting up an MCP client. CLI mode is **agent-first**: output defaults to markdown (LLM-friendly, same as the MCP server); pass `response_format: "json"` when you want to pipe into `jq`.
+The same binary can invoke any tool directly from the shell — useful for
+scripting, CI, and ad-hoc debugging:
 
 ```bash
-# Quick discovery (no config needed)
-npx -y openl-mcp --help          # human catalog (tool titles)
-npx -y openl-mcp --list-tools    # machine-readable JSON (name/title/schema)
-
-# Single call — base URL as a positional argument (markdown by default).
-# Tool names drop the openl_ prefix on the CLI (use list_repositories, not openl_list_repositories).
-npx -y openl-mcp <host> list_repositories --token <pat>
-
-# …or via env vars
-OPENL_BASE_URL=<host> OPENL_PERSONAL_ACCESS_TOKEN=<pat> \
-  npx -y openl-mcp list_repositories
-
-# JSON for jq pipelines
-npx -y openl-mcp <host> list_repositories '{"response_format":"json"}' --token <pat> | jq
+npx -y openl-mcp --help                              # tool catalog, no config needed
+npx -y openl-mcp <url> list_repositories --token <pat>   # one direct call
 ```
 
-**See the [CLI Guide](https://github.com/openl-tablets/openl-mcp/blob/main/docs/guides/cli.md)** for the full reference: configuration, all flags (`--base-url`, `--token`, `--timeout`, `--cookie-jar`), argument-passing modes (`@file.json`, `--stdin`), session handling for trace flows, recipes, exit codes, Windows notes, and troubleshooting.
-
-Run with just a `<url>` (and no tool name) — or with no arguments at all (falling back to `OPENL_BASE_URL`) — to start the MCP server on stdio.
-
-## What you get
-
-- **40 active tools** for repositories, projects, rules tables, tests, and deployments (all prefixed `openl_`)
-- **14 expert-guidance prompts** (`create_rule`, `deploy_project`, `run_test`, …) for complex OpenL Studio workflows
-- **Type-safe validation** via Zod schemas
-- **Multiple response formats** — `json`, `markdown`, `markdown_concise`, `markdown_detailed`
-
-Details and tool reference: [Usage Examples](https://github.com/openl-tablets/openl-mcp/blob/main/docs/guides/examples.md).
+**See the [CLI Guide](https://github.com/openl-tablets/openl-mcp/blob/main/docs/guides/cli.md)** for the full reference: flags, argument passing, output formats, exit codes, and recipes.
 
 ## No Node.js? Use Docker
 

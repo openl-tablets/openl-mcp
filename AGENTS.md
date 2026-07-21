@@ -179,11 +179,9 @@ Expert guidance templates for complex OpenL workflows:
 Authentication is optional — an OpenL Studio in single-user mode accepts
 unauthenticated requests. Otherwise a Personal Access Token (PAT) is used. The token
 always comes from the client (its `env` for stdio, or the `Authorization` header for
-HTTP), never from the server. A PAT can be supplied directly
-(`OPENL_PERSONAL_ACCESS_TOKEN` / `--token`) or obtained via the browser with
-`openl-mcp login <url> --issuer <idp-realm-url>` (OAuth2 deployments), which signs in,
-mints a PAT, and caches it so the server authenticates automatically thereafter.
-Setup: [docs/guides/quick-start.md](docs/guides/quick-start.md).
+HTTP), never from the server. A PAT is supplied as
+`OPENL_PERSONAL_ACCESS_TOKEN` / `--token`; without one, requests are anonymous
+(single-user Studio). Setup: [docs/guides/quick-start.md](docs/guides/quick-start.md).
 
 ## Response formatting
 

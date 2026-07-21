@@ -6,7 +6,7 @@ This document provides an overview of all OpenL MCP Server releases. For detaile
 
 ## Latest Release
 
-### [Version 1.1.0](docs/release-notes/v1.1.0.md) - July 7, 2026
+### [Version 1.1.0](docs/release-notes/v1.1.0.md) - July 6, 2026
 
 **Highlights:**
 - 🚀 52 production-ready tools (up from 40) with 11 new raw table-source action tools
@@ -28,7 +28,7 @@ Built on Model Context Protocol v1.29.0, this release focuses on improving the a
 
 ## All Releases
 
-### Version 1.1.0 - July 2, 2026
+### Version 1.1.0 - July 6, 2026
 Major update with 52 tools, CLI mode, simplified deployment, Streamable HTTP transport, and automatic table ID resolution.  
 [View Details →](docs/release-notes/v1.1.0.md)
 

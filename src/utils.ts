@@ -529,3 +529,14 @@ export function setRulesXmlProjectName(xml: string, newName: string): string {
   return xml.replace(/<name>[\s\S]*?<\/name>/, () => `<name>${escapeXmlText(newName)}</name>`);
 }
 
+
+/**
+ * Normalize an explicit Personal Access Token: treat `undefined` and
+ * blank/whitespace-only strings (e.g. an unset `${user_config.studio_token}`
+ * that expands to `""`) as absent, so a blank setting never sends an empty
+ * credential. Shared by the stdio server and the CLI so their handling of a
+ * blank token can't drift.
+ */
+export function normalizeToken(raw: string | undefined): string | undefined {
+  return raw && raw.trim() !== "" ? raw : undefined;
+}

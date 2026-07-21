@@ -10,7 +10,7 @@ Each version has its own file containing the complete release notes:
 release-notes/
 ├── README.md                    # This file
 ├── v1.0.0.md                    # Release notes for 1.0.0
-├── v1.1.0.md                    # Release notes for 1.1.0 (future)
+├── v1.1.0.md                    # Release notes for 1.1.0
 └── ...
 ```
 
@@ -152,7 +152,7 @@ Links to relevant documentation...
 
 | Version | Release Date | Highlights |
 |---------|--------------|------------|
-| [1.1.0](v1.1.0.md) | July 2026 (planned) | Surgical table edits, smarter traces, clearer errors, simpler IT setup |
+| [1.1.0](v1.1.0.md) | July 6, 2026 | Surgical table edits, smarter traces, clearer errors, simpler IT setup |
 | [1.0.0](v1.0.0.md) | February 23, 2026 | Initial stable release with 40 tools, multi-client support |
 
 ### Upcoming Versions

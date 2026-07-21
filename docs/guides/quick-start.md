@@ -10,10 +10,10 @@ Your AI client starts the OpenL server for you in the background. You do not ins
 
 ## What you will do
 
-1. Check you have what you need (see below).
-2. Create an access token (optional if local OpenL Demo is used).
-3. Add the OpenL MCP server configuration to your AI client.
-4. Send one test message.
+1. Check you have what you need (**Before you start**, below).
+2. Create an access token — skip if your OpenL Studio has no login screen (**Step 1**).
+3. Add the OpenL MCP server configuration to your AI client (**Step 2**).
+4. Send one test message (**Step 3**).
 
 This takes about 5 minutes.
 
@@ -24,12 +24,14 @@ You need:
 1. **An AI client** — the app you chat with. This guide sets up Claude Desktop, Codex, VS Code (GitHub Copilot),
    Cursor, or Claude Code.
 2. **Your OpenL Studio web address.** Open OpenL Studio in your web browser. The address shown on its home page —
-   the one in the browser's address bar — is what you need, for example `http://localhost:8080/webstudio`. Copy it.
+   the one in the browser's address bar — is what you need, for example `http://localhost:8080/webstudio`
+   (yours may be different, and may not end in `/webstudio` at all). Copy it up to there — drop anything
+   that follows, like `/#/repository/...`.
    No OpenL Studio yet? Start one with the
    [OpenL Tablets DEMO Setup Guide](https://openl-tablets.github.io/openl-tablets/user-guides/getting-started/demo-package/).
 3. **Node.js 24 or newer** — the program that runs the OpenL server on your computer.
    **Claude Desktop** has Node.js built in, so skip this step if you use Claude Desktop. For every other AI client,
-   check it in a terminal:
+   check it in a terminal (macOS: the **Terminal** app; Windows: **PowerShell** or Command Prompt):
    ```bash
    node -v
    ```
@@ -54,12 +56,18 @@ The token looks like this: `openl_pat_AbC123.dEf456`.
 Find your AI client below and copy the whole configuration block. Then, in what you pasted:
 
 - Replace `http://localhost:8080/webstudio` with your own OpenL Studio address (from **Before you start**).
-- Replace `<your-token>` with the token from Step 1, or
-  delete the `OPENL_PERSONAL_ACCESS_TOKEN` env variable definition, if the token is not required.
+- Replace `<your-token>` with the token from Step 1. If you skipped Step 1 (single-user Studio),
+  remove the token setting entirely — how depends on the block's format:
+  - **JSON** (Claude Desktop, Cursor, VS Code): delete the whole `env` line **and** the comma at
+    the end of the line above it.
+  - **Codex** (TOML): delete the `[mcp_servers.openl.env]` line **and** the
+    `OPENL_PERSONAL_ACCESS_TOKEN` line under it (there is no comma to remove).
+  - **Claude Code**: use the **No token** command shown in that section instead.
 
 ### Claude Desktop
 
-Open this file (create it if it is missing):
+Easiest way: in Claude Desktop open **Settings → Developer → Edit Config** — it opens this
+file for you. Or find it by path (create it if it is missing):
 
 | Your OS | File                                                              |
 |---------|-------------------------------------------------------------------|
@@ -83,20 +91,38 @@ Put this inside:
 
 Quit Claude Desktop and open it again.
 
-### Codex
+### Claude Code
 
-Open `~/.codex/config.toml` (create it if it is missing). Add this block:
+Run this in a terminal (macOS: the **Terminal** app; Windows: **PowerShell** or Command Prompt):
 
-```toml
-[mcp_servers.openl]
-command = "npx"
-args = ["-y", "openl-mcp", "http://localhost:8080/webstudio"]
+```bash
+# With a Personal Access Token:
+claude mcp add openl --env OPENL_PERSONAL_ACCESS_TOKEN=<your-token> \
+  -- npx -y openl-mcp http://localhost:8080/webstudio
 
-[mcp_servers.openl.env]
-OPENL_PERSONAL_ACCESS_TOKEN = "<your-token>"
+# No token (single-user Studio):
+claude mcp add openl -- npx -y openl-mcp http://localhost:8080/webstudio
 ```
 
-Restart Codex.
+Check it: `claude mcp list` shows `openl` as connected.
+
+### Cursor
+
+Open `~/.cursor/mcp.json` (for all projects) or `.cursor/mcp.json` (this project only). Put this inside:
+
+```json
+{
+  "mcpServers": {
+    "openl": {
+      "command": "npx",
+      "args": ["-y", "openl-mcp", "http://localhost:8080/webstudio"],
+      "env": { "OPENL_PERSONAL_ACCESS_TOKEN": "<your-token>" }
+    }
+  }
+}
+```
+
+Restart Cursor. **Settings → MCP** shows `openl`.
 
 ### VS Code (GitHub Copilot)
 
@@ -120,38 +146,20 @@ You need GitHub Copilot with Agent mode. Open `.vscode/mcp.json` in your project
 
 Open the Copilot Chat **Agent** tools menu and turn on the OpenL tools.
 
-### Cursor
+### Codex
 
-Open `~/.cursor/mcp.json` (for all projects) or `.cursor/mcp.json` (this project only). Put this inside:
+Open `~/.codex/config.toml` (create it if it is missing). Add this block:
 
-```json
-{
-  "mcpServers": {
-    "openl": {
-      "command": "npx",
-      "args": ["-y", "openl-mcp", "http://localhost:8080/webstudio"],
-      "env": { "OPENL_PERSONAL_ACCESS_TOKEN": "<your-token>" }
-    }
-  }
-}
+```toml
+[mcp_servers.openl]
+command = "npx"
+args = ["-y", "openl-mcp", "http://localhost:8080/webstudio"]
+
+[mcp_servers.openl.env]
+OPENL_PERSONAL_ACCESS_TOKEN = "<your-token>"
 ```
 
-Restart Cursor. **Settings → MCP** shows `openl`.
-
-### Claude Code
-
-Run this in a terminal:
-
-```bash
-# With a login token:
-claude mcp add openl --env OPENL_PERSONAL_ACCESS_TOKEN=<your-token> \
-  -- npx -y openl-mcp http://localhost:8080/webstudio
-
-# No login (single-user Studio):
-claude mcp add openl -- npx -y openl-mcp http://localhost:8080/webstudio
-```
-
-Check it: `claude mcp list` shows `openl` as connected.
+Restart Codex.
 
 ✅ **Checkpoint:** your AI client lists `openl` as connected. Restart the client first if you have not already.
 
