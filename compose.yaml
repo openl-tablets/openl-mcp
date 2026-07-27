@@ -12,7 +12,7 @@
 #   npx -y openl-mcp http://studio:8080 --http
 services:
   studio:
-    image: ghcr.io/openl-tablets/webstudio:x
+    image: ghcr.io/openl-tablets/webstudio
     pull_policy: always
     container_name: openl-studio
     restart: unless-stopped
