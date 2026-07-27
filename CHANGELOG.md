@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same machine, and the silent cache fallback made "cleared token setting" look signed-out while
   requests kept authenticating.
 
+### Fixed
+
+- `docker compose up` no longer fails with `manifest unknown`: the demo `compose.yaml` pulls the
+  OpenL Studio nightly image from `ghcr.io/openl-tablets/webstudio:latest`, since GHCR no longer
+  publishes the `x` tag.
+
 ## [1.1.0] - 2026-07-06
 
 ### Added
