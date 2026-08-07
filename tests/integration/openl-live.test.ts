@@ -183,18 +183,6 @@ describeIntegration('OpenL Studio 6.0.0 Live Integration Tests', () => {
       console.log(`✅ Switched back: ${targetBranch} → ${originalBranch}`);
     });
 
-    test('validate_project endpoint does not exist (expected 404)', async () => {
-      // Note: The /validation endpoint doesn't exist in the REST API
-      try {
-        await client.validateProject(testProjectId);
-        // If we get here, the endpoint unexpectedly exists
-        console.log(`⚠️  Validation endpoint exists (unexpected)`);
-      } catch (error: any) {
-        expect(error.message).toContain('404');
-        console.log(`✅ Validation endpoint returns 404 as expected`);
-      }
-    });
-
     test('openl_update_project_status (close) should succeed', async () => {
       const result = await client.closeProject(testProjectId);
 
@@ -278,26 +266,6 @@ describeIntegration('OpenL Studio 6.0.0 Live Integration Tests', () => {
     }, 30000); // Longer timeout for file download
   });
 
-  // ============================================================================
-  // P2: Advanced Features - Version Control
-  // ============================================================================
-
-  describe('7. Version Control (P2)', () => {
-    test('openl_get_project_history endpoint does not exist (expected 404)', async () => {
-      // Note: The /history endpoint doesn't exist in the REST API
-      try {
-        await client.getProjectHistory({
-          projectId: testProjectId,
-          limit: 10,
-        });
-        // If we get here, the endpoint unexpectedly exists
-        console.log(`⚠️  History endpoint exists (unexpected)`);
-      } catch (error: any) {
-        expect(error.message).toContain('404');
-        console.log(`✅ History endpoint returns 404 as expected`);
-      }
-    });
-  });
 
   // ============================================================================
   // P2: Advanced Features - Dimension Properties

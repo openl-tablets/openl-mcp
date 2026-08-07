@@ -8,44 +8,10 @@ import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import * as schemas from "../schemas.js";
 import type * as Types from "../types.js";
 import { formatResponse, paginateResults } from "../formatters.js";
-import { validateResponseFormat, validatePagination } from "../validators.js";
 import { isAxiosError, sanitizeError } from "../utils.js";
 import { RESPONSE_LIMITS } from "../constants.js";
+import { isValidBase64, looksBinary } from "../content-utils.js";
 import { registerTool, rethrowConflictAsActionable, type ToolResponse } from "./common.js";
-
-/**
- * Heuristic used by openl_read_project_file to decide whether to return file
- * content verbatim (UTF-8 text) or base64-encoded (binary). A NUL byte means
- * binary outright; otherwise we sample the head and flag binary when more than
- * 10% of bytes are control characters (excluding tab/LF/CR).
- */
-function looksBinary(buf: Buffer): boolean {
-  const n = Math.min(buf.length, 8000);
-  if (n === 0) return false;
-  let suspicious = 0;
-  for (let i = 0; i < n; i++) {
-    const b = buf[i];
-    if (b === 0) return true;
-    // Printable + common whitespace (tab 9, LF 10, CR 13) are fine; the rest of
-    // the C0 control range and DEL (127) are "suspicious".
-    if (b < 9 || (b > 13 && b < 32) || b === 127) suspicious++;
-  }
-  return suspicious / n > 0.1;
-}
-
-/**
- * Strict-ish base64 validation for openl_write_project_file. Buffer.from(x,
- * "base64") silently drops invalid characters and stops decoding at the first
- * unparseable run, so without this guard a mislabeled or truncated base64 string
- * would write a corrupted/empty file with success:true. Whitespace is ignored;
- * an empty/whitespace-only string is allowed (writes an empty file).
- */
-function isValidBase64(value: string): boolean {
-  const s = value.replace(/\s+/g, "");
-  if (s.length === 0) return true;
-  if (s.length % 4 !== 0) return false;
-  return /^[A-Za-z0-9+/]*={0,2}$/.test(s);
-}
 
 export function registerFileHandlers(): void {
   registerTool({
@@ -59,40 +25,16 @@ export function registerFileHandlers(): void {
       "(3) a FOLDER path (empty string for the root, or a path ending in '/') lists its entries (use recursive, viewMode FLAT/NESTED, extensions, namePattern, foldersOnly); " +
       "(4) a FOLDER path with download=true returns a ZIP of the folder (base64). " +
       "Optional 'version' reads a historical revision; 'branch' pins the project branch. Optional byte range (offset/length) is applied client-side AFTER fetching the whole file (the backend does not support partial transfers), so the entire file is loaded into memory; for very large/binary files, bound the RETURNED size with offset/length and read in chunks (a full file's base64 can exceed MCP message limits). Use this to read AGENTS.md, README.md, schemas, manifests, or to inspect/export xlsx rule files.",
-    inputSchema: schemas.z.toJSONSchema(schemas.readProjectFileSchema) as Record<string, unknown>,
+    schema: schemas.readProjectFileSchema,
     annotations: {
       readOnlyHint: true,
       idempotentHint: true,
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        path?: string;
-        view?: "meta";
-        download?: boolean;
-        recursive?: boolean;
-        viewMode?: "FLAT" | "NESTED";
-        extensions?: string[];
-        namePattern?: string;
-        foldersOnly?: boolean;
-        version?: string;
-        branch?: string;
-        fields?: string;
-        encoding?: "auto" | "utf-8" | "base64";
-        offset?: number;
-        length?: number;
-        response_format?: "json" | "markdown" | "markdown_concise" | "markdown_detailed";
-      };
+      const typedArgs = args;
 
-      if (!typedArgs || !typedArgs.projectId) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          "Missing required argument: projectId. To find valid project IDs, use: openl_list_projects()"
-        );
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
+      const format = typedArgs.response_format;
       const path = typedArgs.path ?? "";
 
       const { data, contentType, contentDisposition } = await client.readProjectFile(
@@ -184,31 +126,14 @@ export function registerFileHandlers(): void {
       "Create or replace a file in a project by its project-relative path. Provide 'content' as UTF-8 text (default) or base64 (set encoding='base64' for binary files such as xlsx/images). " +
       "COMMIT: pass 'message' to commit the write to Git (a new revision is created); omit 'message' and the write stays in the project WORKING COPY (commit it later with openl_save_project). Committing saves ALL pending project changes and works only for design repositories (not 'local'). " +
       "By default missing parent folders are created (createFolders=true). If the target file already EXISTS, behavior follows conflictPolicy: FAIL (default) returns an error; OVERWRITE replaces the file in place; SKIP leaves the existing file unchanged (reported skipped). Use 'branch' to pin the project's branch (omit for local/non-branch repositories). Use this to add or update docs, schemas, or manifests. (For a NEW file the tool POSTs/creates; OVERWRITE is performed via PUT/update — overwriting a module .xlsx replaces its bytes but to change a module's TABLES use openl_update_table / openl_append_table / openl_create_project_table.)",
-    inputSchema: schemas.z.toJSONSchema(schemas.writeProjectFileSchema) as Record<string, unknown>,
+    schema: schemas.writeProjectFileSchema,
     annotations: {
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        path: string;
-        content: string;
-        encoding?: "utf-8" | "base64";
-        createFolders?: boolean;
-        conflictPolicy?: "FAIL" | "OVERWRITE" | "SKIP";
-        message?: string;
-        branch?: string;
-        response_format?: "json" | "markdown";
-      };
+      const typedArgs = args;
 
-      if (!typedArgs || !typedArgs.projectId || !typedArgs.path || typedArgs.content === undefined) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          "Missing required arguments: projectId, path, content"
-        );
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
+      const format = typedArgs.response_format;
 
       // Buffer.from(x, "base64") silently DROPS invalid characters and stops at
       // the first unparseable run, so mislabeled/truncated base64 would write a
@@ -316,24 +241,15 @@ export function registerFileHandlers(): void {
     title: "Delete Project File",
     description:
       "Delete a file or folder from a project by its project-relative path. Maps to DELETE /projects/{projectId}/files/{path}. The backend auto-cleans dangling references to the deleted resource from the project configuration. Like writes, the deletion is staged in the working copy — commit it with openl_save_project. Use 'branch' to pin the project's branch (omit for local/non-branch repositories). Use this to remove legacy assets or deprecate docs. This is a destructive operation.",
-    inputSchema: schemas.z.toJSONSchema(schemas.deleteProjectFileSchema) as Record<string, unknown>,
+    schema: schemas.deleteProjectFileSchema,
     annotations: {
       destructiveHint: true,
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        path: string;
-        branch?: string;
-        response_format?: "json" | "markdown";
-      };
+      const typedArgs = args;
 
-      if (!typedArgs || !typedArgs.projectId || !typedArgs.path) {
-        throw new McpError(ErrorCode.InvalidParams, "Missing required arguments: projectId, path");
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
+      const format = typedArgs.response_format;
 
       await client.deleteProjectFile(typedArgs.projectId, typedArgs.path, {
         branch: typedArgs.branch,
@@ -358,39 +274,17 @@ export function registerFileHandlers(): void {
     title: "Search Project Files",
     description:
       "Search a project's files and folders by ant-glob path 'pattern' (e.g. 'rules/**/*.xlsx'), file 'extensions', resource 'type' (FILE/FOLDER/ANY), and/or a case-insensitive 'content' substring (full-text). Maps to POST /projects/{projectId}/file-search. IMPORTANT: set recursive=true to search nested folders — by default (recursive omitted/false) only the project's TOP LEVEL is searched, and a '**' glob alone does NOT descend (so a project-wide search needs recursive=true, and to match files in subfolders use a '**/' pattern such as '**/*.xlsx', not '*.xlsx'). Scope SUBTREE (default) searches within the project and may target a historical 'version'; scope ANCESTORS walks up to the repository root. Returns matching nodes (path, name, type, size, ...), paginated client-side via 'limit'/'offset' (the response carries pagination metadata; the server returns the full match set). Use 'branch' to pin the project's branch. Use this for questions like \"where is portability loading mentioned?\" (content, recursive=true) or \"list every xlsx under rules\" (pattern '**/*.xlsx', recursive=true).",
-    inputSchema: schemas.z.toJSONSchema(schemas.searchProjectFilesSchema) as Record<string, unknown>,
+    schema: schemas.searchProjectFilesSchema,
     annotations: {
       readOnlyHint: true,
       idempotentHint: true,
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        pattern?: string;
-        content?: string;
-        extensions?: string[];
-        type?: "FILE" | "FOLDER" | "ANY";
-        scope?: "SUBTREE" | "ANCESTORS";
-        recursive?: boolean;
-        from?: string;
-        version?: string;
-        branch?: string;
-        fields?: string;
-        limit?: number;
-        offset?: number;
-        response_format?: "json" | "markdown";
-      };
+      const typedArgs = args;
 
-      if (!typedArgs || !typedArgs.projectId) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          "Missing required argument: projectId. To find valid project IDs, use: openl_list_projects()"
-        );
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
-      const { limit, offset } = validatePagination(typedArgs.limit, typedArgs.offset);
+      const format = typedArgs.response_format;
+      const { limit = 50, offset = 0 } = typedArgs;
 
       // Undefined fields are dropped by JSON serialization, so an empty query
       // matches everything in scope.
@@ -431,27 +325,14 @@ export function registerFileHandlers(): void {
     title: "Copy Project File",
     description:
       "Copy a file within a project to a new project-relative path. Maps to POST /projects/{projectId}/file-copy. Intermediate destination folders are created automatically. There is NO overwrite option — if destinationPath already exists the call fails with HTTP 409; choose a different destination or delete the existing file first. The copy is staged in the working copy — commit it with openl_save_project. Use 'branch' to pin the project's branch. Use this to scaffold a new module from an existing one or clone a test set.",
-    inputSchema: schemas.z.toJSONSchema(schemas.copyProjectFileSchema) as Record<string, unknown>,
+    schema: schemas.copyProjectFileSchema,
     annotations: {
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        sourcePath: string;
-        destinationPath: string;
-        branch?: string;
-        response_format?: "json" | "markdown";
-      };
+      const typedArgs = args;
 
-      if (!typedArgs || !typedArgs.projectId || !typedArgs.sourcePath || !typedArgs.destinationPath) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          "Missing required arguments: projectId, sourcePath, destinationPath"
-        );
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
+      const format = typedArgs.response_format;
 
       try {
         await client.copyProjectFile(
@@ -487,27 +368,14 @@ export function registerFileHandlers(): void {
     title: "Move or Rename Project File",
     description:
       "Move or rename a file within a project. Maps to POST /projects/{projectId}/file-move. Intermediate destination folders are created automatically and the source file is deleted after the move. A destination collision fails with HTTP 409. The move is staged in the working copy — commit it with openl_save_project. Use 'branch' to pin the project's branch. Use this to rename a file or relocate it to another folder.",
-    inputSchema: schemas.z.toJSONSchema(schemas.moveProjectFileSchema) as Record<string, unknown>,
+    schema: schemas.moveProjectFileSchema,
     annotations: {
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        sourcePath: string;
-        destinationPath: string;
-        branch?: string;
-        response_format?: "json" | "markdown";
-      };
+      const typedArgs = args;
 
-      if (!typedArgs || !typedArgs.projectId || !typedArgs.sourcePath || !typedArgs.destinationPath) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          "Missing required arguments: projectId, sourcePath, destinationPath"
-        );
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
+      const format = typedArgs.response_format;
 
       try {
         await client.moveProjectFile(

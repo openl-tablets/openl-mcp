@@ -2,11 +2,8 @@
  * Deployment tool handlers — list deployments and deploy/redeploy projects.
  */
 
-import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
-
 import * as schemas from "../schemas.js";
 import { formatResponse, paginateResults } from "../formatters.js";
-import { validateResponseFormat, validatePagination } from "../validators.js";
 import { registerTool, type ToolResponse } from "./common.js";
 
 
@@ -16,48 +13,30 @@ export function registerDeploymentHandlers(): void {
     category: "Deployment",
     title: "List Active Deployments",
     description:
-      "List all active deployments across production environments. Returns deployment names, repositories, versions, and status information.",
-    inputSchema: schemas.z.toJSONSchema(
-      schemas.z
-        .object({
-          response_format: schemas.ResponseFormat.optional(),
-          limit: schemas.z.number().int().positive().max(200).default(50).optional(),
-          offset: schemas.z.number().int().nonnegative().default(0).optional(),
-        })
-        .strict()
-    ) as Record<string, unknown>,
+      "List active deployments across production environments, optionally filtered by production repository ID and deployed project name. Returns deployment names, repositories, and deployed project revisions.",
+    schema: schemas.listDeploymentsSchema,
     annotations: {
       readOnlyHint: true,
       idempotentHint: true,
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        response_format?: "json" | "markdown";
-        limit?: number;
-        offset?: number;
-      } | undefined;
+      const typedArgs = args;
 
-      const format = validateResponseFormat(typedArgs && typedArgs.response_format);
-      const { limit, offset } = validatePagination(typedArgs && typedArgs.limit, typedArgs && typedArgs.offset);
+      const format = typedArgs.response_format;
+      const { limit = 50, offset = 0 } = typedArgs;
 
-      const deployments = await client.listDeployments();
-
-      // Apply pagination
+      const deployments = await client.listDeployments({
+        repository: typedArgs.repository,
+        project: typedArgs.project,
+      });
       const paginated = paginateResults(deployments, limit, offset);
-
       const formattedResult = formatResponse(paginated.data, format, {
-        pagination: {
-          limit,
-          offset,
-          total: paginated.total_count,
-        },
+        pagination: { limit, offset, total: paginated.total_count },
         dataType: "deployments",
       });
 
-      return {
-        content: [{ type: "text", text: formattedResult }],
-      };
+      return { content: [{ type: "text", text: formattedResult }] };
     },
   });
 
@@ -67,28 +46,15 @@ export function registerDeploymentHandlers(): void {
     title: "Deploy Project to Production",
     description:
       "Deploy a project to production environment. Publishes rules to a deployment repository for runtime execution. Use production repository name (not ID) - e.g., 'Production Deployment' instead of 'production-deploy'.",
-    inputSchema: schemas.z.toJSONSchema(schemas.deployProjectSchema) as Record<string, unknown>,
+    schema: schemas.deployProjectSchema,
     annotations: {
       idempotentHint: true,
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        deploymentName: string;
-        productionRepositoryId: string;
-        comment?: string;
-        response_format?: "json" | "markdown";
-      };
+      const typedArgs = args;
 
-      if (!typedArgs || !typedArgs.projectId || !typedArgs.deploymentName || !typedArgs.productionRepositoryId) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          "Missing required arguments: projectId, deploymentName, productionRepositoryId"
-        );
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
+      const format = typedArgs.response_format;
 
       // Convert production repository name to ID for API call
       const productionRepositoryId = await client.getProductionRepositoryIdByName(typedArgs.productionRepositoryId);
@@ -119,27 +85,15 @@ export function registerDeploymentHandlers(): void {
     title: "Redeploy with New Version",
     description:
       "Redeploy an existing deployment with a new project version. Use this to update a deployment with a newer version of the project or rollback to a previous version.",
-    inputSchema: schemas.z.toJSONSchema(schemas.redeployProjectSchema) as Record<string, unknown>,
+    schema: schemas.redeployProjectSchema,
     annotations: {
       idempotentHint: true,
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        deploymentId: string;
-        projectId: string;
-        comment?: string;
-        response_format?: "json" | "markdown";
-      };
+      const typedArgs = args;
 
-      if (!typedArgs || !typedArgs.deploymentId || !typedArgs.projectId) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          "Missing required arguments: deploymentId, projectId. Use openl_list_deployments() to find valid deployment IDs."
-        );
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
+      const format = typedArgs.response_format;
 
       await client.redeployProject(typedArgs.deploymentId, {
         projectId: typedArgs.projectId,

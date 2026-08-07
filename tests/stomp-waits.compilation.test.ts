@@ -52,6 +52,7 @@ function makeFakeStomp(): FakeStomp {
 interface MockClient {
   client: OpenLClient;
   getProjectStatus: jest.Mock;
+  triggerProjectCompilation: jest.Mock;
   getProject: jest.Mock;
   switchBranch: jest.Mock;
   openProject: jest.Mock;
@@ -76,8 +77,10 @@ function makeClient(
   } as unknown as Types.ComprehensiveProject));
   const switchBranch = jest.fn(async () => true);
   const openProject = jest.fn(async () => true);
+  const triggerProjectCompilation = jest.fn(async () => undefined);
   const client = {
     getProjectStatus,
+    triggerProjectCompilation,
     getProject,
     switchBranch,
     openProject,
@@ -85,7 +88,7 @@ function makeClient(
     getSessionCookie: () => "abc123",
     getAuthorizationHeader: () => "Token openl_pat_test",
   } as unknown as OpenLClient;
-  return { client, getProjectStatus, getProject, switchBranch, openProject };
+  return { client, getProjectStatus, triggerProjectCompilation, getProject, switchBranch, openProject };
 }
 
 describe("isResolvedCompileState", () => {
@@ -123,6 +126,96 @@ describe("waitForCompilation", () => {
     const { client } = makeClient([makeStatus("idle")]);
     const result = await waitForCompilation(client, "p1", "main", {}, stomp.subscribe);
     expect(result.compileState).toBe("idle");
+    expect(stomp.subscribe).not.toHaveBeenCalled();
+  });
+
+  it("starts lazy compilation on idle when requested and returns its terminal status", async () => {
+    const { client, triggerProjectCompilation } = makeClient([
+      makeStatus("idle"),
+      makeStatus("ok"),
+    ]);
+
+    const result = await waitForCompilation(
+      client,
+      "p1",
+      "main",
+      { compileOnIdle: true },
+      stomp.subscribe,
+    );
+
+    expect(triggerProjectCompilation).toHaveBeenCalledWith("p1", {
+      signal: undefined,
+      timeoutMs: expect.any(Number),
+    });
+    const triggerTimeout = triggerProjectCompilation.mock.calls[0][1].timeoutMs as number;
+    expect(triggerTimeout).toBeGreaterThan(0);
+    expect(triggerTimeout).toBeLessThanOrEqual(120_000);
+    expect(result.compileState).toBe("ok");
+    expect(stomp.subscribe).not.toHaveBeenCalled();
+  });
+
+  it("switches to the requested branch before starting lazy compilation", async () => {
+    const { client, switchBranch, triggerProjectCompilation } = makeClient([
+      makeStatus("idle", { branch: "main" }),
+      makeStatus("idle", { branch: "develop" }),
+      makeStatus("warnings", { branch: "develop" }),
+    ]);
+
+    const result = await waitForCompilation(
+      client,
+      "p1",
+      "develop",
+      { compileOnIdle: true },
+      stomp.subscribe,
+    );
+
+    expect(switchBranch).toHaveBeenCalledWith("p1", "develop");
+    expect(triggerProjectCompilation).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ compileState: "warnings", branch: "develop" });
+  });
+
+  it("subtracts pre-trigger work from the compilation timeout budget", async () => {
+    const { client, getProjectStatus, triggerProjectCompilation } = makeClient([
+      makeStatus("ok"),
+    ]);
+    getProjectStatus.mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return makeStatus("idle");
+    });
+
+    const result = await waitForCompilation(
+      client,
+      "p1",
+      "main",
+      { compileOnIdle: true, timeoutMs: 1_000 },
+      stomp.subscribe,
+    );
+
+    const triggerTimeout = triggerProjectCompilation.mock.calls[0][1].timeoutMs as number;
+    expect(triggerTimeout).toBeGreaterThan(0);
+    expect(triggerTimeout).toBeLessThan(1_000);
+    expect(result.compileState).toBe("ok");
+  });
+
+  it("returns the latest snapshot when the lazy compilation request times out", async () => {
+    const { client, triggerProjectCompilation } = makeClient([
+      makeStatus("idle"),
+      makeStatus("compiling"),
+    ]);
+    triggerProjectCompilation.mockRejectedValueOnce(Object.assign(new Error("timeout"), {
+      isAxiosError: true,
+      code: "ECONNABORTED",
+    }));
+
+    const result = await waitForCompilation(
+      client,
+      "p1",
+      "main",
+      { compileOnIdle: true, timeoutMs: 50 },
+      stomp.subscribe,
+    );
+
+    expect(result.compileState).toBe("compiling");
     expect(stomp.subscribe).not.toHaveBeenCalled();
   });
 
@@ -287,6 +380,19 @@ describe("waitForCompilation", () => {
     expect(openProject).not.toHaveBeenCalled();
     // STOMP subscribed to the post-switch branch.
     expect(stomp.subscribe.mock.calls[0][0].branch).toBe("develop");
+  });
+
+  it("switches to the requested branch before returning an already-terminal status", async () => {
+    const { client, switchBranch } = makeClient([
+      makeStatus("ok", { branch: "main" }),
+      makeStatus("warnings", { branch: "develop" }),
+    ]);
+
+    const result = await waitForCompilation(client, "p1", "develop", {}, stomp.subscribe);
+
+    expect(switchBranch).toHaveBeenCalledWith("p1", "develop");
+    expect(result).toMatchObject({ compileState: "warnings", branch: "develop" });
+    expect(stomp.subscribe).not.toHaveBeenCalled();
   });
 
   it("uses openProject when project is CLOSED and a branch switch is needed", async () => {

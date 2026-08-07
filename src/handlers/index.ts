@@ -16,9 +16,11 @@ import { registerTestingHandlers } from "./testing-handlers.js";
 import { registerLocalChangeHandlers } from "./local-change-handlers.js";
 import { registerFileHandlers } from "./file-handlers.js";
 import { registerProjectHandlers } from "./project-handlers.js";
+import { registerProjectMergeHandlers } from "./project-merge-handlers.js";
 import { registerTraceHandlers } from "./trace-handlers.js";
 import { registerTableHandlers } from "./table-handlers.js";
 import { registerTableActionHandlers } from "./table-action-handlers.js";
+import { registerTableWorkflowHandlers } from "./table-workflow-handlers.js";
 
 export { getAllTools, executeTool, hasTool } from "./common.js";
 
@@ -36,7 +38,9 @@ export function registerAllTools(): void {
   registerLocalChangeHandlers();
   registerFileHandlers();
   registerProjectHandlers();
+  registerProjectMergeHandlers();
   registerTraceHandlers();
   registerTableHandlers();
   registerTableActionHandlers();
+  registerTableWorkflowHandlers();
 }

@@ -6,6 +6,7 @@ import type * as Types from '../../src/types.js';
 
 export const mockRepositories: Types.RepositoryInfo[] = [
   {
+    aclId: 'design',
     id: 'design',
     name: 'Design Repository',
     type: 'git',
@@ -16,6 +17,7 @@ export const mockRepositories: Types.RepositoryInfo[] = [
     },
   },
   {
+    aclId: 'production',
     id: 'production',
     name: 'Production Repository',
     type: 'git',
@@ -33,10 +35,8 @@ export const mockProjects: Types.ProjectViewModel[] = [
     modifiedBy: 'admin',
     modifiedAt: '2025-11-10T10:30:00Z',
     path: 'insurance-rules',
-    id: {
-      repository: 'design',
-      projectName: 'insurance-rules',
-    },
+    id: 'design:insurance-rules',
+    revision: 'abc123',
     status: 'OPENED',
     repository: 'design',
     comment: 'Updated premium calculation',
@@ -50,10 +50,8 @@ export const mockProjects: Types.ProjectViewModel[] = [
     modifiedBy: 'user1',
     modifiedAt: '2025-11-09T15:20:00Z',
     path: 'loan-calculator',
-    id: {
-      repository: 'design',
-      projectName: 'loan-calculator',
-    },
+    id: 'design:loan-calculator',
+    revision: 'def456',
     status: 'CLOSED',
     repository: 'design',
     comment: 'Initial version',
@@ -90,7 +88,7 @@ export const mockProjectInfo: Types.ProjectInfo = {
 export const mockTables: Types.SummaryTableView[] = [
   {
     id: 'Rules.xls_1234',
-    tableType: 'simplerules',
+    tableType: 'SimpleRules',
     kind: 'Rules',
     name: 'CalculatePremium',
     returnType: 'Double',
@@ -103,7 +101,7 @@ export const mockTables: Types.SummaryTableView[] = [
   },
   {
     id: 'Datatypes.xls_5678',
-    tableType: 'datatype',
+    tableType: 'Datatype',
     kind: 'Datatype',
     name: 'Policy',
     file: 'Datatypes.xlsx',
@@ -111,100 +109,29 @@ export const mockTables: Types.SummaryTableView[] = [
   },
 ];
 
-export const mockDecisionTable: Types.SimpleRulesView = {
-  id: 'Rules.xls_1234',
-  tableType: 'simplerules',
-  kind: 'Rules',
-  name: 'CalculatePremium',
-  technicalName: 'CalculatePremium',
-  properties: [
-    {
-      name: 'category',
-      type: 'String',
-      value: 'Premium Calculation',
-    },
-  ],
-  editable: true,
-  file: 'Rules.xlsx',
-  rules: [
-    {
-      conditions: { vehicleType: 'Car', age: '<25' },
-      actions: { premium: '1200' },
-    },
-    {
-      conditions: { vehicleType: 'Car', age: '>=25' },
-      actions: { premium: '800' },
-    },
-    {
-      conditions: { vehicleType: 'Motorcycle', age: '<25' },
-      actions: { premium: '900' },
-    },
-  ],
-  conditionColumns: ['vehicleType', 'age'],
-  actionColumns: ['premium'],
-};
-
-export const mockDatatype: Types.DatatypeView = {
-  id: 'Datatypes.xls_5678',
-  tableType: 'datatype',
-  kind: 'Datatype',
-  name: 'Policy',
-  technicalName: 'Policy',
-  editable: true,
-  file: 'Datatypes.xlsx',
-  fields: [
-    { name: 'policyNumber', type: 'String' },
-    { name: 'holderName', type: 'String' },
-    { name: 'premium', type: 'Double' },
-    { name: 'startDate', type: 'Date' },
-  ],
-};
-
-export const mockProjectHistory: Types.ProjectHistoryItem[] = [
-  {
-    name: 'insurance-rules',
-    version: 'abc123',
-    author: 'admin',
-    modifiedAt: '2025-11-10T10:30:00Z',
-    comment: 'Updated premium calculation',
-  },
-  {
-    name: 'insurance-rules',
-    version: 'def456',
-    author: 'user1',
-    modifiedAt: '2025-11-08T14:20:00Z',
-    comment: 'Added senior discount rules',
-  },
-  {
-    name: 'insurance-rules',
-    version: 'ghi789',
-    author: 'admin',
-    modifiedAt: '2025-11-05T09:15:00Z',
-    comment: 'Initial version',
-  },
-];
-
 export const mockBranches: string[] = ['main', 'develop', 'feature/new-rules'];
 
-export const mockDeployments: Types.DeploymentInfo[] = [
+export const mockDeployments: Types.DeploymentViewModel_Short[] = [
   {
     id: 'deploy-001',
     name: 'insurance-rules-v1.2.3',
-    projectName: 'insurance-rules',
-    projectVersion: 'v1.2.3',
     repository: 'production',
-    status: 'DEPLOYED',
-    deployedAt: '2025-11-09T16:00:00Z',
-    deployedBy: 'admin',
+    items: [{
+      name: 'insurance-rules',
+      revision: 'v1.2.3',
+      modifiedAt: '2025-11-09T16:00:00Z',
+      modifiedBy: 'admin',
+    }],
   },
   {
     id: 'deploy-002',
     name: 'loan-calculator-v2.0.0',
-    projectName: 'loan-calculator',
-    projectVersion: 'v2.0.0',
     repository: 'production',
-    status: 'DEPLOYED',
-    deployedAt: '2025-11-08T10:30:00Z',
-    deployedBy: 'user1',
+    items: [{
+      name: 'loan-calculator',
+      revision: 'v2.0.0',
+      modifiedAt: '2025-11-08T10:30:00Z',
+      modifiedBy: 'user1',
+    }],
   },
 ];

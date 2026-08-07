@@ -11,6 +11,7 @@
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
+import { z, type ZodType } from "zod";
 
 import type { OpenLClient } from "../client.js";
 import type { ToolCategory } from "../constants.js";
@@ -35,8 +36,8 @@ export type ToolHandlerExtra = RequestHandlerExtra<ServerRequest, ServerNotifica
 /**
  * Tool handler function type
  */
-type ToolHandler = (
-  args: unknown,
+type ToolHandler<TSchema extends ZodType> = (
+  args: z.output<TSchema>,
   client: OpenLClient,
   extra?: ToolHandlerExtra,
 ) => Promise<ToolResponse>;
@@ -44,13 +45,17 @@ type ToolHandler = (
 /**
  * Tool definition with MCP metadata
  */
-export interface ToolDefinition {
+export interface ToolDefinition<TSchema extends ZodType = ZodType> {
   name: string;
   title: string;
   description: string;
   /** Display category for CLI `--help` grouping. */
   category: ToolCategory;
-  inputSchema: Record<string, unknown>;
+  /**
+   * Single source of truth for both the JSON Schema advertised over MCP and the
+   * arguments accepted at runtime.
+   */
+  schema: TSchema;
   annotations?: {
     readOnlyHint?: boolean;
     openWorldHint?: boolean;
@@ -58,27 +63,106 @@ export interface ToolDefinition {
     destructiveHint?: boolean;
   };
   /**
-   * Optional pre-handler validation/coercion of the raw arguments. Returns the
-   * (possibly coerced) arguments to forward to the handler, or throws an
-   * McpError(InvalidParams) on a schema violation. Tools without it receive
-   * their arguments unchanged. Used by the structured-payload table tools.
+   * Optional pre-schema coercion or domain-specific validation of raw arguments.
+   * The returned value is always validated against `schema` before the handler
+   * runs. Used by structured-payload table tools for JSON-string coercion and
+   * richer discriminator errors.
    */
   validateArgs?: (args: unknown) => unknown;
-  handler: ToolHandler;
+  /** Optional tool-specific enrichment for schema validation failures. */
+  formatValidationError?: (error: z.ZodError) => string;
+  handler: ToolHandler<TSchema>;
 }
 
 /**
  * Registry of all tool handlers
  */
 const toolHandlers = new Map<string, ToolDefinition>();
+// JSON Schema conversion is expensive; registered Zod schemas are immutable and reusable by identity.
+const inputSchemaCache = new WeakMap<ZodType, Record<string, unknown>>();
+
+/** Add discovery hints for identifiers rejected before a handler can run. */
+function formatSchemaValidationError(name: string, error: z.ZodError): string {
+  let message = `Invalid arguments for ${name}:\n${z.prettifyError(error)}`;
+  const topLevelFields = new Set(error.issues.map((issue) => issue.path[0]));
+  const hints: string[] = [];
+  if (topLevelFields.has("projectId")) {
+    hints.push("Use openl_list_projects() to find valid project IDs.");
+  }
+  if (topLevelFields.has("tableId")) {
+    hints.push("Use openl_list_tables() to find valid table IDs.");
+  }
+  if (topLevelFields.has("repository")) {
+    hints.push("Use openl_list_repositories() to find valid repositories.");
+  }
+  if (hints.length > 0) {
+    message += `\n\n${hints.join(" ")}`;
+  }
+  return message;
+}
+
+/**
+ * Zod's default `z.object()` parser strips unknown nested keys even though its
+ * generated JSON Schema advertises `additionalProperties: false`. Detect those
+ * stripped keys so runtime acceptance cannot be looser than the MCP contract.
+ */
+function findStrippedPaths(input: unknown, parsed: unknown): string[] {
+  const strippedPaths: string[] = [];
+  // Reuse one path stack because raw table payloads may contain thousands of nested cells.
+  const path: string[] = [];
+
+  const visit = (inputValue: unknown, parsedValue: unknown): void => {
+    if (Array.isArray(inputValue) && Array.isArray(parsedValue)) {
+      for (let index = 0; index < inputValue.length && index < parsedValue.length; index += 1) {
+        path.push(String(index));
+        visit(inputValue[index], parsedValue[index]);
+        path.pop();
+      }
+      return;
+    }
+    if (
+      inputValue === null || parsedValue === null ||
+      typeof inputValue !== "object" || typeof parsedValue !== "object" ||
+      Array.isArray(inputValue) || Array.isArray(parsedValue)
+    ) {
+      return;
+    }
+
+    const parsedRecord = parsedValue as Record<string, unknown>;
+    for (const [key, value] of Object.entries(inputValue as Record<string, unknown>)) {
+      path.push(key);
+      if (!Object.prototype.hasOwnProperty.call(parsedRecord, key)) {
+        strippedPaths.push(path.join("."));
+      } else {
+        visit(value, parsedRecord[key]);
+      }
+      path.pop();
+    }
+  };
+
+  visit(input, parsed);
+  return strippedPaths;
+}
+
+function getInputSchema(schema: ZodType): Record<string, unknown> {
+  let inputSchema = inputSchemaCache.get(schema);
+  if (!inputSchema) {
+    inputSchema = z.toJSONSchema(schema) as Record<string, unknown>;
+    inputSchemaCache.set(schema, inputSchema);
+  }
+  return inputSchema;
+}
 
 /**
  * Register a single tool with the registry
  *
  * @param tool - Tool definition with handler
  */
-export function registerTool(tool: ToolDefinition): void {
-  toolHandlers.set(tool.name, tool);
+export function registerTool<TSchema extends ZodType>(tool: ToolDefinition<TSchema>): void {
+  // The schema/handler pair is type-checked together at registration. The map
+  // erases that generic relationship, then executeTool restores it by parsing
+  // with the stored schema before invoking the stored handler.
+  toolHandlers.set(tool.name, tool as ToolDefinition);
 }
 
 /**
@@ -97,9 +181,16 @@ export function hasTool(name: string): boolean {
  *
  * @returns Array of tool definitions without the handler or validation callbacks
  */
-export function getAllTools(): Array<Omit<ToolDefinition, "handler" | "validateArgs">> {
+export function getAllTools(): Array<
+  Omit<ToolDefinition, "handler" | "validateArgs" | "formatValidationError" | "schema"> & {
+    inputSchema: Record<string, unknown>;
+  }
+> {
   return Array.from(toolHandlers.values()).map(
-    ({ handler: _handler, validateArgs: _validateArgs, ...tool }) => tool,
+    ({ handler: _handler, validateArgs: _validateArgs, formatValidationError: _formatValidationError, schema, ...tool }) => ({
+      ...tool,
+      inputSchema: getInputSchema(schema),
+    }),
   );
 }
 
@@ -123,8 +214,23 @@ export async function executeTool(
   }
 
   try {
-    const callArgs = tool.validateArgs ? tool.validateArgs(args) : args;
-    return await tool.handler(callArgs, client, extra);
+    const rawArgs = args ?? {};
+    const preparedArgs = tool.validateArgs ? tool.validateArgs(rawArgs) : rawArgs;
+    const result = tool.schema.safeParse(preparedArgs);
+    if (!result.success) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        tool.formatValidationError?.(result.error) ?? formatSchemaValidationError(name, result.error),
+      );
+    }
+    const strippedPaths = findStrippedPaths(preparedArgs, result.data);
+    if (strippedPaths.length > 0) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Invalid arguments for ${name}: unrecognized field(s): ${strippedPaths.join(", ")}`,
+      );
+    }
+    return await tool.handler(result.data, client, extra);
   } catch (error: unknown) {
     throw handleToolError(error, name, args);
   }

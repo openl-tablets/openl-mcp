@@ -35,10 +35,10 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - Save project changes with validation
 - Validate project structure and rules
 
-**Project ID Formats** (All supported):
-- Dash format: `"repository-projectName"` (user-friendly)
-- Colon format: `"repository:projectName"` (decoded)
-- Base64 format: `"ZGVzaWduOlByb2plY3Q="` (OpenL 6.0.0+ API)
+**Project IDs**:
+- Treat project IDs as opaque backend-issued values
+- Obtain them from project-list, project-detail, or project-creation responses
+- Pass them unchanged to subsequent tools; never synthesize, encode, or decode them
 
 **Use Cases**:
 - Discover and filter projects
@@ -135,21 +135,17 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 
 ### 8. Authentication Support
 
-**Multiple authentication methods**:
-- **Basic Authentication**: Username/password
-- **Personal Access Token (PAT)**: Bearer token for programmatic access
+**Optional authentication**:
+- OpenL Studio single-user mode accepts anonymous requests
+- Secured instances use a Personal Access Token (PAT) supplied by the MCP client
 
 **Features**:
-- Token caching with expiration
-- Automatic token refresh
-- Request interceptors for auth
-- Health check with auth status
+- Supply the PAT through `OPENL_PERSONAL_ACCESS_TOKEN`, `--token`, or the HTTP `Authorization` header
+- The MCP server forwards the client-provided credential and does not refresh or persist it
 
 **Use Cases**:
-- Connect to secured OpenL instances
-- Use enterprise SSO
-- Integrate with API key systems
-- Support various deployment scenarios
+- Connect anonymously to a single-user Studio
+- Connect to a secured Studio with a client-managed PAT
 
 ### 9. Prompt Library
 
@@ -184,7 +180,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 ### 10. Response Formatting & Pagination
 
 **Flexible output formatting**:
-- Two format options: `json` and `markdown` (default)
+- Four format options: `json` (default), `markdown`, `markdown_concise`, and `markdown_detailed`
 - All tools support `response_format` parameter
 - Type-specific markdown formatters for optimal readability
 - Automatic conversion between formats
@@ -209,7 +205,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 
 ### FR-1: Tool Execution
 
-**Requirement**: MCP server provides 58 tools.
+**Requirement**: MCP server provides 73 tools.
 
 **Guidance Tools**:
 - `openl_get_started` - Read-only onboarding bootstrap: workflow protocol + workspace orientation (call first, once per session)
@@ -226,14 +222,31 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 **Project Tools**:
 - `openl_list_projects` - List projects with optional filters (supports pagination)
 - `openl_get_project` - Get comprehensive project details
-- `openl_create_project` - Create a new project
+- `openl_create_project` - Create a blank project or copy an existing project, optionally onto a target branch
 - `openl_open_project` - Open project for editing
 - `openl_save_project` - Save project changes to Git (validates on save)
 - `openl_close_project` - Close project with save/discard options
-- `openl_project_status` - Get compile state and diagnostics (errors/warnings with location)
+- `openl_project_status` - Lazily compile when idle and return compile state plus diagnostics (errors/warnings with location)
 - `openl_create_project_branch` - Create new branch
 - `openl_list_project_local_changes` - List local change history
 - `openl_restore_project_local_change` - Restore previous local version
+- `openl_list_project_modules` - List modules declared by a project
+- `openl_list_module_sheets` - List worksheets in a project module
+- `openl_list_project_branches` - List project branches with base/protected metadata
+- `openl_check_project_merge` - Preview merge feasibility and permissions
+- `openl_merge_project_branches` - Merge project branches after a fresh feasibility check
+- `openl_get_merge_conflicts` - Get the session-bound conflict set and revision metadata
+- `openl_read_merge_conflict_file` - Read bounded BASE/OURS/THEIRS file content
+- `openl_cancel_merge_conflicts` - Clear pending merge conflict state
+- `openl_delete_project` - Delete a project with exact-name confirmation
+- `openl_delete_project_branch` - Delete a non-base branch with confirmation/protection guards
+
+Merge-conflict resolution is deliberately not exposed through MCP. Studio does
+not provide a sufficiently safe API for an agent to resolve every conflict, and
+automatic BASE/OURS/THEIRS selection can silently discard valid work. Agents may
+inspect the session-bound conflict set and its file sides, but must present that
+evidence to the user for manual resolution in Studio rather than choosing or
+applying a side themselves.
 
 **Project File Tools**:
 - `openl_read_project_file` - Read a project file
@@ -245,11 +258,15 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 
 **Rules / Table Tools**:
 - `openl_list_tables` - List tables/rules with filters (supports pagination)
-- `openl_get_table` - Get table details and data
-- `openl_update_table` - Update table content
-- `openl_append_table` - Append data to existing table
-- `openl_create_project_table` - Create new table/rule
+- `openl_get_table` - Get the authoritative RawSource cell matrix; sliced responses carry `totalRows`
+- `openl_update_table` - Replace a complete RawSource matrix; reject sliced views carrying `totalRows` to prevent deletion of omitted rows
+- `openl_append_table` - Append full-width RawSource rows
+- `openl_create_project_table` - Create a table/rule from a complete RawSource matrix
 - `openl_delete_table` - Delete an entire table from the project
+- `openl_run_table` - Execute one session-scoped regular-table run at a time with a deadline covering startup and bounded, backoff-based result polling; clean pending Studio state on cancellation, timeout, or failure
+- `openl_get_table_dependencies` - Get a project/module graph or one table's dependency neighborhood
+- `openl_list_table_property_definitions` - Get properties allowed by Studio for a table context
+- `openl_copy_table` - Copy a table server-side while preserving its source structure and formatting
 
 **Raw Table-Source Action Tools** (in-place edit of a table's raw source; one tool per operation×orientation accepts one OR more rows/columns):
 - `openl_append_table_rows` / `openl_append_table_columns` - Append one or more rows/columns
@@ -274,6 +291,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - `openl_set_trace_breakpoints` - Read/replace breakpoints and list targets
 - `openl_get_trace_value` - Expand a lazy parameter value
 - `openl_watch_trace_cells` - Watch named cells across a whole run
+- `openl_expand_trace_tree` - Load one paginated level of a profiling call tree
 - `openl_stop_trace` - Terminate the debug session
 
 **Deployment Tools**:
@@ -282,7 +300,9 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - `openl_deploy_project` - Deploy project to production
 - `openl_redeploy_project` - Redeploy with new version
 
-**Note**: All tools support the `response_format` parameter (json/markdown). All list operations support pagination via `limit` and `offset` parameters.
+**Note**: All tools support `response_format`: `json` (default), `markdown`,
+`markdown_concise`, and `markdown_detailed`. All list operations support
+pagination via `limit` and `offset` parameters.
 
 ### FR-2: Input Validation
 
@@ -352,52 +372,21 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - Default values
 - Description for each argument
 
-### FR-5: Health Check
+### FR-5: Authentication Management
 
-**Requirement**: Provide server health and connectivity verification.
-
-**Health Check Response**:
-```json
-{
-  "status": "healthy",
-  "baseUrl": "http://localhost:8080",
-  "authMethod": "Basic Auth",
-  "timestamp": "2025-11-13T17:00:00Z",
-  "serverReachable": true
-}
-```
-
-**Checks Performed**:
-- Network connectivity to OpenL server
-- Authentication status
-- API endpoint availability
-- Response time
-
-### FR-6: Authentication Management
-
-**Requirement**: Support 2 authentication methods (Basic Auth, Personal Access Token).
-
-**Basic Authentication**:
-- Username and password
-- Base64 encoding
-- Authorization header injection
-
-**API Key Authentication**:
-- Bearer token
-- Header injection
-- No expiration handling
+**Requirement**: Support anonymous Studio access and an optional client-provided Personal Access Token.
 
 **Personal Access Token (PAT)**:
 - Bearer token authentication
-- Token provided via environment variable
-- No token caching needed (static token)
+- Token provided through `OPENL_PERSONAL_ACCESS_TOKEN`, `--token`, or the HTTP `Authorization` header
+- No server-side token persistence, refresh, or acquisition
 
 **Configuration Validation**:
-- At least one auth method required (Basic Auth or PAT)
+- Authentication is optional for single-user Studio
 - URL format validation
 - Timeout limits enforced
 
-### FR-7: OpenL API Compatibility
+### FR-6: OpenL API Compatibility
 
 **Requirement**: Support OpenL Studio 6.0.0+ REST API.
 
@@ -410,15 +399,13 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 **Known Limitations** (Documented):
 - Some endpoints vary by OpenL Studio version; the server degrades gracefully when an endpoint is unavailable
 
-### FR-8: Performance Requirements
+### FR-7: Performance Requirements
 
 **Requirement**: Efficient resource usage and caching.
 
 **Performance Optimizations**:
-- Token-based authentication (PAT)
 - Axios connection pooling (default)
 - Concurrent request deduplication
-- Lazy token acquisition
 - Configurable timeouts (default: 30s)
 
 **Memory Management**:
@@ -427,7 +414,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - Clean error handling paths
 - No memory leaks
 
-### FR-9: Type Safety Requirements
+### FR-8: Type Safety Requirements
 
 **Requirement**: Full TypeScript strict mode compliance.
 
@@ -439,20 +426,20 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - Unknown over any in error handling
 - Proper null/undefined handling
 
-### FR-10: Documentation Requirements
+### FR-9: Documentation Requirements
 
 **Requirement**: Comprehensive documentation for all features.
 
 **Documentation Deliverables**:
 - README.md - Installation, configuration, usage
-- authentication.md - Auth setup for both methods (Basic Auth, PAT)
+- docs/guides/quick-start.md - Anonymous and PAT-based connection setup
 - contributing.md - Development guide
 - testing.md - Testing documentation
 - examples.md - Real-world usage examples
 - JSDoc on all public APIs
 - Inline comments for complex logic
 
-### FR-11: Testing Requirements
+### FR-10: Testing Requirements
 
 **Requirement**: Comprehensive test coverage.
 
@@ -468,17 +455,19 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - Utilities: >90%
 - Schemas: >95%
 
-### FR-12: Response Formatting
+### FR-11: Response Formatting
 
 **Requirement**: All tools must support flexible output formatting.
 
 **Format Options**:
 - `json`: Structured JSON output for programmatic processing
-- `markdown`: Human-readable markdown output (default)
+- `markdown`: Human-readable full output
+- `markdown_concise`: Compact human-readable output
+- `markdown_detailed`: Expanded human-readable output
 
 **Implementation**:
 - `response_format` parameter on all tools (optional)
-- Default value: `markdown`
+- Default value: `json`
 - Automatic type conversion using formatters
 - Type-specific markdown templates for optimal readability
 
@@ -487,7 +476,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - Invalid formats return clear error message
 - Consistent formatting across all tool types
 
-### FR-13: Pagination Support
+### FR-12: Pagination Support
 
 **Requirement**: All list operations must support pagination.
 
@@ -512,7 +501,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - Clear indication when results are truncated
 - Total count included in response when available
 
-### FR-14: Character Limit Enforcement
+### FR-13: Character Limit Enforcement
 
 **Requirement**: All tool responses must enforce character limits.
 
@@ -584,12 +573,12 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 
 The MCP server is considered successful when:
 
-1. ✅ All 58 tools execute successfully
+1. ✅ All 73 tools execute successfully
 2. ✅ All tools support response_format parameter
 3. ✅ All list operations support pagination
 4. ✅ Character limits enforced on all responses
 5. ✅ All 14 prompts render correctly
-6. ✅ Both authentication methods work (Basic Auth, PAT)
+6. ✅ Anonymous access and client-provided PAT authentication work
 7. ⏳ Test coverage >38% (target: 80%)
 8. ✅ ESLint enforced (no errors on commit)
 9. ✅ TypeScript strict mode clean
@@ -626,6 +615,4 @@ Potential enhancements for future versions:
 
 ---
 
-*Last Updated: 2026-01-28*
-*Version: 1.0.0*
-*Status: Production-ready (58 tools, 14 prompts)*
+*Status: Active development (73 tools, 14 prompts)*

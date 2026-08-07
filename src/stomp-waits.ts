@@ -3,8 +3,10 @@
  * WebSocket, inside a single tool call, instead of polling.
  *
  * {@link waitForCompilation} blocks on the project-status topic until the
- * compile state is terminal (subscribe → close the no-replay race over HTTP →
- * await a terminal frame, bounded by timeout + abort, always unsubscribe).
+ * compile state is terminal. An optional idle path first initializes Studio's
+ * lazy model through the tables API; an already-running job uses STOMP
+ * (subscribe → close the no-replay race over HTTP → await a terminal frame,
+ * bounded by timeout + abort, always unsubscribe).
  * The bounded, abortable, self-cleaning wait for a single out-of-band value
  * lives in {@link awaitTerminal}.
  *
@@ -17,6 +19,7 @@ import {
 } from "./stomp-client.js";
 import { OpenLClient } from "./client.js";
 import type * as Types from "./types.js";
+import { isAxiosError } from "./utils.js";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 
@@ -96,10 +99,9 @@ function awaitTerminal<T>(opts: {
 // =============================================================================
 
 /**
- * States the wait flow treats as "no need to wait" — everything except
- * `compiling`. `idle` is included because it means the studio has no compile
- * job registered for the session and nothing will fire a STOMP event;
- * subscribing in that state would hang until the timeout.
+ * States the wait flow treats as "no need to wait" when lazy initialization is
+ * not requested — everything except `compiling`. `idle` has no registered job,
+ * so subscribing without first triggering compilation would hang.
  */
 const RESOLVED_STATES: ReadonlySet<Types.CompileState> = new Set([
   "idle",
@@ -115,6 +117,8 @@ export interface WaitForCompilationOptions {
   signal?: AbortSignal;
   /** Hard cap on wait time. On expiry, the last-seen status is returned (no error). Default 120000 ms. */
   timeoutMs?: number;
+  /** Start Studio's lazy compilation when no model is registered yet. */
+  compileOnIdle?: boolean;
 }
 
 /** Test seam: lets unit tests inject a fake STOMP subscriber without touching the network. */
@@ -137,25 +141,26 @@ export function isResolvedCompileState(state: Types.CompileState): boolean {
  *
  *   1. HTTP fetch (no `branch` query — backend returns the project's actual
  *      branch, also seeds the JSESSIONID cookie needed for the WS handshake).
- *   2. Terminal? return immediately.
- *   3. If the caller requested a branch that differs from the project's actual
+ *   2. If the caller requested a branch that differs from the project's actual
  *      branch, silently switch (re-using {@link OpenLClient.switchBranch} when
  *      the project is already opened, falling back to
  *      {@link OpenLClient.openProject} otherwise — same pattern as the existing
  *      `openl_open_project` handler). Re-fetch status after the switch.
- *   4. STOMP subscribe using the project's *actual* branch (so the destination
+ *   3. Resolved? return immediately, unless `idle` should start lazy compilation.
+ *   4. If idle, call the tables API to initialize and await compilation, then
+ *      re-fetch status. No STOMP subscription is needed because that API waits.
+ *   5. Otherwise STOMP subscribe using the project's *actual* branch (so the destination
  *      matches the topic the studio publishes to — branch-supporting projects
  *      get `/user/topic/projects/<id>/branches/<branch>/status`; others get
  *      the no-branch variant).
- *   5. HTTP fetch again — closes the race where the terminal status arrived
+ *   6. HTTP fetch again — closes the race where the terminal status arrived
  *      between steps 1 and 4.
- *   6. Terminal? unsubscribe + return.
- *   7. Wait for a terminal STOMP message (or timeout / abort).
- *   8. Always unsubscribe in `finally`.
+ *   7. Terminal? unsubscribe + return.
+ *   8. Wait for a terminal STOMP message (or timeout / abort).
+ *   9. Always unsubscribe in `finally`.
  *
- * The race in step 5 is unavoidable without subscribing before triggering the
- * compile — and the compile was triggered by the LLM before this call, so we
- * have to assume the terminal might already be in flight.
+ * The race in step 6 is unavoidable for an already-running compilation: it was
+ * triggered before this call, so a terminal event may already be in flight.
  */
 export async function waitForCompilation(
   client: OpenLClient,
@@ -166,6 +171,8 @@ export async function waitForCompilation(
   subscribeImpl: SubscribeFn = subscribeProjectStatus,
 ): Promise<Types.ProjectStatusView> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const startedAt = Date.now();
+  const remainingTimeoutMs = (): number => Math.max(0, timeoutMs - (Date.now() - startedAt));
 
   if (options.signal?.aborted) {
     throw makeAbortError("waitForCompilation");
@@ -175,11 +182,8 @@ export async function waitForCompilation(
   // 409 on mismatch, but we want to detect the mismatch and switch instead.
   // The response also seeds the JSESSIONID cookie needed for the WS handshake.
   let initial = await client.getProjectStatus(projectId);
-  if (isResolvedCompileState(initial.compileState)) {
-    return initial;
-  }
 
-  // Step 3: silent branch switch if the caller asked for a branch that differs
+  // Step 2: silent branch switch if the caller asked for a branch that differs
   // from the project's actual branch. `initial.branch` is populated only for
   // projects that support branches (see `ProjectStatusMapperImpl.map`), so a
   // missing `initial.branch` means there's nothing to switch.
@@ -189,6 +193,36 @@ export async function waitForCompilation(
     requestedBranch !== initial.branch
   ) {
     await switchToBranch(client, projectId, requestedBranch);
+    initial = await client.getProjectStatus(projectId);
+  }
+
+  if (isResolvedCompileState(initial.compileState) && !(initial.compileState === "idle" && options.compileOnIdle)) {
+    return initial;
+  }
+
+  if (initial.compileState === "idle" && options.compileOnIdle) {
+    options.onProgress?.(initial);
+    try {
+      const triggerTimeoutMs = remainingTimeoutMs();
+      if (triggerTimeoutMs === 0) {
+        return initial;
+      }
+      await client.triggerProjectCompilation(projectId, {
+        signal: options.signal,
+        timeoutMs: triggerTimeoutMs,
+      });
+    } catch (error) {
+      if (options.signal?.aborted) {
+        throw makeAbortError("waitForCompilation");
+      }
+      if (isAxiosError(error) && error.code === "ECONNABORTED") {
+        // The Studio request may keep compiling after the HTTP wait expires.
+        // Preserve the wait contract by returning its latest snapshot rather
+        // than turning a timeout into a tool failure.
+        return client.getProjectStatus(projectId);
+      }
+      throw error;
+    }
     initial = await client.getProjectStatus(projectId);
     if (isResolvedCompileState(initial.compileState)) {
       return initial;
@@ -234,18 +268,22 @@ export async function waitForCompilation(
       signal: options.signal,
     });
 
-    // Step 5: race-close. Status may have flipped to terminal between step 1 and the subscribe.
+    // Step 6: race-close. Status may have flipped to terminal between step 1 and the subscribe.
     const afterSubscribe = await client.getProjectStatus(projectId);
     lastSeen = afterSubscribe;
     if (isResolvedCompileState(afterSubscribe.compileState)) {
       return afterSubscribe;
     }
 
-    // Step 6: wait for terminal via STOMP, with timeout + abort. On timeout
+    // Step 8: wait for terminal via STOMP, with timeout + abort. On timeout
     // return the last-seen snapshot rather than erroring.
     try {
+      const waitTimeoutMs = remainingTimeoutMs();
+      if (waitTimeoutMs === 0) {
+        return lastSeen;
+      }
       return await awaitTerminal<Types.ProjectStatusView>({
-        timeoutMs,
+        timeoutMs: waitTimeoutMs,
         signal: options.signal,
         abortOperation: "waitForCompilation",
         register: (resolve) => { resolveTerminal = resolve; },

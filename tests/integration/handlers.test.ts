@@ -9,7 +9,7 @@ import { OpenLClient } from "../../src/client.js";
 import { executeTool, getAllTools, registerAllTools } from "../../src/handlers/index.js";
 import type { OpenLConfig, ProjectStatusView, ProjectViewModel, RepositoryInfo, SummaryTableView, TestsExecutionSummary } from "../../src/types.js";
 import * as Types from "../../src/types.js";
-import { mockRepositories, mockDecisionTable, mockDeployments } from "../mocks/openl-api-mocks.js";
+import { mockRepositories, mockDeployments } from "../mocks/openl-api-mocks.js";
 import { FIXTURE_IDS, writeGuidesFixture } from "../mocks/guides-bundle-fixture.js";
 
 // Shared fixture for the tests below that address a project by its colon-form id.
@@ -84,13 +84,13 @@ describe("Tool Handler Integration Tests", () => {
       expect(text).toContain("development");
     });
 
-    it("keeps revision totals unknown and derives more pages from totalPages", async () => {
+    it("uses the current revision total to derive more pages", async () => {
       const mockRepos: RepositoryInfo[] = [
         { id: "design", name: "Design Repository", aclId: "acl-design" },
       ];
       mockAxios.onGet("/repos").reply(200, mockRepos);
       mockAxios.onGet("/repos/design/projects/InsuranceRules/history", {
-        params: { page: 0, size: 2 },
+        params: { techRevs: false, page: 0, size: 2 },
       }).reply(200, {
         content: [
           {
@@ -111,7 +111,7 @@ describe("Tool Handler Integration Tests", () => {
         pageNumber: 0,
         pageSize: 2,
         numberOfElements: 2,
-        totalPages: 2,
+        total: 4,
       });
 
       const result = await executeTool("repository_project_revisions", {
@@ -129,7 +129,39 @@ describe("Tool Handler Integration Tests", () => {
         has_more: true,
         next_offset: 2,
       });
-      expect(response.pagination).not.toHaveProperty("total_count");
+      expect(response.pagination.total_count).toBe(4);
+    });
+
+    it("preserves a non-page-aligned revision offset in response metadata", async () => {
+      const mockRepos: RepositoryInfo[] = [
+        { id: "design", name: "Design Repository", aclId: "acl-design" },
+      ];
+      mockAxios.onGet("/repos").reply(200, mockRepos);
+      mockAxios.onGet("/repos/design/projects/InsuranceRules/history", {
+        params: { techRevs: false, offset: 25, size: 50 },
+      }).reply(200, {
+        content: [],
+        pageNumber: 0,
+        pageSize: 50,
+        numberOfElements: 0,
+        total: 25,
+      });
+
+      const result = await executeTool("repository_project_revisions", {
+        repository: "Design Repository",
+        projectName: "InsuranceRules",
+        offset: 25,
+        size: 50,
+        response_format: "json",
+      }, client);
+
+      const response = JSON.parse(result.content[0].text);
+      expect(response.pagination).toMatchObject({
+        limit: 50,
+        offset: 25,
+        total_count: 25,
+        has_more: false,
+      });
     });
   });
 
@@ -153,7 +185,7 @@ describe("Tool Handler Integration Tests", () => {
         },
       ];
 
-      mockAxios.onGet("/projects", { params: { repository: "design", page: 0, size: 50 } }).reply(200, mockProjects);
+      mockAxios.onGet("/projects", { params: { repository: "design", offset: 0, size: 50 } }).reply(200, mockProjects);
 
       const result = await executeTool("list_projects", {
         repository: "Design Repository", // Use repository name, not ID
@@ -161,6 +193,33 @@ describe("Tool Handler Integration Tests", () => {
 
       expect(result.content[0].type).toBe("text");
       expect(result.content[0].text).toContain("Project 1");
+    });
+
+    it("openl_list_projects returns requested summary and status expansions", async () => {
+      mockAxios.onGet("/projects", {
+        params: { include: ["summary", "status"], offset: 0, size: 50 },
+      }).reply(200, {
+        content: [],
+        pageNumber: 0,
+        pageSize: 50,
+        numberOfElements: 0,
+        total: 0,
+        repositoryCounts: [{ repository: "design", count: 3 }],
+        statusCounts: { OPENED: 2, CLOSED: 1 },
+        statuses: ["OPENED", "CLOSED"],
+        tagCounts: [{ tag: "release", count: 1 }],
+      });
+
+      const result = await executeTool("list_projects", {
+        include: ["summary", "status"],
+        response_format: "json",
+      }, client);
+      const response = JSON.parse(result.content[0].text);
+
+      expect(response.repositoryCounts).toEqual([{ repository: "design", count: 3 }]);
+      expect(response.statusCounts).toEqual({ OPENED: 2, CLOSED: 1 });
+      expect(response.statuses).toEqual(["OPENED", "CLOSED"]);
+      expect(response.tagCounts).toEqual([{ tag: "release", count: 1 }]);
     });
 
     it("should execute openl_get_project", async () => {
@@ -214,6 +273,7 @@ describe("Tool Handler Integration Tests", () => {
 
       const result = await executeTool("list_tables", {
         projectId: "design-project1",
+        response_format: "markdown",
       }, client);
 
       expect(result.content[0].type).toBe("text");
@@ -231,13 +291,12 @@ describe("Tool Handler Integration Tests", () => {
     });
 
     it("should execute openl_get_table", async () => {
-      const mockTable: Partial<SummaryTableView> = {
+      const mockTable = {
         id: "calculatePremium_1234",
         name: "calculatePremium",
-        tableType: "SimpleRules",
+        tableType: "RawSource",
         kind: "Rules",
-        file: "Rules.xlsx",
-        pos: "A1",
+        source: [[{ value: "Rules void calculatePremium()" }]],
       };
 
       // get_table uses buildProjectPath
@@ -247,15 +306,13 @@ describe("Tool Handler Integration Tests", () => {
         return [200, mockTable];
       });
 
-      // styles: false is the default — it is treated as unset (no raw=true
-      // required) and must not reach the backend query.
       const result = await executeTool("get_table", {
         projectId: "design-project1",
         tableId: "calculatePremium_1234",
         styles: false,
       }, client);
 
-      expect(queryParams).toBeUndefined();
+      expect(queryParams).toEqual({ raw: true });
       expect(result.content[0].type).toBe("text");
       expect(result.content[0].text).toContain("calculatePremium");
     });
@@ -276,7 +333,6 @@ describe("Tool Handler Integration Tests", () => {
       const result = await executeTool("get_table", {
         projectId: "design-project1",
         tableId: "calculatePremium_1234",
-        raw: true,
         startRow: 2,
         maxRows: 1,
         styles: true,
@@ -289,7 +345,7 @@ describe("Tool Handler Integration Tests", () => {
       expect(text).toContain("\"background\": \"#ccccff\"");
     });
 
-    it("openl_get_table rejects startRow/maxRows/styles without raw=true before any request is sent", async () => {
+    it("openl_get_table rejects the removed raw switch before any request is sent", async () => {
       let called = false;
       mockAxios.onGet(/\/projects\/.*\/tables\/.*/).reply(() => {
         called = true;
@@ -300,28 +356,26 @@ describe("Tool Handler Integration Tests", () => {
         executeTool("get_table", {
           projectId: "design-project1",
           tableId: "calculatePremium_1234",
-          startRow: 5,
-          styles: true,
+          raw: false,
         }, client)
-      ).rejects.toThrow(/raw=true/);
+      ).rejects.toThrow(/Unrecognized key.*raw/s);
       expect(called).toBe(false);
     });
 
-    it("openl_create_project_table normalizes a miscased tableType to the canonical token", async () => {
+    it("openl_create_project_table sends a complete RawSource table", async () => {
       let body: Record<string, any> = {};
       mockAxios.onPost(/\/projects\/.*\/tables/).reply((config) => {
         body = JSON.parse(config.data);
-        return [201, { id: "t1", name: "LoanApplication", tableType: "Datatype", file: "Main.xlsx" }];
+        return [201, { id: "t1", name: "LoanApplication", tableType: "RawSource", file: "Main.xlsx" }];
       });
 
-      // Agent's bug: lowercase "datatype" — must be sent to the backend as "Datatype".
       await executeTool("create_project_table", {
         projectId: "p1",
         moduleName: "Main",
-        table: { tableType: "datatype", kind: "Datatype", name: "LoanApplication", fields: [{ name: "age", type: "Integer" }] },
+        table: { tableType: "RawSource", kind: "Datatype", name: "LoanApplication", source: [[{ value: "Datatype LoanApplication" }]] },
       }, client);
 
-      expect(body.table.tableType).toBe("Datatype");
+      expect(body.table).toEqual(expect.objectContaining({ tableType: "RawSource", source: expect.any(Array) }));
     });
 
     it("openl_create_project_table rejects an unknown tableType with an actionable error (no request sent)", async () => {
@@ -337,11 +391,11 @@ describe("Tool Handler Integration Tests", () => {
           moduleName: "Main",
           table: { tableType: "frobnicate", name: "X" },
         }, client)
-      ).rejects.toThrow(/not a valid table type|CASE-SENSITIVE/);
+      ).rejects.toThrow(/must be exactly "RawSource"/);
       expect(called).toBe(false);
     });
 
-    it("openl_create_project_table rejects an unsupported 'signature' field with guidance (no request sent)", async () => {
+    it("openl_create_project_table rejects a typed table DTO with raw-only guidance", async () => {
       let called = false;
       mockAxios.onPost(/\/projects\/.*\/tables/).reply(() => {
         called = true;
@@ -354,7 +408,7 @@ describe("Tool Handler Integration Tests", () => {
           moduleName: "Main",
           table: { tableType: "SimpleRules", name: "CreditCategory", signature: "String CreditCategory(Integer creditScore)", rules: [] },
         }, client)
-      ).rejects.toThrow(/signature is not a valid field|returnType.*args/);
+      ).rejects.toThrow(/Typed table DTOs are intentionally unsupported/);
       expect(called).toBe(false);
     });
 
@@ -365,7 +419,27 @@ describe("Tool Handler Integration Tests", () => {
           moduleName: "Main",
           table: { name: "X", fields: [] },
         }, client)
-      ).rejects.toThrow(/tableType is required/);
+      ).rejects.toThrow(/tableType must be exactly "RawSource"/);
+    });
+
+    it("openl_create_project_table rejects a missing or blank name before sending", async () => {
+      let called = false;
+      mockAxios.onPost(/\/projects\/.*\/tables/).reply(() => {
+        called = true;
+        return [201, {}];
+      });
+
+      for (const table of [
+        { tableType: "RawSource", source: [] },
+        { tableType: "RawSource", name: "   ", source: [] },
+      ]) {
+        await expect(executeTool("create_project_table", {
+          projectId: "p1",
+          moduleName: "Main",
+          table,
+        }, client)).rejects.toThrow(/Invalid arguments for create_project_table/);
+      }
+      expect(called).toBe(false);
     });
 
     // --- Request validation for the structured-payload table tools (EPBDS-16110/16112) ---
@@ -384,13 +458,13 @@ describe("Tool Handler Integration Tests", () => {
           tableId: "t1",
           appendData: { rules: [{ "Commission Type": "UDI", "Partner Code": "CIDP_CL_FB" }] },
         }, client)
-      ).rejects.toThrow(/tableType is required.*CASE-SENSITIVE/s);
+      ).rejects.toThrow(/tableType must be exactly "RawSource"/);
       expect(called).toBe(false);
     });
 
     it("openl_append_table accepts appendData sent as a JSON string and forwards a real object", async () => {
       mockAxios.onGet(/\/tables\/t1$/).reply(200, {
-        id: "t1", name: "MyData", tableType: "Data", kind: "Data", file: "Rules.xlsx", pos: "A1",
+        id: "t1", name: "MyData", tableType: "RawSource", kind: "Data", source: [[{}, {}, {}]],
       });
       let postBody: Record<string, any> = {};
       mockAxios.onPost(/\/tables\/t1\/lines/).reply((config) => {
@@ -402,12 +476,12 @@ describe("Tool Handler Integration Tests", () => {
       const result = await executeTool("append_table", {
         projectId: "p1",
         tableId: "t1",
-        appendData: '{"tableType":"Data","rows":[{"values":[2035,"01/01/2035",1000]}]}',
+        appendData: '{"tableType":"RawSource","rows":[[{"value":2035},{"value":"01/01/2035"},{"value":1000}]]}',
       }, client);
 
       expect(result.content[0].text).toContain("Successfully appended");
       // The stringified payload reached the backend as a parsed object, not a string literal.
-      expect(postBody.tableType).toBe("Data");
+      expect(postBody.tableType).toBe("RawSource");
       expect(Array.isArray(postBody.rows)).toBe(true);
     });
 
@@ -422,7 +496,7 @@ describe("Tool Handler Integration Tests", () => {
         executeTool("append_table", {
           projectId: "p1",
           tableId: "t1",
-          appendData: '{"tableType":"Data","rows":[',
+          appendData: '{"tableType":"RawSource","rows":[',
         }, client)
       ).rejects.toThrow(/not valid JSON/);
       expect(called).toBe(false);
@@ -442,27 +516,15 @@ describe("Tool Handler Integration Tests", () => {
           tableId: "t1",
           appendData: { tableType: "Data", rules: [{ a: 1 }] },
         }, client)
-      ).rejects.toThrow(/rows/);
+      ).rejects.toThrow(/rules|Unrecognized key/);
       expect(called).toBe(false);
     });
 
-    it("openl_append_table normalizes a miscased tableType before sending", async () => {
-      mockAxios.onGet(/\/tables\/t1$/).reply(200, {
-        id: "t1", name: "MyData", tableType: "Data", kind: "Data", file: "Rules.xlsx", pos: "A1",
-      });
-      let postBody: Record<string, any> = {};
-      mockAxios.onPost(/\/tables\/t1\/lines/).reply((config) => {
-        postBody = JSON.parse(config.data);
-        return [200];
-      });
-
-      await executeTool("append_table", {
-        projectId: "p1",
-        tableId: "t1",
-        appendData: { tableType: "data", rows: [{ values: [1, 2, 3] }] },
-      }, client);
-
-      expect(postBody.tableType).toBe("Data");
+    it("openl_append_table rejects a miscased RawSource discriminator", async () => {
+      await expect(executeTool("append_table", {
+        projectId: "p1", tableId: "t1",
+        appendData: { tableType: "rawsource", rows: [[{ value: 1 }]] },
+      }, client)).rejects.toThrow(/must be exactly "RawSource"/);
     });
 
     it("openl_update_table accepts view sent as a JSON string and forwards a real object", async () => {
@@ -472,10 +534,10 @@ describe("Tool Handler Integration Tests", () => {
         return [204];
       });
       mockAxios.onGet(/\/tables\/t1$/).reply(200, {
-        id: "t1", name: "calc", tableType: "SimpleRules", kind: "Rules",
+        id: "t1", name: "calc", tableType: "RawSource", kind: "Rules", source: [[{ value: "Rules void calc()" }]],
       });
 
-      const view = { id: "t1", name: "calc", tableType: "SimpleRules", kind: "Rules", rules: [{ x: 1 }] };
+      const view = { id: "t1", name: "calc", tableType: "RawSource", kind: "Rules", source: [[{ value: "Rules void calc()" }]] };
       const result = await executeTool("update_table", {
         projectId: "p1",
         tableId: "t1",
@@ -483,7 +545,25 @@ describe("Tool Handler Integration Tests", () => {
       }, client);
 
       expect(result.content[0].text).toContain("Successfully updated table");
-      expect(putBody.tableType).toBe("SimpleRules");
+      expect(putBody.tableType).toBe("RawSource");
+    });
+
+    it("openl_update_table rejects a windowed RawSource view before it can delete omitted rows", async () => {
+      const view = {
+        id: "t1",
+        name: "calc",
+        tableType: "RawSource",
+        kind: "Rules",
+        source: [[{ value: "Rules void calc()" }]],
+        totalRows: 400,
+      };
+
+      await expect(executeTool("update_table", {
+        projectId: "p1",
+        tableId: "t1",
+        view,
+      }, client)).rejects.toThrow(/windowed RawSource view cannot replace the whole table/);
+      expect(mockAxios.history.put).toHaveLength(0);
     });
 
     it("openl_update_table rejects a view that is a plain (non-JSON) string (no request sent)", async () => {
@@ -503,24 +583,7 @@ describe("Tool Handler Integration Tests", () => {
       expect(called).toBe(false);
     });
 
-    it("openl_append_table rejects a Spreadsheet append without cells (no request sent)", async () => {
-      let called = false;
-      mockAxios.onPost(/\/lines/).reply(() => {
-        called = true;
-        return [200];
-      });
-
-      await expect(
-        executeTool("append_table", {
-          projectId: "p1",
-          tableId: "t1",
-          appendData: { tableType: "Spreadsheet", rows: [{ name: "Step1", type: "Double" }] },
-        }, client)
-      ).rejects.toThrow(/cells/);
-      expect(called).toBe(false);
-    });
-
-    it("openl_append_table rejects a Spreadsheet append whose rows and cells lengths differ (no request sent)", async () => {
+    it("openl_append_table rejects the removed typed Spreadsheet append contract", async () => {
       let called = false;
       mockAxios.onPost(/\/lines/).reply(() => {
         called = true;
@@ -538,13 +601,28 @@ describe("Tool Handler Integration Tests", () => {
             cells: [[{ value: "=1+1" }]],
           },
         }, client)
-      ).rejects.toThrow(/Cannot append to Spreadsheet table/);
+      ).rejects.toThrow(/Typed table DTOs are intentionally unsupported/);
       expect(called).toBe(false);
     });
 
-    it("openl_append_table appends to a Spreadsheet via cells and reports the row count", async () => {
+    it("openl_append_table rejects typed Spreadsheet rows even without cells", async () => {
+      let called = false;
+      mockAxios.onPost(/\/lines/).reply(() => {
+        called = true;
+        return [200];
+      });
+
+      await expect(executeTool("append_table", {
+        projectId: "p1",
+        tableId: "t1",
+        appendData: { tableType: "Spreadsheet", rows: [{ name: "Step1" }] },
+      }, client)).rejects.toThrow(/Invalid arguments for append_table/);
+      expect(called).toBe(false);
+    });
+
+    it("openl_append_table appends Spreadsheet workbook rows through RawSource", async () => {
       mockAxios.onGet(/\/tables\/sheet1$/).reply(200, {
-        id: "sheet1", name: "Calc", tableType: "Spreadsheet", kind: "Spreadsheet", file: "Main.xlsx", pos: "A1",
+        id: "sheet1", name: "Calc", tableType: "RawSource", kind: "Spreadsheet", source: [[{}, {}]],
       });
       let postBody: Record<string, any> = {};
       mockAxios.onPost(/\/tables\/sheet1\/lines/).reply((config) => {
@@ -555,13 +633,15 @@ describe("Tool Handler Integration Tests", () => {
       const result = await executeTool("append_table", {
         projectId: "p1",
         tableId: "sheet1",
-        appendData: { tableType: "Spreadsheet", cells: [[{ value: "=1+1" }], [{ value: "=2+2" }]] },
+        appendData: {
+          tableType: "RawSource",
+          rows: [[{ value: "Step1" }, { value: "=1+1" }], [{ value: "Step2" }, { value: "=2+2" }]],
+        },
       }, client);
 
-      // cells-only append (no rows): item count comes from cells.length.
-      expect(result.content[0].text).toContain("Successfully appended 2 row(s)");
-      expect(postBody.tableType).toBe("Spreadsheet");
-      expect(Array.isArray(postBody.cells)).toBe(true);
+      expect(result.content[0].text).toContain("Successfully appended 2 raw source row(s)");
+      expect(postBody.tableType).toBe("RawSource");
+      expect(Array.isArray(postBody.rows)).toBe(true);
     });
 
     it("openl_delete_table DELETEs the table and reports success", async () => {
@@ -587,7 +667,7 @@ describe("Tool Handler Integration Tests", () => {
 
       await expect(
         executeTool("delete_table", { projectId: "p1" }, client),
-      ).rejects.toThrow(/Missing required arguments/);
+      ).rejects.toThrow(/Invalid arguments for delete_table.*tableId/s);
       expect(called).toBe(false);
     });
   });
@@ -1100,7 +1180,7 @@ describe("Tool Handler Integration Tests", () => {
       ];
       mockAxios.onGet("/repos").reply(200, mockRepos);
       mockAxios
-        .onGet("/projects", { params: { repository: "design", page: 0, size: 50 } })
+        .onGet("/projects", { params: { repository: "design", offset: 0, size: 50 } })
         .reply(200, formatVariantProjects);
 
       const result = await executeTool("list_projects", {
@@ -1232,8 +1312,6 @@ describe("Tool Handler Integration Tests", () => {
         modifiedAt: "2024-01-01T00:00:00Z",
       });
 
-      // Mock validation endpoint (404 = validation unavailable, proceed with save)
-      mockAxios.onGet(`/projects/${encodedProjectId}/validation`).reply(404);
 
       // Save is done via PATCH /projects/{projectId} with { comment } (204 No Content)
       mockAxios.onPatch(`/projects/${encodedProjectId}`, {
@@ -1263,8 +1341,6 @@ describe("Tool Handler Integration Tests", () => {
         modifiedBy: "admin",
         modifiedAt: "2024-01-01T00:00:00Z",
       });
-
-      mockAxios.onGet(`/projects/${encodedProjectId}/validation`).reply(404);
 
       let patchBody: { comment?: string; status?: string } = {};
       mockAxios.onPatch(`/projects/${encodedProjectId}`).reply((config) => {
@@ -1327,8 +1403,6 @@ describe("Tool Handler Integration Tests", () => {
         modifiedAt: "2024-01-01T00:00:00Z",
       });
 
-      // Mock validation endpoint (404 = validation unavailable, proceed with save)
-      mockAxios.onGet(`/projects/${encodedProjectId}/validation`).reply(404);
 
       // saveProject uses PATCH with { comment }; closeProject uses PATCH with { status: "CLOSED" }
       mockAxios.onPatch(`/projects/${encodedProjectId}`).reply((config) => {
@@ -1367,6 +1441,7 @@ describe("Tool Handler Integration Tests", () => {
       // Mock close (discarding changes)
       mockAxios.onPatch(`/projects/${encodedProjectId}`, {
         status: "CLOSED",
+        discardChanges: true,
       }).reply(200);
 
       const result = await executeTool("close_project", {
@@ -1454,19 +1529,24 @@ describe("Tool Handler Integration Tests", () => {
   });
 
   describe("Pagination", () => {
-    it("should reject non-page-aligned project and table offsets before calling Studio", async () => {
+    it("should preserve non-page-aligned project and table offsets", async () => {
+      mockAxios.onGet("/projects", { params: { offset: 25, size: 50 } }).reply(200, {
+        content: [], pageNumber: 0, pageSize: 50, total: 0,
+      });
+      mockAxios.onGet("/projects/design-project1/tables", { params: { offset: 25, size: 50 } }).reply(200, {
+        content: [], pageNumber: 0, pageSize: 50, total: 0,
+      });
+
       await expect(executeTool("list_projects", {
         limit: 50,
         offset: 25,
-      }, client)).rejects.toThrow(/offset must be a multiple of limit/);
+      }, client)).resolves.toBeDefined();
 
       await expect(executeTool("list_tables", {
         projectId: "design-project1",
         limit: 50,
         offset: 25,
-      }, client)).rejects.toThrow(/offset must be a multiple of limit/);
-
-      expect(mockAxios.history.get).toHaveLength(0);
+      }, client)).resolves.toBeDefined();
     });
 
     it("should support pagination parameters", async () => {
@@ -1486,7 +1566,7 @@ describe("Tool Handler Integration Tests", () => {
         modifiedAt: "2024-01-01T00:00:00Z",
       }));
 
-      mockAxios.onGet("/projects", { params: { repository: "design", page: 0, size: 10 } }).reply(200, mockProjects);
+      mockAxios.onGet("/projects", { params: { repository: "design", offset: 0, size: 10 } }).reply(200, mockProjects);
 
       const result = await executeTool("list_projects", {
         repository: "Design Repository", // Use repository name, not ID
@@ -1514,21 +1594,24 @@ describe("Tool Handler Integration Tests", () => {
         modifiedAt: "2024-01-01T00:00:00Z",
       }));
       mockAxios.onGet("/projects").reply((config) => {
-        const pageNumber = Number(config.params.page);
+        const offset = Number(config.params.offset);
         const pageSize = Number(config.params.size);
-        const start = pageNumber * pageSize;
-        const content = allProjects.slice(start, start + pageSize);
+        const pageNumber = Math.floor(offset / pageSize);
+        const content = allProjects.slice(offset, offset + pageSize);
         return [200, {
           content,
           pageNumber,
           pageSize,
           numberOfElements: content.length,
-          totalElements: allProjects.length,
-          totalPages: Math.ceil(allProjects.length / pageSize),
+          total: allProjects.length,
         }];
       });
 
-      const first = await executeTool("list_projects", { limit: 50, offset: 0 }, client);
+      const first = await executeTool("list_projects", {
+        limit: 50,
+        offset: 0,
+        response_format: "markdown",
+      }, client);
       const second = await executeTool("list_projects", {
         limit: 50,
         offset: 50,
@@ -1577,7 +1660,7 @@ describe("Tool Handler Integration Tests", () => {
           repository: "Design Repository", // Use repository name, not ID
           limit: 300, // Exceeds max
         }, client)
-      ).rejects.toThrow(/limit must be <= 200/);
+      ).rejects.toThrow(/Invalid arguments for list_projects.*limit/s);
     });
 
     it("should enforce minimum limit of 1", async () => {
@@ -1592,17 +1675,38 @@ describe("Tool Handler Integration Tests", () => {
           repository: "Design Repository", // Use repository name, not ID
           limit: 0,
         }, client)
-      ).rejects.toThrow(/limit must be positive/);
+      ).rejects.toThrow(/Invalid arguments for list_projects.*limit/s);
     });
   });
 
   describe("Error Handling", () => {
+    it("rejects unknown arguments before a handler can call the backend", async () => {
+      await expect(
+        executeTool("list_repositories", { limti: 10 }, client)
+      ).rejects.toThrow(/Invalid arguments for list_repositories.*limti/s);
+      expect(mockAxios.history.get).toHaveLength(0);
+    });
+
+    it.each([
+      ["project_status", { projectId: "p1", timeoutMs: 600_001 }, /timeoutMs/],
+      ["read_project_file", { projectId: "p1", offset: -1 }, /offset/],
+      ["get_test_results", { projectId: "p1", page: 0, offset: 0 }, /mutually exclusive/],
+      ["append_table", {
+        projectId: "p1",
+        tableId: "t1",
+        appendData: { tableType: "Datatype", fields: [{ name: "age", type: "Integer", requried: true }] },
+      }, /tableType must be exactly "RawSource"/],
+    ])("enforces the published %s constraints at runtime", async (toolName, args, message) => {
+      await expect(executeTool(toolName, args, client)).rejects.toThrow(message);
+      expect(mockAxios.history.get).toHaveLength(0);
+    });
+
     it("should return actionable error for missing projectId", async () => {
       await expect(
         executeTool("get_project", {
           // Missing projectId
         }, client)
-      ).rejects.toThrow(/Missing required argument: projectId/);
+      ).rejects.toThrow(/Invalid arguments for get_project.*projectId/s);
       await expect(
         executeTool("get_project", {}, client)
       ).rejects.toThrow(/openl_list_projects/);
@@ -1734,7 +1838,7 @@ describe("Tool Handler Integration Tests", () => {
 
         // Verify headers are stored by making a get_test_results call
         // Mock the /tests/summary endpoint and verify headers are sent
-        mockAxios.onGet(`/projects/${encodedProjectId}/tests/summary`).reply((config) => {
+        mockAxios.onGet(/\/projects\/design-project1\/tests\/summary/).reply((config) => {
           // Verify that session headers are present in the request
           expect(config.headers).toHaveProperty("x-test-execution-id", "test-session-abc");
           expect(config.headers).toHaveProperty("x-custom-header", "custom-value");
@@ -1779,7 +1883,7 @@ describe("Tool Handler Integration Tests", () => {
           numberOfFailures: 2,
         };
 
-        mockAxios.onGet(`/projects/${encodedProjectId}/tests/summary`).reply((config) => {
+        mockAxios.onGet(/\/projects\/design-project1\/tests\/summary/).reply((config) => {
           // Verify headers are propagated
           expect(config.headers).toHaveProperty("x-test-execution-id");
           expect(config.headers).toHaveProperty("Accept", "application/json");
@@ -1788,6 +1892,7 @@ describe("Tool Handler Integration Tests", () => {
 
         const result = await executeTool("get_test_results_summary", {
           projectId: "design-project1",
+          response_format: "markdown",
         }, client);
 
         expect(result.content[0].type).toBe("text");
@@ -1846,7 +1951,7 @@ describe("Tool Handler Integration Tests", () => {
         }, client);
 
         mockAxios.onGet(`/projects/${encodedProjectId}/tests/summary`, {
-          params: { unpaged: true },
+          params: { failures: 5, unpaged: true },
         }).reply(200, {
           testCases: [],
           executionTimeMs: 100,
@@ -1907,7 +2012,7 @@ describe("Tool Handler Integration Tests", () => {
           numberOfElements: 2,
         };
 
-        mockAxios.onGet(`/projects/${encodedProjectId}/tests/summary`).reply((config) => {
+        mockAxios.onGet(/\/projects\/design-project1\/tests\/summary/).reply((config) => {
           // Verify headers are propagated
           expect(config.headers).toHaveProperty("x-test-execution-id", "test-session-results");
           expect(config.headers).toHaveProperty("Cookie", "JSESSIONID=results456");
@@ -1917,6 +2022,7 @@ describe("Tool Handler Integration Tests", () => {
 
         const result = await executeTool("get_test_results", {
           projectId: "design-project1",
+          response_format: "markdown",
         }, client);
 
         expect(result.content[0].type).toBe("text");
@@ -1960,7 +2066,7 @@ describe("Tool Handler Integration Tests", () => {
         };
 
         mockAxios.onGet(`/projects/${encodedProjectId}/tests/summary`, {
-          params: { page: 1, size: 50 },
+          params: { failures: 5, page: 1, size: 50 },
         }).reply(200, mockResults);
 
         const result = await executeTool("get_test_results", {
@@ -1975,9 +2081,9 @@ describe("Tool Handler Integration Tests", () => {
         expect(response.pagination).toMatchObject({
           limit: 50,
           offset: 50,
-          total_count: 75,
           has_more: false,
         });
+        expect(response.pagination).not.toHaveProperty("total_count");
         expect(response.pagination).not.toHaveProperty("next_offset");
       });
 
@@ -2002,13 +2108,14 @@ describe("Tool Handler Integration Tests", () => {
         };
 
         mockAxios.onGet(`/projects/${encodedProjectId}/tests/summary`, {
-          params: { page: 2, size: 25 },
+          params: { failures: 5, page: 2, size: 25 },
         }).reply(200, mockResults);
 
         const result = await executeTool("get_test_results", {
           projectId: "design-project1",
           page: 2,
           size: 25,
+          response_format: "markdown",
         }, client);
 
         expect(result.content[0].type).toBe("text");
@@ -2029,7 +2136,7 @@ describe("Tool Handler Integration Tests", () => {
         }, client);
 
         mockAxios.onGet(`/projects/${encodedProjectId}/tests/summary`, {
-          params: { failuresOnly: true },
+          params: { failuresOnly: true, failures: 5 },
         }).reply(200, {
           testCases: [],
           executionTimeMs: 100,
@@ -2055,7 +2162,7 @@ describe("Tool Handler Integration Tests", () => {
         }, client);
 
         mockAxios.onGet(`/projects/${encodedProjectId}/tests/summary`, {
-          params: { unpaged: true },
+          params: { failures: 5, unpaged: true },
         }).reply(200, {
           testCases: [],
           executionTimeMs: 100,
@@ -2117,7 +2224,6 @@ describe("Tool Handler Integration Tests", () => {
           pageNumber: 0,
           pageSize: 50,
           numberOfElements: 2,
-          totalPages: 1,
         };
 
         mockAxios.onGet(`/projects/${encodedProjectId}/tests/summary`).reply((config) => {
@@ -2137,7 +2243,6 @@ describe("Tool Handler Integration Tests", () => {
               pageNumber: page,
               pageSize: 50,
               numberOfElements: 0,
-              totalPages: 1,
             }];
           }
           
@@ -2173,7 +2278,7 @@ describe("Tool Handler Integration Tests", () => {
             projectId: "design-project1",
             // Missing tableId
           }, client)
-        ).rejects.toThrow(/Missing required arguments.*tableId/);
+          ).rejects.toThrow(/Invalid arguments for get_test_results_by_table.*tableId/s);
       });
 
       it("should support pagination parameters", async () => {
@@ -2205,7 +2310,7 @@ describe("Tool Handler Integration Tests", () => {
         };
 
         mockAxios.onGet(`/projects/${encodedProjectId}/tests/summary`, {
-          params: { page: 0, size: 50 },
+          params: { failures: 5, page: 0, size: 50 },
         }).reply(200, allResults);
 
         const result = await executeTool("get_test_results_by_table", {
@@ -2349,9 +2454,8 @@ describe("Tool Handler Integration Tests", () => {
 
       it("openl_write_project_file with 'message' commits the write (save) and reports committed:true", async () => {
         mockAxios.onPost("/projects/p1/files/docs/x.md").reply(201, {});
-        // saveProject(): GET project (EDITING, design) -> GET validation -> PATCH commit
+        // saveProject(): GET project (EDITING, design) -> PATCH commit
         mockAxios.onGet("/projects/p1").reply(200, { id: "p1", name: "P", status: "EDITING", repository: "design" });
-        mockAxios.onGet("/projects/p1/validation").reply(200, { valid: true, errors: [] });
         let patched: Record<string, unknown> = {};
         mockAxios.onPatch("/projects/p1").reply((config) => {
           patched = JSON.parse(config.data);
@@ -2508,8 +2612,8 @@ describe("Tool Handler Integration Tests", () => {
           "content-disposition": "attachment",
         });
 
-        // Default response_format (markdown): binary must still come back as an
-        // intact JSON envelope, NOT a truncated markdown string.
+        // Default JSON must carry the complete base64 envelope without applying
+        // the normal text-response character limit.
         const result = await executeTool("read_project_file", {
           projectId: "p1",
           path: "big.bin",
@@ -2750,6 +2854,67 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
   });
 
   describe("Project Status", () => {
+    it("starts lazy compilation on idle by default and returns the resulting status", async () => {
+      const encoded = encodeProjectPath(projectId);
+      mockAxios
+        .onGet(`/projects/${encoded}/status`)
+        .replyOnce(200, { projectId, branch: "main", compileState: "idle" })
+        .onGet(`/projects/${encoded}/status`)
+        .replyOnce(200, {
+          projectId,
+          branch: "main",
+          compileState: "ok",
+          compilation: {
+            messages: { items: [], total: 0, errors: 0, warnings: 0 },
+            modules: { total: 1, compiled: 1 },
+            tests: { total: 34 },
+          },
+        });
+      mockAxios.onGet(`/projects/${encoded}/tables`, {
+        params: { offset: 0, size: 1 },
+      }).reply(200, {
+        content: [],
+        pageNumber: 0,
+        pageSize: 1,
+        numberOfElements: 0,
+        total: 0,
+      });
+
+      const result = await executeTool(
+        "project_status",
+        { projectId, response_format: "json" },
+        client,
+      );
+
+      const response = JSON.parse(result.content[0].text).data;
+      expect(response.compileState).toBe("ok");
+      expect(response.compilation.tests.total).toBe(34);
+      expect(mockAxios.history.get.filter((request) => request.url?.endsWith("/tables"))).toHaveLength(1);
+      // The default path above starts compilation, so MCP clients must not be
+      // told that the tool is unconditionally read-only.
+      expect(getAllTools().find((tool) => tool.name === "project_status")?.annotations?.readOnlyHint).toBe(false);
+    });
+
+    it("keeps wait=false as a read-only idle snapshot with actionable guidance", async () => {
+      const encoded = encodeProjectPath(projectId);
+      mockAxios.onGet(`/projects/${encoded}/status`).reply(200, {
+        projectId,
+        branch: "main",
+        compileState: "idle",
+      });
+
+      const result = await executeTool(
+        "project_status",
+        { projectId, wait: false, response_format: "json" },
+        client,
+      );
+
+      const response = JSON.parse(result.content[0].text).data;
+      expect(response.compileState).toBe("idle");
+      expect(response.note).toContain("wait=true");
+      expect(mockAxios.history.get.some((request) => request.url?.endsWith("/tables"))).toBe(false);
+    });
+
     it("should execute openl_project_status and surface diagnostics on errors", async () => {
       const encoded = encodeProjectPath(projectId);
       const fixture: ProjectStatusView = {
@@ -2835,7 +3000,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
 
       const result = await executeTool(
         "project_status",
-        { projectId, branch: "develop", response_format: "json" },
+        { projectId, branch: "develop", wait: false, response_format: "json" },
         client
       );
       expect(result.content[0].text).toContain("\"ok\"");
@@ -3021,15 +3186,15 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
     it("should execute openl_update_table", async () => {
       const encoded = encodeProjectPath(projectId);
       const view = {
-        ...mockDecisionTable,
         id: "Rules.xls_1234",
-        tableType: "SimpleRules",
+        tableType: "RawSource",
         kind: "Rules",
         name: "calculatePremium",
+        source: [[{ value: "Rules void calculatePremium()" }]],
       };
       mockAxios.onPut(`/projects/${encoded}/tables/${encodeURIComponent("Rules.xls_1234")}`).reply(204);
       // The edit tool reads the table back to trigger a recompile.
-      mockAxios.onGet(`/projects/${encoded}/tables/${encodeURIComponent("Rules.xls_1234")}`).reply(200, mockDecisionTable);
+      mockAxios.onGet(`/projects/${encoded}/tables/${encodeURIComponent("Rules.xls_1234")}`).reply(200, view);
 
       const result = await executeTool(
         "update_table",
@@ -3044,14 +3209,17 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
     it("should execute openl_append_table", async () => {
       const encoded = encodeProjectPath(projectId);
       const appendData = {
-        tableType: "Datatype",
-        fields: [{ name: "email", type: "String", required: true }],
+        tableType: "RawSource",
+        rows: [[{ value: "email" }, { value: "String" }]],
       };
       mockAxios
         .onPost(`/projects/${encoded}/tables/${encodeURIComponent("Customer_1234")}/lines`, appendData)
         .reply(200);
       // The edit tool reads the table back to trigger a recompile.
-      mockAxios.onGet(`/projects/${encoded}/tables/${encodeURIComponent("Customer_1234")}`).reply(200, mockDecisionTable);
+      mockAxios.onGet(`/projects/${encoded}/tables/${encodeURIComponent("Customer_1234")}`).reply(200, {
+        id: "Customer_1234", name: "Customer", tableType: "RawSource", kind: "Datatype",
+        source: [[{ value: "name" }, { value: "type" }]],
+      });
 
       const result = await executeTool(
         "append_table",
@@ -3093,7 +3261,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
         { projectId, tableId: "RawTable_5678", appendData },
         client
       );
-      expect(result.content[0].text).toContain("Successfully appended 2 row(s)");
+      expect(result.content[0].text).toContain("Successfully appended 2 raw source row(s)");
     });
 
     it("openl_append_table rejects RawSource rows whose width does not match the table (EPBDS-16085)", async () => {
@@ -3129,6 +3297,23 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       expect(mockAxios.history.post.length).toBe(0);
     });
 
+    it("openl_append_table does not write when the validation probe fails", async () => {
+      const encoded = encodeProjectPath(projectId);
+      const tableId = "UnavailableTable_0001";
+      mockAxios.onGet(`/projects/${encoded}/tables/${tableId}`).reply(503, {
+        message: "Compilation model is unavailable",
+      });
+      mockAxios.onPost(`/projects/${encoded}/tables/${tableId}/lines`).reply(200);
+
+      await expect(executeTool("append_table", {
+        projectId,
+        tableId,
+        appendData: { tableType: "RawSource", rows: [[{ value: "x" }]] },
+      }, client)).rejects.toThrow();
+
+      expect(mockAxios.history.post).toHaveLength(0);
+    });
+
     it("openl_append_table accepts RawSource rows that cover every column", async () => {
       const encoded = encodeProjectPath(projectId);
       const tableId = "WideTable_0002";
@@ -3155,7 +3340,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
         },
         client
       );
-      expect(result.content[0].text).toContain("Successfully appended 1 row(s)");
+      expect(result.content[0].text).toContain("Successfully appended 1 raw source row(s)");
       expect(mockAxios.history.post.length).toBe(1);
     });
 
@@ -3163,7 +3348,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       const encoded = encodeProjectPath(projectId);
       const oldId = "aaaa1111aaaa1111";
       const newId = "bbbb2222bbbb2222";
-      const tableMeta = { name: "bankFinancialData", tableType: "Data", kind: "Data", file: "Bank.xlsx", pos: "A1:E4" };
+      const tableMeta = { name: "bankFinancialData", tableType: "RawSource", kind: "Data", file: "Bank.xlsx", pos: "A1:E4", source: [[{}, {}, {}, {}, {}]] };
 
       // Pre-edit probe on the old id; recompile read on the NEW id.
       mockAxios.onGet(`/projects/${encoded}/tables/${oldId}`).reply(200, { id: oldId, ...tableMeta });
@@ -3181,7 +3366,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
         {
           projectId,
           tableId: oldId,
-          appendData: { tableType: "Data", rows: [{ values: ["R2", "01/01/2025", 500, 600, 700] }] },
+          appendData: { tableType: "RawSource", rows: [[{ value: "R2" }, { value: "01/01/2025" }, { value: 500 }, { value: 600 }, { value: 700 }]] },
           response_format: "json",
         },
         client
@@ -3202,7 +3387,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       const encoded = encodeProjectPath(projectId);
       const oldId = "aaaa0000aaaa0000";
       const newId = "bbbb1111bbbb1111";
-      const tableMeta = { name: "bankFinancialData", tableType: "Data", kind: "Data", file: "Bank.xlsx", pos: "A1:E4" };
+      const tableMeta = { name: "bankFinancialData", tableType: "RawSource", kind: "Data", file: "Bank.xlsx", pos: "A1:E4", source: [[{}, {}, {}, {}, {}]] };
 
       mockAxios.onGet(`/projects/${encoded}/tables/${oldId}`).reply(200, { id: oldId, ...tableMeta });
       mockAxios.onGet(`/projects/${encoded}/tables/${newId}`).reply(200, { id: newId, ...tableMeta, pos: "A1:E5" });
@@ -3218,7 +3403,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
         {
           projectId,
           tableId: oldId,
-          appendData: { tableType: "Data", rows: [{ values: ["R2", "01/01/2025", 500, 600, 700] }] },
+          appendData: { tableType: "RawSource", rows: [[{ value: "R2" }, { value: "01/01/2025" }, { value: 500 }, { value: 600 }, { value: 700 }]] },
           response_format: "json",
         },
         client
@@ -3238,7 +3423,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       const encoded = encodeProjectPath(projectId);
       const oldId = "cccc0000cccc0000";
       const newId = "dddd1111dddd1111";
-      const tableMeta = { tableType: "Data", kind: "Data", name: "vehicleRating", file: "Rating.xlsx", pos: "A1:B4" };
+      const tableMeta = { tableType: "RawSource", kind: "Data", name: "vehicleRating", file: "Rating.xlsx", pos: "A1:B4", source: [[{}, {}]] };
 
       // before-snapshot / would-be heuristic input: only the OLD id (→ "unchanged" if it ran)
       mockAxios.onGet(`/projects/${encoded}/tables`).reply(200, [{ id: oldId, ...tableMeta }]);
@@ -3248,7 +3433,13 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
         .reply(200, "", { Location: `http://example.com/rest/projects/${encoded}/tables/${newId}` });
       mockAxios.onGet(`/projects/${encoded}/tables/${newId}`).reply(200, { id: newId, ...tableMeta, pos: "A1:B5" });
 
-      const view = { id: oldId, ...tableMeta, rows: [{ values: [1, 2] }] };
+      const view = {
+        id: oldId,
+        tableType: tableMeta.tableType,
+        kind: tableMeta.kind,
+        name: tableMeta.name,
+        source: [[{ value: 1 }, { value: 2 }]],
+      };
       const result = await executeTool(
         "update_table",
         { projectId, tableId: oldId, view, response_format: "json" },
@@ -3266,7 +3457,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
     it("openl_append_table reports 204 (in-place edit) as an unchanged id", async () => {
       const encoded = encodeProjectPath(projectId);
       const tableId = "eeee2222eeee2222";
-      const tableMeta = { name: "ratesTable", tableType: "Data", kind: "Data", file: "Rates.xlsx", pos: "A1:C9" };
+      const tableMeta = { name: "ratesTable", tableType: "RawSource", kind: "Data", file: "Rates.xlsx", pos: "A1:C9", source: [[{}, {}, {}]] };
 
       mockAxios.onGet(`/projects/${encoded}/tables/${tableId}`).reply(200, { id: tableId, ...tableMeta });
       // Same id before and after — an in-place edit that did not relocate the table.
@@ -3275,7 +3466,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
 
       const result = await executeTool(
         "append_table",
-        { projectId, tableId, appendData: { tableType: "Data", rows: [{ values: [1, 2, 3] }] }, response_format: "json" },
+        { projectId, tableId, appendData: { tableType: "RawSource", rows: [[{ value: 1 }, { value: 2 }, { value: 3 }]] }, response_format: "json" },
         client
       );
 
@@ -3290,7 +3481,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       const encoded = encodeProjectPath(projectId);
       const oldId = "cccc3333cccc3333";
       const newId = "dddd4444dddd4444";
-      const tableMeta = { name: "driverRating", tableType: "Data", kind: "Data", file: "Rating.xlsx", pos: "A1:C4" };
+      const tableMeta = { name: "driverRating", tableType: "RawSource", kind: "Data", file: "Rating.xlsx", pos: "A1:C4", source: [[{}, {}, {}]] };
 
       // 1) An append records the old→new rename.
       mockAxios.onGet(`/projects/${encoded}/tables/${oldId}`).reply(200, { id: oldId, ...tableMeta });
@@ -3303,7 +3494,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       mockAxios.onPost(`/projects/${encoded}/tables/${oldId}/lines`).reply(200);
       await executeTool(
         "append_table",
-        { projectId, tableId: oldId, appendData: { tableType: "Data", rows: [{ values: [1, 2, 3] }] } },
+        { projectId, tableId: oldId, appendData: { tableType: "RawSource", rows: [[{ value: 1 }, { value: 2 }, { value: 3 }]] } },
         client
       );
 
@@ -3326,7 +3517,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       const encoded = encodeProjectPath(projectId);
       const oldId = "eeee5555eeee5555";
       const newId = "ffff6666ffff6666";
-      const tableMeta = { name: "vehicleRating", tableType: "Data", kind: "Data", file: "Rating.xlsx", pos: "A1:B4" };
+      const tableMeta = { name: "vehicleRating", tableType: "RawSource", kind: "Data", file: "Rating.xlsx", pos: "A1:B4", source: [[{}, {}]] };
 
       // 1) An append records the old→new rename.
       mockAxios.onGet(`/projects/${encoded}/tables/${oldId}`).reply(200, { id: oldId, ...tableMeta });
@@ -3339,7 +3530,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       mockAxios.onPost(`/projects/${encoded}/tables/${oldId}/lines`).reply(200);
       await executeTool(
         "append_table",
-        { projectId, tableId: oldId, appendData: { tableType: "Data", rows: [{ values: [1, 2] }] } },
+        { projectId, tableId: oldId, appendData: { tableType: "RawSource", rows: [[{ value: 1 }, { value: 2 }]] } },
         client
       );
 
@@ -3349,7 +3540,13 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       mockAxios.onPut(`/projects/${encoded}/tables/${newId}`).reply(204);
       mockAxios.onGet(`/projects/${encoded}/tables/${newId}`).reply(200, { id: newId, ...tableMeta, pos: "A1:B5" });
 
-      const view = { id: oldId, ...tableMeta, rows: [{ values: [9, 9] }] };
+      const view = {
+        id: oldId,
+        tableType: tableMeta.tableType,
+        kind: tableMeta.kind,
+        name: tableMeta.name,
+        source: [[{ value: 9 }, { value: 9 }]],
+      };
       const result = await executeTool(
         "update_table",
         { projectId, tableId: oldId, view, response_format: "json" },
@@ -3392,15 +3589,27 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
     it("should execute openl_list_deployments", async () => {
       mockAxios.onGet("/deployments").reply(200, mockDeployments);
 
-      const result = await executeTool("list_deployments", {}, client);
+      const result = await executeTool("list_deployments", {
+        response_format: "markdown",
+      }, client);
       expect(result.content[0].text).toContain("# Deployments");
     });
   });
 
-  describe("Project Creation & Cloning", () => {
-    it("should create an empty project and return the commit revision", async () => {
+  describe("Project Creation & Copying", () => {
+    it("should create an empty project and return its canonical backend id", async () => {
       mockAxios.onGet("/repos").reply(200, mockRepositories);
       mockAxios.onPut("/repos/design/projects/Offer-CW").reply(200, { revision: "abc123", branch: "main" });
+      const canonicalProjectId = Buffer.from("design:Offer-CW").toString("base64");
+      mockAxios.onGet("/projects", {
+        params: { repository: "design", name: "Offer-CW", offset: 0, size: 200 },
+      }).reply(200, {
+        content: [{ id: canonicalProjectId, name: "Offer-CW", repository: "design" }],
+        pageNumber: 0,
+        pageSize: 200,
+        numberOfElements: 1,
+        total: 1,
+      });
 
       const result = await executeTool(
         "create_project",
@@ -3408,8 +3617,49 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
         client
       );
 
-      expect(result.content[0].text).toContain("abc123");
-      expect(result.content[0].text).toContain("Offer-CW");
+      const response = JSON.parse(result.content[0].text).data;
+      expect(response).toMatchObject({
+        projectId: canonicalProjectId,
+        projectName: "Offer-CW",
+        revision: "abc123",
+      });
+      expect(response.projectId).not.toBe(response.projectName);
+    });
+
+    it("does not label the project name as projectId when canonical id discovery is unavailable", async () => {
+      mockAxios.onGet("/repos").reply(200, mockRepositories);
+      mockAxios.onPut("/repos/design/projects/Offer-CW").reply(200, { revision: "abc123", branch: "main" });
+      mockAxios.onGet("/projects").reply(503, { message: "Index is refreshing" });
+
+      const result = await executeTool(
+        "create_project",
+        { repository: "design", projectName: "Offer-CW", response_format: "json" },
+        client
+      );
+
+      const response = JSON.parse(result.content[0].text).data;
+      expect(response).not.toHaveProperty("projectId");
+      expect(response.note).toContain("openl_list_projects");
+    });
+
+    it("stops canonical-id discovery when Studio repeats a page without total metadata", async () => {
+      mockAxios.onGet("/repos").reply(200, mockRepositories);
+      mockAxios.onPut("/repos/design/projects/Offer-CW").reply(200, { revision: "abc123", branch: "main" });
+      mockAxios.onGet("/projects").reply(200, {
+        content: [{ id: "other-id", name: "Other", repository: "design" }],
+        pageNumber: 0,
+        pageSize: 200,
+        numberOfElements: 1,
+      });
+
+      const result = await executeTool("create_project", {
+        repository: "design",
+        projectName: "Offer-CW",
+        response_format: "json",
+      }, client);
+
+      expect(JSON.parse(result.content[0].text).data).not.toHaveProperty("projectId");
+      expect(mockAxios.history.get.filter((request) => request.url === "/projects")).toHaveLength(2);
     });
 
     it("should reject openl_create_project on name collision (409)", async () => {
@@ -3421,19 +3671,53 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       ).rejects.toThrow(/already exists/i);
     });
 
-    it("should reject a blank create when a branch is requested", async () => {
+    it("should create a blank project on a requested branch", async () => {
       mockAxios.onGet("/repos").reply(200, mockRepositories);
-      await expect(
-        executeTool("create_project", { repository: "design", projectName: "Offer-CW", branch: "dev" }, client)
-      ).rejects.toThrow(/branch is only supported when cloning/i);
+      mockAxios.onPut("/repos/design/projects/Offer-CW").reply(200, { revision: "branch123", branch: "dev" });
+      const canonicalProjectId = Buffer.from("design:Offer-CW").toString("base64");
+      mockAxios.onGet("/projects", {
+        params: { repository: "design", name: "Offer-CW", branch: "dev", offset: 0, size: 200 },
+      }).reply(200, {
+        content: [{ id: canonicalProjectId, name: "Offer-CW", repository: "design", branch: "dev" }],
+        pageNumber: 0,
+        pageSize: 200,
+        numberOfElements: 1,
+        total: 1,
+      });
+
+      const result = await executeTool(
+        "create_project",
+        { repository: "design", projectName: "Offer-CW", branch: "dev", response_format: "json" },
+        client,
+      );
+
+      expect(JSON.parse(result.content[0].text).data).toMatchObject({
+        mode: "create",
+        projectId: canonicalProjectId,
+        branch: "dev",
+        revision: "branch123",
+      });
     });
 
-    it("should clone a project through create-from-zip so it is indexed immediately (EPBDS-16088)", async () => {
+    it("should copy a project through Studio's server-side copy API", async () => {
       mockAxios.onGet("/repos").reply(200, mockRepositories);
-      // Source project folder downloaded as a ZIP (entries are project-root-relative).
-      mockAxios.onGet("/repos/design/files/Offer-US/").reply(200, "PK-zip-bytes");
-      // Re-uploaded through the same indexing endpoint blank create uses.
-      mockAxios.onPut("/repos/design/projects/Offer-CW").reply(200, { revision: "def456", branch: "main" });
+      mockAxios.onGet("/projects", {
+        params: { repository: "design", name: "Offer-US", offset: 0, size: 200 },
+      }).reply(200, [{ id: "source-id", name: "Offer-US", repository: "design" }]);
+      mockAxios.onPost("/repos/design/projects/Offer-CW/from-project", {
+        sourceRepositoryId: "design",
+        sourceProjectName: "Offer-US",
+      }).reply(200, { revision: "def456", branch: "main" });
+      const canonicalProjectId = Buffer.from("design:Offer-CW").toString("base64");
+      mockAxios.onGet("/projects", {
+        params: { repository: "design", name: "Offer-CW", offset: 0, size: 200 },
+      }).reply(200, {
+        content: [{ id: canonicalProjectId, name: "Offer-CW", repository: "design" }],
+        pageNumber: 0,
+        pageSize: 200,
+        numberOfElements: 1,
+        total: 1,
+      });
 
       const result = await executeTool(
         "create_project",
@@ -3441,23 +3725,36 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
         client
       );
 
-      expect(result.content[0].text).toContain("Cloned");
-      expect(result.content[0].text).toContain("def456");
-      expect(result.content[0].text).toContain("visible in openl_list_projects immediately");
-      // The raw git file-copy path (which bypasses indexing) must NOT be used.
+      const response = JSON.parse(result.content[0].text).data;
+      expect(response).toMatchObject({
+        mode: "copy",
+        projectId: canonicalProjectId,
+        revision: "def456",
+      });
+      expect(response.message).toContain("Copied 'Offer-US'");
       expect(mockAxios.history.post.some((p) => p.url === "/repos/design/file-copy")).toBe(false);
-      const download = mockAxios.history.get.find((g) => g.url === "/repos/design/files/Offer-US/");
-      expect(download?.params?.download).toBe("true");
     });
 
-    it("should clone onto a branch via the legacy git file-copy path", async () => {
+    it("should copy a project atomically onto a requested branch", async () => {
       mockAxios.onGet("/repos").reply(200, mockRepositories);
-      mockAxios.onPost("/repos/design/file-copy").reply(201);
-      mockAxios
-        .onGet("/repos/design/files/Offer-CW/rules.xml")
-        .reply(200, "<project>\n  <name>Offer-US</name>\n  <modules>\n    <module><name>Main</name></module>\n  </modules>\n</project>");
-      mockAxios.onPut("/repos/design/files/Offer-CW/rules.xml").reply(200);
-      mockAxios.onGet("/repos/design/branches/dev/projects/Offer-CW/history").reply(200, { content: [{ revisionNo: "def456" }] });
+      mockAxios.onGet("/projects", {
+        params: { repository: "design", name: "Offer-US", offset: 0, size: 200 },
+      }).reply(200, [{ id: "source-id", name: "Offer-US", repository: "design" }]);
+      mockAxios.onPost("/repos/design/projects/Offer-CW/from-project", {
+        sourceRepositoryId: "design",
+        sourceProjectName: "Offer-US",
+        branch: "dev",
+      }).reply(200, { revision: "def456", branch: "dev" });
+      const canonicalProjectId = Buffer.from("design:Offer-CW").toString("base64");
+      mockAxios.onGet("/projects", {
+        params: { repository: "design", name: "Offer-CW", branch: "dev", offset: 0, size: 200 },
+      }).reply(200, {
+        content: [{ id: canonicalProjectId, name: "Offer-CW", repository: "design", branch: "dev" }],
+        pageNumber: 0,
+        pageSize: 200,
+        numberOfElements: 1,
+        total: 1,
+      });
 
       const result = await executeTool(
         "create_project",
@@ -3465,21 +3762,21 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
         client
       );
 
-      expect(result.content[0].text).toContain("Cloned");
-      expect(result.content[0].text).toContain("def456");
-      expect(result.content[0].text).toContain("re-indexes");
-
-      // rules.xml project name rewritten to the new name; module name left untouched.
-      const putReq = mockAxios.history.put.find((p) => p.url === "/repos/design/files/Offer-CW/rules.xml");
-      const body = String(putReq?.data);
-      expect(body).toContain("<name>Offer-CW</name>");
-      expect(body).toContain("<module><name>Main</name></module>");
+      expect(JSON.parse(result.content[0].text).data).toMatchObject({
+        mode: "copy",
+        projectId: canonicalProjectId,
+        branch: "dev",
+        revision: "def456",
+      });
+      expect(mockAxios.history.post.some((request) => request.url === "/repos/design/file-copy")).toBe(false);
     });
 
-    it("should reject a clone when the destination already exists (409)", async () => {
+    it("should reject a copy when the destination already exists (409)", async () => {
       mockAxios.onGet("/repos").reply(200, mockRepositories);
-      mockAxios.onGet("/repos/design/files/Offer-US/").reply(200, "PK-zip-bytes");
-      mockAxios.onPut("/repos/design/projects/Existing").reply(409, { message: "duplicated.project.message" });
+      mockAxios.onGet("/projects", {
+        params: { repository: "design", name: "Offer-US", offset: 0, size: 200 },
+      }).reply(200, [{ id: "source-id", name: "Offer-US", repository: "design" }]);
+      mockAxios.onPost("/repos/design/projects/Existing/from-project").reply(409, { message: "duplicated.project.message" });
 
       await expect(
         executeTool(
@@ -3490,9 +3787,11 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       ).rejects.toThrow(/already exists/i);
     });
 
-    it("should surface a 404 when cloning a non-existent source", async () => {
+    it("should reject copying a source that does not exist", async () => {
       mockAxios.onGet("/repos").reply(200, mockRepositories);
-      mockAxios.onGet("/repos/design/files/Nope/").reply(404, { message: "Project 'Nope' not found" });
+      mockAxios.onPost("/repos/design/projects/NewOne/from-project").reply(404, {
+        message: "Source project was not found",
+      });
 
       await expect(
         executeTool(
@@ -3501,6 +3800,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
           client
         )
       ).rejects.toThrow(/not found/i);
+      expect(mockAxios.history.post).toHaveLength(1);
     });
 
     it("should validate required params for create", async () => {
@@ -3710,7 +4010,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
         { projectId, type: "over", response_format: "json" },
         client
       );
-      expect(stepParams).toEqual({ type: "over", view: "compact" });
+      expect(stepParams).toEqual({ type: "over", view: "compact", includeTree: "false" });
       expect(result.content[0].text).toContain("CalcRule");
     });
 
@@ -3817,9 +4117,9 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
     });
 
     it("openl_inspect_trace_frame trims the response via ?fields by default and lifts the trim with full: true", async () => {
-      const fieldsSeen: Array<string | undefined> = [];
+      const paramsSeen: Array<Record<string, unknown> | undefined> = [];
       mockAxios.onGet(`/projects/${encoded}/trace/frames/0/variables`).reply((config) => {
-        fieldsSeen.push(config.params?.fields);
+        paramsSeen.push(config.params);
         return [200, { parameters: [], steps: [], errors: [], decision: { firedRules: ["R10"], conditions: [] } }];
       });
 
@@ -3829,12 +4129,12 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
         client
       );
       expect(result.content[0].text).toContain("R10");
-      expect(fieldsSeen[0]).toContain("decision");
-      expect(fieldsSeen[0]).toContain("parameters(name,description,lazy,parameterId,value)");
-      expect(fieldsSeen[0]).not.toContain("schema");
+      expect(paramsSeen[0]?.fields).toContain("decision");
+      expect(paramsSeen[0]?.fields).toContain("parameters(name,description,lazy,parameterId,value)");
+      expect(paramsSeen[0]?.fields).not.toContain("schema");
 
       await executeTool("inspect_trace_frame", { projectId, frameIndex: 0, full: true }, client);
-      expect(fieldsSeen[1]).toBeUndefined();
+      expect(paramsSeen[1]).toEqual({ includeSchema: true });
     });
 
     it("openl_inspect_trace_frame filters steps by onlyExecutedSteps and excludeStepValues, resolving lazy values", async () => {
@@ -3931,9 +4231,9 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
     });
 
     it("openl_get_trace_value expands a lazy parameter, dropping the value's JSON Schema unless withSchema is set", async () => {
-      const fieldsSeen: Array<string | undefined> = [];
+      const paramsSeen: Array<Record<string, unknown> | undefined> = [];
       mockAxios.onGet(`/projects/${encoded}/trace/parameters/5`).reply((config) => {
-        fieldsSeen.push(config.params?.fields);
+        paramsSeen.push(config.params);
         return [200, { name: "premium", description: "Double", value: 1000 }];
       });
 
@@ -3944,10 +4244,10 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       );
       expect(result.content[0].text).toContain("1000");
       // The default ?fields projection excludes the token-heavy `schema`.
-      expect(fieldsSeen[0]).toBe("name,description,value");
+      expect(paramsSeen[0]?.fields).toBe("name,description,value");
 
       await executeTool("get_trace_value", { projectId, parameterId: 5, withSchema: true }, client);
-      expect(fieldsSeen[1]).toBeUndefined();
+      expect(paramsSeen[1]).toEqual({ includeSchema: true });
     });
 
     it("openl_get_trace_value maps a 404 to an actionable no-session message", async () => {
@@ -4040,13 +4340,14 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       );
 
       const body = JSON.parse(result.content[0].text) as {
-        data: { series: Array<{ points: unknown[]; total?: number }>; truncated?: boolean; note?: string };
+        data: { truncated_json_preview: string };
+        truncated: boolean;
       };
-      // The tool passes the server's points/total through untouched and adds guidance.
-      expect(body.data.series[0].points).toHaveLength(200);
-      expect(body.data.series[0].total).toBe(11200);
-      expect(body.data.truncated).toBe(true);
-      expect(body.data.note).toMatch(/truncated|@N/);
+      // The formatter now enforces the response cap for single-object JSON too;
+      // its preview still surfaces Studio's total and the tool's recovery guidance.
+      expect(body.truncated).toBe(true);
+      expect(body.data.truncated_json_preview).toContain("11200");
+      expect(body.data.truncated_json_preview).toMatch(/truncated|@N/);
     });
   });
 });

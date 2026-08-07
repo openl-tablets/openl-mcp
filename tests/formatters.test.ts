@@ -121,14 +121,21 @@ describe("formatters", () => {
       expect(markdown).toContain("More results available (next offset: 50)");
     });
 
-    it("rejects a requested offset that does not match the backend page", () => {
-      expect(() => paginateCollection({
+    it("preserves a non-page-aligned offset when the backend reports a derived page number", () => {
+      const result = paginateCollection({
         items: Array.from({ length: 50 }, (_, i) => ({ id: i })),
         serverPaginated: true,
         pageNumber: 0,
         pageSize: 50,
         total: 100,
-      }, 50, 25)).toThrow(/offset 25 does not align.*offset 0/);
+      }, 50, 25);
+
+      expect(result.pagination).toEqual({
+        limit: 50,
+        offset: 25,
+        total: 100,
+        hasMore: true,
+      });
     });
   });
 
@@ -246,12 +253,11 @@ describe("formatters", () => {
       expect(parsed.data).toEqual(data);
     });
 
-    it("should format as markdown by default", () => {
+    it("should format as JSON by default", () => {
       const data = { test: "value" };
-      const result = formatResponse(data, "markdown");
+      const result = formatResponse(data);
 
-      expect(result).not.toMatch(/^\{/); // Should not start with JSON
-      expect(result).toContain("test");
+      expect(JSON.parse(result)).toEqual({ data });
     });
 
     it("should format as markdown_concise", () => {
@@ -280,13 +286,47 @@ describe("formatters", () => {
       expect(parsed.pagination).toBeDefined();
     });
 
+    it("preserves backend collection metadata in JSON and Markdown", () => {
+      const options = {
+        responseMetadata: {
+          statusCounts: { OPENED: 2 },
+          statuses: ["OPENED", "CLOSED"],
+        },
+        dataType: "projects",
+      };
+      const json = JSON.parse(formatResponse([{ projectId: "p1" }], "json", options));
+      const markdown = formatResponse([{ projectId: "p1" }], "markdown", options);
+
+      expect(json.statusCounts).toEqual({ OPENED: 2 });
+      expect(json.statuses).toEqual(["OPENED", "CLOSED"]);
+      expect(markdown).toContain("Response Metadata");
+      expect(markdown).toContain("statusCounts");
+      expect(markdown).toContain("statuses");
+    });
+
+    it("does not let backend metadata override formatter-owned fields", () => {
+      const parsed = JSON.parse(formatResponse([{ id: 1 }], "json", {
+        responseMetadata: {
+          statusCounts: { OPENED: 1 },
+          data: "spoofed",
+          truncated: true,
+          truncation_message: "spoofed",
+        },
+      }));
+
+      expect(parsed.data).toEqual([{ id: 1 }]);
+      expect(parsed.statusCounts).toEqual({ OPENED: 1 });
+      expect(parsed).not.toHaveProperty("truncated");
+      expect(parsed).not.toHaveProperty("truncation_message");
+    });
+
     it("uses an envelope's element count to detect the final page", () => {
       const page = {
         content: Array.from({ length: 25 }, (_, i) => ({ id: i + 50 })),
         pageNumber: 1,
         pageSize: 50,
         numberOfElements: 25,
-        totalElements: 75,
+        total: 75,
       };
 
       const json = JSON.parse(formatResponse(page, "json", {
@@ -330,6 +370,22 @@ describe("formatters", () => {
       // This input is far over the limit, so the array-truncation path always runs.
       expect(result).toContain("truncated");
       expect(result).toContain(RESPONSE_LIMITS.TRUNCATION_MESSAGE);
+    });
+
+    it("caps a large single-object JSON response with an explicit valid-JSON preview", () => {
+      const result = formatResponse({
+        id: "large-table",
+        source: Array.from({ length: 200 }, (_, row) => [{
+          value: `row-${row}`,
+          style: { font: "A".repeat(200), background: "#ffffff" },
+        }]),
+      }, "json", { characterLimit: 2_000 });
+
+      expect(result.length).toBeLessThanOrEqual(2_000);
+      const parsed = JSON.parse(result);
+      expect(parsed.truncated).toBe(true);
+      expect(parsed.data.preview_format).toBe("json");
+      expect(parsed.data.truncated_json_preview).toContain("large-table");
     });
 
     it("should handle empty data", () => {

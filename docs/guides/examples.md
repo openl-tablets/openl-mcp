@@ -4,13 +4,13 @@ Once your client is connected (see [Quick Start](quick-start.md)), you work with
 language. Your AI assistant calls the right OpenL tools for you. Below are things you can ask, grouped by task.
 
 <details>
-<summary><strong>What the tools cover</strong> (58 tools, all prefixed <code>openl_</code>)</summary>
+<summary><strong>What the tools cover</strong> (73 tools, all prefixed <code>openl_</code>)</summary>
 
 - **Guidance** — agent onboarding (`openl_get_started`), per-project AGENTS.md context, and the official OpenL reference documentation embedded at build time
 - **Repository management** — list repositories, branches, features, and revisions
-- **Project management** — list, open, save, close, create, and branch projects; track local changes
+- **Project management** — list, open, save, close, create, delete, branch, and merge projects; inspect merge conflicts for user resolution; discover modules/worksheets; track local changes
 - **Files** — read, write, search, copy, move, and delete project files
-- **Rules & tables** — list, get, update, append, create, and delete tables; apply raw-source edits (insert/delete/update/merge rows, columns, cells)
+- **Rules & tables** — list, get, run, copy, update, append, create, and delete tables; inspect dependencies and allowed properties; apply raw-source edits (insert/delete/update/merge rows, columns, cells)
 - **Tests** — start tests and retrieve results (full, summary, or by table)
 - **Tracing** — interactive rule debugger: breakpoints, stepping, live variables, decision-table outcomes, profiling
 - **Deployment** — list deploy repositories and deployments; deploy and redeploy projects
@@ -32,6 +32,7 @@ Show me projects tagged 'production'
 Show me the first 10 projects in the 'design' repository
 Get details about the 'insurance-rules' project
 Show the structure of 'insurance-rules' — modules and dependencies
+List the modules and worksheets in 'insurance-rules'
 ```
 
 A project list comes back like this:
@@ -54,6 +55,9 @@ Ask for any answer "in JSON" or "in markdown" — Claude passes the format to th
 List all tables in the 'insurance-rules' project
 Show me the 'CalculatePremium' table
 What does the 'Policy' datatype contain?
+Which tables does 'CalculatePremium' depend on?
+Run 'CalculatePremium' with vehicle type 'car' and age 25
+Copy 'CalculatePremium' to the 'Sandbox' module as 'CalculatePremiumDraft'
 Add a rule to 'CalculatePremium' for motorcycles with a $900 premium
 ```
 
@@ -82,7 +86,12 @@ A decision table renders like this:
 **Table types you may see:** decision tables (Rules, SimpleRules, SmartRules, Lookups), Spreadsheets, Datatypes,
 Methods, Test tables, and Data tables.
 
-When you ask for a change, Claude reads the current table, edits it, and saves it with a commit comment.
+`openl_get_table` returns the authoritative raw 2D cell matrix for every table
+kind. Create, update, and append operations also accept only `tableType:
+"RawSource"`; typed Rules/Spreadsheet/Datatype/Test DTOs are deliberately not
+supported because they cannot preserve the full workbook layout. When you ask
+for a change, Claude reads that matrix, prefers a narrow raw source action for
+isolated edits, validates the project, and saves it with a commit comment.
 
 ## Run tests
 
@@ -106,7 +115,19 @@ Notes:
 Show the version history of 'insurance-rules'
 What branches exist in the 'design' repository?
 Create a branch 'feature/new-premium-logic' for 'insurance-rules'
+Show project-aware branches and indicate which are base or protected
+Check whether 'feature/new-premium-logic' can be merged into the current branch
+Merge 'feature/new-premium-logic' into the current branch
 ```
+
+If a merge reports conflicts, the assistant keeps the same Studio session, lists
+the conflicted files, and reads BASE/OURS/THEIRS versions as needed. It must not
+choose a side: Studio does not expose a sufficiently safe resolution API, and an
+automatic OURS/THEIRS choice can discard valid work. The assistant presents the
+evidence to you for manual resolution in Studio, then clears the pending MCP
+session state when you take over or abandon the merge. Project and branch deletion
+require exact-name confirmation; protected-branch force also requires a separate
+explicit confirmation.
 
 ## Deploy
 

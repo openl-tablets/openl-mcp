@@ -52,7 +52,7 @@
   - [ ] buildProjectPath()
   - [ ] listProjects() with filters
   - [ ] getProject(), openProject(), closeProject()
-  - [ ] saveProject() with validation
+  - [ ] saveProject() through the current project-status API
 - [ ] Test File Management
   - [ ] readProjectFile(), writeProjectFile()
   - [ ] copyProjectFile(), moveProjectFile(), deleteProjectFile()
@@ -60,18 +60,17 @@
   - [ ] createBranch()
 - [ ] Test Rules Management
   - [ ] listTables() with filters
-  - [ ] createRule() - success and 405 cases
+  - [ ] createProjectTable() with `RawSource` and the complete 2D `source` cell matrix
   - [ ] getTable(), updateTable(), appendTable()
 - [ ] Test Deployment
   - [ ] listDeployments()
   - [ ] deployProject()
-- [ ] Test Testing & Validation
+- [ ] Test Testing & Project Status
   - [ ] startProjectTests(), getTestResults()
   - [ ] projectStatus() with diagnostics categorization
 - [ ] Test Version Control
   - [ ] repositoryProjectRevisions()
   - [ ] listProjectLocalChanges(), restoreProjectLocalChange()
-  - [ ] parseCommitType()
 - [ ] Test Dimension Properties
   - [ ] getFileNamePattern(), setFileNamePattern()
   - [ ] getTableProperties(), setTableProperties()

@@ -10,7 +10,7 @@ tests/
 │   └── openl-api-mocks.ts          # Mock data for API responses
 ├── <module>.test.ts                # Unit tests, one file per src/<module>.ts
 │                                   #   (auth, client, constants, formatters,
-│                                   #    schemas, validators, prompts, …)
+│                                   #    schemas, handlers, prompts, …)
 └── integration/                    # Integration tests (excluded from test:unit)
     ├── handlers.test.ts            # MCP tools via executeTool() + mocked HTTP
     └── openl-live.test.ts          # Live tests against a real OpenL Studio
@@ -117,7 +117,6 @@ Mock data is defined in `tests/mocks/openl-api-mocks.ts` and includes:
 - **mockProjects**: Sample projects with different statuses
 - **mockProjectInfo**: Project structure with modules and dependencies
 - **mockTables**: Decision tables and datatypes
-- **mockDecisionTable**: Complete decision table with rules
 - **mockDatatype**: Datatype with fields
 - **mockProjectHistory**: Version history
 - **mockBranches**: Git branches

@@ -24,7 +24,7 @@ server blocks on a real completion event instead of polling.
 
 | Feature | Trigger | Topic |
 |---|---|---|
-| `openl_project_status` with `wait: true` | blocks until `compileState` is terminal (`ok`/`warnings`/`errors`), emitting MCP progress notifications per compiled module | project status topic |
+| `openl_project_status` (`wait: true` by default) | lazily starts an `idle` project's compilation through the tables API, or blocks on an already-running compilation until `compileState` is terminal (`ok`/`warnings`/`errors`) | project status topic for already-running compilation; tables API for `idle` |
 
 Everything else in the server is plain REST. WebSockets are used **only to wait for
 asynchronous studio work** — never to transfer the actual data (results are always
