@@ -7,7 +7,7 @@ import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 
 import * as schemas from "../schemas.js";
 import type * as Types from "../types.js";
-import { formatResponse, paginateResults } from "../formatters.js";
+import { formatResponse, paginateCollection } from "../formatters.js";
 import { validateResponseFormat, validatePagination } from "../validators.js";
 import { isNotFoundError, setRulesXmlProjectName } from "../utils.js";
 import { waitForCompilation } from "../stomp-waits.js";
@@ -111,7 +111,7 @@ export function registerProjectHandlers(): void {
     category: "Project",
     title: "List Projects",
     description:
-      "List all projects with optional filters (repository, status, tags). Returns project names, status (OPENED/CLOSED), metadata, and a convenient 'projectId' field from API to use with other tools. For local-only projects, do not pass repository filter 'local' (it may fail); list projects without that filter and filter results by repository === 'local' client-side. For such projects, open/save/close do not work; table/rule/test tools work without opening. IMPORTANT: The 'projectId' is returned exactly as provided by the API and should be used without modification. Pass either the id or name from openl_list_repositories() — both are accepted (case-insensitive). Do not invent example values; call openl_list_repositories() first if not in context. Use this to discover and filter projects.",
+      "List projects with optional filters (repository, status, tags). Results are paginated (default 50, maximum 200): when a complete inventory is required, follow pagination.has_more and call again with pagination.next_offset until has_more is false. Returns project names, status (OPENED/CLOSED), metadata, and a convenient 'projectId' field from API to use with other tools. For local-only projects, do not pass repository filter 'local' (it may fail); list every page without that filter and filter results by repository === 'local' client-side. For such projects, open/save/close do not work; table/rule/test tools work without opening. IMPORTANT: The 'projectId' is returned exactly as provided by the API and should be used without modification. Pass either the id or name from openl_list_repositories() — both are accepted (case-insensitive). Do not invent example values; call openl_list_repositories() first if not in context. Use this to discover and filter projects.",
     inputSchema: schemas.z.toJSONSchema(schemas.listProjectsSchema) as Record<string, unknown>,
     annotations: {
       readOnlyHint: true,
@@ -146,51 +146,8 @@ export function registerProjectHandlers(): void {
         filters.limit = limit;
       }
 
-      const projectsResponse = await client.listProjects(filters);
-
-      // Handle case when API returns object instead of array
-      // Some API versions return { content: [...], pageNumber, pageSize, numberOfElements } (paginated)
-      // or { data: [...] } (wrapped) or direct array
-      let projects: Types.ProjectSummary[];
-      let totalCount: number | undefined;
-      let apiPageNumber: number | undefined;
-      let apiPageSize: number | undefined;
-
-      if (Array.isArray(projectsResponse)) {
-        // Direct array response (no pagination metadata)
-        projects = projectsResponse;
-        totalCount = projects.length;
-      } else if (projectsResponse && typeof projectsResponse === 'object') {
-        if ('content' in projectsResponse && Array.isArray((projectsResponse as any).content)) {
-          // Paginated response: { content: [...], pageNumber, pageSize, numberOfElements, total }
-          projects = (projectsResponse as any).content;
-          apiPageNumber = (projectsResponse as any).pageNumber;
-          apiPageSize = (projectsResponse as any).pageSize;
-          // Use total if available (OpenL API), otherwise totalElements
-          // Do NOT use numberOfElements as it's the current page size, not the global total
-          const total = (projectsResponse as any).total;
-          const totalElements = (projectsResponse as any).totalElements;
-          if (total !== undefined && total !== null) {
-            totalCount = total;
-          } else if (totalElements !== undefined && totalElements !== null) {
-            totalCount = totalElements;
-          } else {
-            // Total count unknown - let has_more logic rely on page cursor/size
-            totalCount = undefined;
-          }
-        } else if ('data' in projectsResponse && Array.isArray((projectsResponse as any).data)) {
-          // Wrapped response: { data: [...] }
-          projects = (projectsResponse as any).data;
-          totalCount = projects.length;
-        } else {
-          // Fallback: try to convert to array or use empty array
-          projects = [];
-          totalCount = 0;
-        }
-      } else {
-        projects = [];
-        totalCount = 0;
-      }
+      const projectsPage = await client.listProjectsPage(filters);
+      const projects = projectsPage.items;
 
       // Transform projects to include a flat projectId field for easier use.
       // projectId is an opaque backend value and must be passed through unchanged.
@@ -210,34 +167,14 @@ export function registerProjectHandlers(): void {
 
       // If API already paginated, use its pagination metadata
       // Otherwise apply client-side pagination
-      let paginated;
-      if (apiPageNumber !== undefined && apiPageSize !== undefined && totalCount !== undefined) {
-        // API already paginated - use its metadata
-        paginated = {
-          data: transformedProjects,
-          has_more: (apiPageNumber + 1) * apiPageSize < totalCount,
-          next_offset: (apiPageNumber + 1) * apiPageSize < totalCount ? (apiPageNumber + 1) * apiPageSize : null,
-          total_count: totalCount,
-        };
-      } else {
-        // Apply client-side pagination
-        paginated = paginateResults(transformedProjects, limit, offset);
-      }
-
-      // Use API pagination metadata if available, otherwise use client-side pagination values
-      const paginationOffset = apiPageNumber !== undefined && apiPageSize !== undefined
-        ? apiPageNumber * apiPageSize
-        : offset;
-      const paginationLimit = apiPageSize !== undefined
-        ? apiPageSize
-        : limit;
+      const paginated = paginateCollection(
+        { ...projectsPage, items: transformedProjects },
+        limit,
+        offset,
+      );
 
       const formattedResult = formatResponse(paginated.data, format, {
-        pagination: {
-          limit: paginationLimit,
-          offset: paginationOffset,
-          total: paginated.total_count,
-        },
+        pagination: paginated.pagination,
         dataType: "projects",
       });
 

@@ -619,15 +619,52 @@ export class OpenLClient {
     return `/projects/${encodeURIComponent(normalizedId)}`;
   }
 
+  /** Normalize the response shapes used by Studio collection endpoints. */
+  private normalizeCollectionPage<T>(responseData: unknown): Types.CollectionPage<T> {
+    if (Array.isArray(responseData)) {
+      return { items: responseData as T[], serverPaginated: false };
+    }
+
+    if (!responseData || typeof responseData !== "object") {
+      return { items: [], serverPaginated: false };
+    }
+
+    const outer = responseData as Record<string, unknown>;
+    const candidate = outer.data && typeof outer.data === "object" ? outer.data : outer;
+
+    if (Array.isArray(candidate)) {
+      return { items: candidate as T[], serverPaginated: false };
+    }
+
+    const page = candidate as Record<string, unknown>;
+    if (!Array.isArray(page.content)) {
+      return { items: [], serverPaginated: false };
+    }
+
+    const number = (value: unknown): number | undefined =>
+      typeof value === "number" && Number.isFinite(value) ? value : undefined;
+    const pageNumber = number(page.pageNumber);
+    const pageSize = number(page.pageSize);
+
+    return {
+      items: page.content as T[],
+      serverPaginated: pageNumber !== undefined || pageSize !== undefined,
+      pageNumber,
+      pageSize,
+      total: number(page.total) ?? number(page.totalElements),
+      totalPages: number(page.totalPages),
+    };
+  }
+
   /**
-   * List all projects with optional filters and pagination
+   * List projects while preserving the backend's pagination metadata.
    *
-   * @param filters - Optional filters for repository, status, tags, and pagination
-   * @returns Array of project summaries (for backward compatibility, extracts content from PageResponse)
+   * Tool handlers should use this method so they do not paginate an already
+   * paginated backend response a second time.
    */
-  async listProjects(
+  async listProjectsPage(
       filters?: Types.ProjectFilters
-  ): Promise<Types.ProjectSummary[]> {
+  ): Promise<Types.CollectionPage<Types.ProjectSummary>> {
     // Build query parameters, handling tags with 'tags.' prefix and pagination
     const params: Record<string, string | number> = {};
     if (filters?.repository) params.repository = filters.repository;
@@ -659,26 +696,19 @@ export class OpenLClient {
         { params }
     );
 
-    // Handle different response formats:
-    // 1. PageResponse: { content: [...], pageNumber: 0, pageSize: 50, total: 100 }
-    // 2. Direct array: [...] (backward compatibility)
-    // 3. Wrapped response: { data: [...] } (legacy format)
-    const responseData = response.data;
-    if (Array.isArray(responseData)) {
-      // Direct array format (backward compatibility)
-      return responseData;
-    } else if (responseData && typeof responseData === 'object') {
-      if ('content' in responseData && Array.isArray(responseData.content)) {
-        // PageResponse format: extract content array
-        return responseData.content;
-      } else if ('data' in responseData && Array.isArray(responseData.data)) {
-        // Legacy wrapped format
-        return responseData.data;
-      }
-    }
+    return this.normalizeCollectionPage<Types.ProjectSummary>(response.data);
+  }
 
-    // Fallback: return empty array if format is unexpected
-    return [];
+  /**
+   * List all projects with optional filters and pagination.
+   *
+   * This array-returning method remains for API compatibility. MCP handlers
+   * use {@link listProjectsPage} to retain pagination metadata.
+   */
+  async listProjects(
+      filters?: Types.ProjectFilters
+  ): Promise<Types.ProjectSummary[]> {
+    return (await this.listProjectsPage(filters)).items;
   }
 
   /**
@@ -1442,17 +1472,11 @@ export class OpenLClient {
   // Rules (Tables) Management
   // =============================================================================
 
-  /**
-   * List all tables/rules in a project with optional filters and pagination
-   *
-   * @param projectId - Opaque project ID returned by backend.
-   * @param filters - Optional filters for table type, name, properties, and pagination
-   * @returns Array of table metadata (for backward compatibility, extracts content from PageResponse)
-   */
-  async listTables(
+  /** List tables while preserving the backend's pagination metadata. */
+  async listTablesPage(
       projectId: string,
       filters?: Types.TableFilters
-  ): Promise<Types.TableMetadata[]> {
+  ): Promise<Types.CollectionPage<Types.TableMetadata>> {
     const projectPath = this.buildProjectPath(projectId);
 
     // Build query parameters, handling kind (array), properties with 'properties.' prefix, and pagination
@@ -1489,32 +1513,18 @@ export class OpenLClient {
         { params }
     );
 
-    // Handle different response formats:
-    // 1. Direct array: [...] (backward compatibility)
-    // 2. Legacy wrapper: { data: [...] }
-    // 3. PageResponse: { content: [...], pageNumber: 0, pageSize: 50, total: 100 }
-    // 4. Legacy wrapped PageResponse: { data: { content: [...] } }
-    const responseData = response.data;
-    if (Array.isArray(responseData)) {
-      // Direct array format (backward compatibility)
-      return responseData;
-    } else if (responseData && typeof responseData === 'object') {
-      // Check for legacy wrapper: { data: [...] }
-      if ('data' in responseData && Array.isArray(responseData.data)) {
-        return responseData.data;
-      }
-      // Check for legacy wrapped PageResponse: { data: { content: [...] } }
-      if ('data' in responseData && responseData.data && typeof responseData.data === 'object' && 'content' in responseData.data && Array.isArray(responseData.data.content)) {
-        return responseData.data.content;
-      }
-      // Check for PageResponse format: { content: [...] }
-      if ('content' in responseData && Array.isArray(responseData.content)) {
-        return responseData.content;
-      }
-    }
+    return this.normalizeCollectionPage<Types.TableMetadata>(response.data);
+  }
 
-    // Fallback: return empty array if format is unexpected
-    return [];
+  /**
+   * List all tables/rules in a project with optional filters and pagination.
+   * Retains the historical array return type for direct client consumers.
+   */
+  async listTables(
+      projectId: string,
+      filters?: Types.TableFilters
+  ): Promise<Types.TableMetadata[]> {
+    return (await this.listTablesPage(projectId, filters)).items;
   }
 
   /**

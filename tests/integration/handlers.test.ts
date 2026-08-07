@@ -1440,6 +1440,68 @@ describe("Tool Handler Integration Tests", () => {
       expect(data.pagination.next_offset).toBe(10);
     });
 
+    it("should list all backend-paginated projects across multiple pages", async () => {
+      const allProjects = Array.from({ length: 120 }, (_, i) => ({
+        id: `design:p${i}:hash${i}`,
+        name: `p${i}`,
+        repository: "design",
+        status: "CLOSED",
+        path: `p${i}`,
+        modifiedBy: "admin",
+        modifiedAt: "2024-01-01T00:00:00Z",
+      }));
+      mockAxios.onGet("/projects").reply((config) => {
+        const pageNumber = Number(config.params.page);
+        const pageSize = Number(config.params.size);
+        const start = pageNumber * pageSize;
+        const content = allProjects.slice(start, start + pageSize);
+        return [200, {
+          content,
+          pageNumber,
+          pageSize,
+          numberOfElements: content.length,
+          totalElements: allProjects.length,
+          totalPages: Math.ceil(allProjects.length / pageSize),
+        }];
+      });
+
+      const first = await executeTool("list_projects", { limit: 50, offset: 0 }, client);
+      const second = await executeTool("list_projects", {
+        limit: 50,
+        offset: 50,
+        response_format: "json",
+      }, client);
+      const third = await executeTool("list_projects", {
+        limit: 50,
+        offset: 100,
+        response_format: "json",
+      }, client);
+
+      expect(first.content[0].text).toContain("Total: 120");
+      expect(first.content[0].text).toContain("More results available (next offset: 50)");
+
+      const secondPage = JSON.parse(second.content[0].text);
+      expect(secondPage.data).toHaveLength(50);
+      expect(secondPage.data[0].name).toBe("p50");
+      expect(secondPage.pagination).toMatchObject({
+        limit: 50,
+        offset: 50,
+        total_count: 120,
+        has_more: true,
+        next_offset: 100,
+      });
+
+      const thirdPage = JSON.parse(third.content[0].text);
+      expect(thirdPage.data).toHaveLength(20);
+      expect(thirdPage.data[0].name).toBe("p100");
+      expect(thirdPage.pagination).toMatchObject({
+        limit: 50,
+        offset: 100,
+        total_count: 120,
+        has_more: false,
+      });
+    });
+
     it("should enforce maximum limit of 200", async () => {
       // Mock repositories list for getRepositoryIdByName
       const mockRepos: RepositoryInfo[] = [

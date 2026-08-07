@@ -9,7 +9,7 @@ For projects with **repository: 'local'** (local-only, stored as files on disk, 
 
 - **Never check or require OPENED/EDITING** — local projects are always considered editable.
 - **Avoid calling** `openl_open_project`, `openl_save_project`, or `openl_close_project`; do not use Git tools (branches, history, revert).
-- **Use** `openl_list_projects` (call without repository filter, then filter results by `repository === "local"`—filter parameter "local" often fails), `openl_get_project`, and table/test tools (`openl_list_tables`, `openl_get_table`, `openl_update_table`, `openl_append_table`, `openl_create_project_table`, `openl_start_project_tests`, `openl_get_test_results_summary`, `openl_get_test_results`, `openl_get_test_results_by_table`) directly — no open step. Tests for local projects run without opening the project.
+- **Use** `openl_list_projects` (call without repository filter, follow pagination to completion, then filter results by `repository === "local"`—filter parameter "local" often fails), `openl_get_project`, and table/test tools (`openl_list_tables`, `openl_get_table`, `openl_update_table`, `openl_append_table`, `openl_create_project_table`, `openl_start_project_tests`, `openl_get_test_results_summary`, `openl_get_test_results`, `openl_get_test_results_by_table`) directly — no open step. Tests for local projects run without opening the project.
 
 # Local projects (repository: local)
 
@@ -29,7 +29,7 @@ For projects with **repository: 'local'** (local-only, stored as files on disk, 
    - `openl_repository_project_revisions` (committed revisions require Git; local has none)
    - `openl_list_project_local_changes`, `openl_restore_project_local_change` (session history requires an opened project; local cannot be opened)
 3. **Use directly** for local (no open first):
-   - `openl_list_projects` (list all projects, then filter by `repository === "local"` in the response—the repository filter may fail because "local" is often not returned by openl_list_repositories), `openl_get_project`
+   - `openl_list_projects` (list all pages of projects, then filter by `repository === "local"` in the response—the repository filter may fail because "local" is often not returned by openl_list_repositories), `openl_get_project`
    - `openl_list_tables`, `openl_get_table`, `openl_update_table`, `openl_append_table`, `openl_create_project_table`
    - `openl_start_project_tests`, `openl_get_test_results_summary`, `openl_get_test_results`, `openl_get_test_results_by_table`
 

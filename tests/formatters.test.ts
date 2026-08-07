@@ -6,6 +6,7 @@
 import { describe, it, expect } from "@jest/globals";
 import {
   formatResponse,
+  paginateCollection,
   paginateResults,
   toMarkdown,
   toMarkdownConcise,
@@ -76,6 +77,48 @@ describe("formatters", () => {
       expect(result.total_count).toBe(75);
       expect(result.has_more).toBe(false);
       expect(result.next_offset).toBeNull();
+    });
+  });
+
+  describe("paginateCollection", () => {
+    it("does not slice a backend page a second time", () => {
+      const page = {
+        items: Array.from({ length: 50 }, (_, i) => ({ id: i + 50 })),
+        serverPaginated: true,
+        pageNumber: 1,
+        pageSize: 50,
+        total: 120,
+      };
+
+      const result = paginateCollection(page, 50, 50);
+
+      expect(result.data).toHaveLength(50);
+      expect(result.data[0]).toEqual({ id: 50 });
+      expect(result.pagination).toEqual({
+        limit: 50,
+        offset: 50,
+        total: 120,
+        hasMore: true,
+      });
+    });
+
+    it("keeps an unknown total unknown and treats a full page as potentially incomplete", () => {
+      const page = {
+        items: Array.from({ length: 50 }, (_, i) => ({ id: i })),
+        serverPaginated: true,
+        pageNumber: 0,
+        pageSize: 50,
+      };
+
+      const result = paginateCollection(page, 50, 0);
+      const markdown = formatResponse(result.data, "markdown", {
+        pagination: result.pagination,
+      });
+
+      expect(result.pagination.total).toBeUndefined();
+      expect(result.pagination.hasMore).toBe(true);
+      expect(markdown).not.toContain("Total: 50");
+      expect(markdown).toContain("More results available (next offset: 50)");
     });
   });
 
