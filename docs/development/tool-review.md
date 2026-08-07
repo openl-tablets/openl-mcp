@@ -28,7 +28,7 @@ See **AGENTS.md** § "Local projects (repository: local)" for agent-facing summa
 
 ### 1. `openl_list_repositories`
 
-**Status**: ✅ Complete  
+**Status**: ✅ Complete
 **OpenL API**: `GET /repos`
 
 **Extra/Missed Inputs**:
@@ -55,13 +55,14 @@ See **AGENTS.md** § "Local projects (repository: local)" for agent-facing summa
 ### 3. `openl_list_repository_features`
 
 **Status**: ✅ Complete  
-**OpenL API**: `GET /repos/{repository}/features`
+**OpenL API**: `GET /repos` (`features` is embedded in the matching repository)
 
 **Extra/Missed Inputs**:
-- ✅ No missing inputs
+- ✅ Accepts a repository ID or display name and resolves it case-insensitively
+- ✅ Returns the matching repository's embedded `features` object without calling a separate endpoint
 
 **Recommendations**:
-- None
+- None - tool matches the current repository contract
 
 ---
 
@@ -83,11 +84,11 @@ See **AGENTS.md** § "Local projects (repository: local)" for agent-facing summa
 ### 5. `openl_list_projects`
 
 **Status**: ✅ Complete  
-**OpenL API**: `GET /projects?repository={repo}&status={status}&tags.{key}={value}&page={page}&size={size}`
+**OpenL API**: `GET /projects` with filters and `offset`/`size`
 
 **Extra/Missed Inputs**:
-- ✅ All API parameters covered: `repository`, `status`, `tags`
-- ✅ Pagination handled correctly (`limit`, `offset`)
+- ✅ Current filters covered: `repository`, `status`, `dependsOn`, `name`, `author`, `branch`, `sort`, `include`, `tags`
+- ✅ MCP `limit` maps to API `size`; `offset` is passed through exactly
 
 **Recommendations**:
 - None - tool matches API perfectly
@@ -100,10 +101,12 @@ See **AGENTS.md** § "Local projects (repository: local)" for agent-facing summa
 **OpenL API**: `GET /projects/{projectId}`
 
 **Extra/Missed Inputs**:
-- ✅ No missing inputs
+- ✅ Always requests `raw=true`; supports `startRow`, `maxRows`, and `styles`
+- ✅ Returns only the authoritative `RawTableView` cell matrix
 
 **Recommendations**:
-- None
+- Do not expose Studio's typed/parsed table views. They are incomplete and lossy.
+- Never pass a window carrying `totalRows` to `openl_update_table`; read the complete matrix first or use a narrow raw action.
 
 ---
 
@@ -144,11 +147,11 @@ Project files are managed through the text-oriented file tools `openl_read_proje
 ### 10. `openl_list_tables`
 
 **Status**: ✅ Complete  
-**OpenL API**: `GET /projects/{projectId}/tables?kind={kind[]}&name={name}&properties.{key}={value}&page={page}&size={size}`
+**OpenL API**: `GET /projects/{projectId}/tables` with filters and `offset`/`size`
 
 **Extra/Missed Inputs**:
 - ✅ All API parameters covered: `kind` (array), `name`, `properties`
-- ✅ Pagination handled correctly
+- ✅ MCP `limit` maps to API `size`; `offset` is passed through exactly
 
 **Recommendations**:
 - None - tool matches API perfectly
@@ -171,28 +174,28 @@ Project files are managed through the text-oriented file tools `openl_read_proje
 ### 12. `openl_update_table`
 
 **Status**: ✅ Complete  
-**OpenL API**: `PUT /projects/{projectId}/tables/{tableId}` with `EditableTableView`
+**OpenL API**: `PUT /projects/{projectId}/tables/{tableId}` with `RawTableView`
 
 **Extra/Missed Inputs**:
-- ✅ Covered: `projectId`, `tableId`, `view` (full table structure)
+- ✅ Covered: `projectId`, `tableId`, `view` (complete RawSource matrix)
 - ✅ All required API parameters are covered
 
 **Recommendations**:
-- Consider adding validation to ensure `view` contains all required fields before sending
+- Keep `tableType: "RawSource"` as the only accepted content discriminator.
 
 ---
 
 ### 13. `openl_append_table`
 
 **Status**: ✅ Complete  
-**OpenL API**: `POST /projects/{projectId}/tables/{tableId}/lines` with `AppendTableView`
+**OpenL API**: `POST /projects/{projectId}/tables/{tableId}/lines` with `RawTableAppend`
 
 **Extra/Missed Inputs**:
-- ✅ Covered: `projectId`, `tableId`, `appendData` (discriminated union by tableType)
+- ✅ Covered: `projectId`, `tableId`, `appendData` (non-empty full-width raw rows)
 - ✅ All required API parameters are covered
 
 **Recommendations**:
-- Consider adding validation for tableType-specific append data structure
+- Keep typed append DTOs out of MCP; validate raw row width before writing.
 
 ---
 
@@ -202,14 +205,13 @@ Project files are managed through the text-oriented file tools `openl_read_proje
 **OpenL API**: `POST /projects/{projectId}/tables` (BETA API with `CreateNewTableRequest`)
 
 **Extra/Missed Inputs**:
-- ✅ Covered: `projectId`, `moduleName`, `sheetName`, `table` (EditableTableView)
+- ✅ Covered: `projectId`, `moduleName`, `modulePath`, `sheetName`, `table` (`RawTableView` with nonblank name)
 
 **Recommendations**:
 - ✅ Tool uses BETA API format which works correctly in OpenL 6.0.0+
-- ✅ Requires complete table structure (EditableTableView) - use `get_table()` as reference
-- ✅ Supports all table types: Rules, Spreadsheet, Datatype, Test, etc.
-- ✅ Requires full table structure (not simplified format)
-- ✅ Use `get_table()` on existing table to understand structure format
+- ✅ Requires a complete `RawSource` structure; use `get_table()` and bundled guides as references
+- ✅ Any semantic OpenL table kind can be encoded in the raw workbook grid
+- ❌ Typed Rules/Spreadsheet/Datatype/Test request variants must not be exposed
 
 ---
 
@@ -217,17 +219,14 @@ Project files are managed through the text-oriented file tools `openl_read_proje
 
 ### 15. `openl_list_deployments`
 
-**Status**: ⚠️ Partial  
-**OpenL API**: `GET /deployments?repository={repository}`
+**Status**: ✅ Complete
+**OpenL API**: `GET /deployments?repository={repository}&project={project}`
 
 **Extra/Missed Inputs**:
-- ❌ **MISSING**: `repository` query parameter (API supports filtering by repository)
-  - Client method `listDeployments(repository?: string)` supports it
-  - Tool schema doesn't include it
+- ✅ Supports the backend `repository` and `project` filters
 
 **Recommendations**:
-- **ADD**: `repository` optional parameter to filter deployments by production repository
-- Example: `openl_list_deployments(repository: "production-deploy")`
+- None
 
 ---
 
@@ -333,7 +332,7 @@ Project files are managed through the text-oriented file tools `openl_read_proje
 - ✅ All API parameters covered: `projectId`, `tableId`, `testRanges`
 - ✅ Automatically opens project if closed
 - ✅ Automatically captures and stores HTTP headers from test start response for use in result retrieval tools
-- ✅ `fromModule` parameter reserved for future use (not currently passed to API)
+- ✅ `fromModule` is passed to the Studio API
 
 **Recommendations**:
 - ✅ Preferred tool for starting test execution
@@ -439,24 +438,7 @@ compilation errors. Saving a project (`openl_save_project`) also validates it.
 
 ---
 
-## Additional Client Methods Not Exposed as Tools
-
-### `openl_delete_project` (Missing Tool)
-
-**Status**: ❌ MISSING TOOL  
-**OpenL API**: `DELETE /projects/{projectId}`
-
-**Extra/Missed Inputs**:
-- Client method exists: `deleteProject(projectId)`
-- **Tool is not registered**
-
-**Recommendations**:
-- **ADD TOOL**: Create `openl_delete_project` tool
-- Mark as `destructiveHint: true`
-- Require confirmation parameter
-- Very useful for cleanup operations
-
----
+## Historical Project Lifecycle Review
 
 ### 34. `saveProject` (Missing Tool - RESOLVED)
 
@@ -511,17 +493,17 @@ compilation errors. Saving a project (`openl_save_project`) also validates it.
 
 ### Full Tools Table
 
-The server registers **58 tools**. All are listed below.
+The server registers **73 tools**. All are listed below.
 
 | # | Tool Name | Category | Status | OpenL API Endpoint | Description |
 |---|-----------|----------|--------|-------------------|-------------|
 | 1 | `openl_list_repositories` | Repository | ✅ Complete | `GET /repos` | List all design repositories |
 | 2 | `openl_list_branches` | Repository | ✅ Complete | `GET /repos/{repository}/branches` | List Git branches in a repository |
-| 3 | `openl_list_repository_features` | Repository | ✅ Complete | `GET /repos/{repository}/features` | Get repository features (branching, searchable, etc.) |
+| 3 | `openl_list_repository_features` | Repository | ✅ Complete | `GET /repos` | Get embedded repository features (branching, mapped folders, searchable) |
 | 4 | `openl_list_deploy_repositories` | Deployment | ✅ Complete | `GET /production-repos` | List all deployment repositories |
-| 5 | `openl_list_projects` | Project | ✅ Complete | `GET /projects?repository={repo}&status={status}&tags.{key}={value}&page={page}&size={size}` | List projects with filters (repository, status, tags) |
+| 5 | `openl_list_projects` | Project | ✅ Complete | `GET /projects?...&offset={offset}&size={size}` | List projects with current Studio filters and exact item-offset pagination |
 | 6 | `openl_get_project` | Project | ✅ Complete | `GET /projects/{projectId}` | Get comprehensive project information |
-| 7 | `openl_create_project` | Project | ✅ Complete | `POST /projects` | Create a new project |
+| 7 | `openl_create_project` | Project | ✅ Complete | `PUT /repos/{repo}/projects/{name}` / `POST .../from-project` | Create or copy a project on an optional target branch |
 | 8 | `openl_open_project` | Project | ✅ Complete | `PATCH /projects/{projectId}` with `status: "OPENED"` | Open project for editing (supports branch/revision) |
 | 9 | `openl_save_project` | Project | ✅ Complete | `PATCH /projects/{projectId}` with `{ comment }` | Save project changes to Git (validates on save) |
 | 10 | `openl_close_project` | Project | ✅ Complete | `PATCH /projects/{projectId}` with `status: "CLOSED"` | Close project (with save/discard safety checks) |
@@ -537,12 +519,12 @@ The server registers **58 tools**. All are listed below.
 | 20 | `openl_copy_project_file` | Files | ✅ Complete | project file copy | Copy a project file |
 | 21 | `openl_move_project_file` | Files | ✅ Complete | project file move | Move/rename a project file |
 | 22 | `openl_delete_project_file` | Files | ✅ Complete | project file delete | Delete a project file |
-| 23 | `openl_list_tables` | Rules | ✅ Complete | `GET /projects/{projectId}/tables?kind={kind[]}&name={name}&properties.{key}={value}&page={page}&size={size}` | List project tables/rules with pagination |
-| 24 | `openl_get_table` | Rules | ✅ Complete | `GET /projects/{projectId}/tables/{tableId}` | Get detailed table structure and data |
-| 25 | `openl_update_table` | Rules | ✅ Complete | `PUT /projects/{projectId}/tables/{tableId}` | Replace entire table structure |
-| 26 | `openl_append_table` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/lines` | Append rows/fields to table |
-| 27 | `openl_create_project_table` | Rules | ✅ Complete | `POST /projects/{projectId}/tables` (BETA API) | Create new table/rule in project |
-| 28 | `openl_list_deployments` | Deployment | ⚠️ Partial | `GET /deployments?repository={repository}` | List active deployments (missing `repository` filter) |
+| 23 | `openl_list_tables` | Rules | ✅ Complete | `GET /projects/{projectId}/tables?...&offset={offset}&size={size}` | List project tables/rules with exact item-offset pagination |
+| 24 | `openl_get_table` | Rules | ✅ Complete | `GET /projects/{projectId}/tables/{tableId}?raw=true` | Get the RawSource matrix |
+| 25 | `openl_update_table` | Rules | ✅ Complete | `PUT /projects/{projectId}/tables/{tableId}` | Replace the complete RawSource matrix |
+| 26 | `openl_append_table` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/lines` | Append full-width RawSource rows |
+| 27 | `openl_create_project_table` | Rules | ✅ Complete | `POST /projects/{projectId}/tables` (BETA API) | Create a table from RawSource |
+| 28 | `openl_list_deployments` | Deployment | ✅ Complete | `GET /deployments?repository={repository}&project={project}` | List active deployments with backend filters |
 | 29 | `openl_deploy_project` | Deployment | ✅ Complete | `POST /deployments` | Deploy project to production |
 | 30 | `openl_redeploy_project` | Deployment | ✅ Complete | `POST /deployments/{deploymentId}` | Redeploy with new version |
 | 31 | `openl_start_project_tests` | Testing | ✅ Complete | `POST /projects/{projectId}/tests/run` | Start project test execution |
@@ -556,23 +538,38 @@ The server registers **58 tools**. All are listed below.
 | 39 | `openl_set_trace_breakpoints` | Trace | ✅ Complete | `GET`/`PUT /trace/breakpoints` + `GET /trace/breakpoint-tables` | Read/replace the breakpoint set and list targets |
 | 40 | `openl_get_trace_value` | Trace | ✅ Complete | `GET /projects/{projectId}/trace/parameters/{parameterId}` | Expand a lazy parameter value |
 | 41 | `openl_watch_trace_cells` | Trace | ✅ Complete | `PUT /trace/watches` + `POST /trace?stopAtEntry=false&includeTree=false` + `GET /trace/watch` | Watch named cells across a whole run — one series per cell |
-| 42 | `openl_stop_trace` | Trace | ✅ Complete | `DELETE /projects/{projectId}/trace` | Terminate the debug session (idempotent) |
-| 43 | `openl_append_table_rows` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`append`/`rows`) | Append one or more rows to a table's raw source |
-| 44 | `openl_append_table_columns` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`append`/`columns`) | Append one or more columns |
-| 45 | `openl_insert_table_rows` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`insert`/`rows`) | Insert one or more rows at a position |
-| 46 | `openl_insert_table_columns` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`insert`/`columns`) | Insert one or more columns at a position |
-| 47 | `openl_delete_table_rows` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`delete`/`rows`) | Delete one or more rows from a position (count default 1) |
-| 48 | `openl_delete_table_columns` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`delete`/`columns`) | Delete one or more columns from a position (count default 1) |
-| 49 | `openl_update_table_row` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`update`/`row`) | Overwrite the row at a position |
-| 50 | `openl_update_table_column` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`update`/`column`) | Overwrite the column at a position |
-| 51 | `openl_update_table_cell` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`update`/`cell`) | Set a single cell's value |
-| 52 | `openl_update_table_range` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`update`/`range`) | Overwrite a rectangular range of cells |
-| 53 | `openl_merge_table_cells` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`merge`/`cells`) | Merge a rectangular range of cells |
-| 54 | `openl_unmerge_table_cells` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`unmerge`/`cells`) | Unmerge the cell covering a position |
-| 55 | `openl_delete_table` | Rules | ✅ Complete | `DELETE /projects/{projectId}/tables/{tableId}` | Delete an entire table from the project |
-| 56 | `openl_get_started` | Guidance | ✅ Complete | none (local) | Onboarding bootstrap: workflow protocol + workspace orientation |
-| 57 | `openl_list_guides` | Guidance | ✅ Complete | none (local guides bundle) | Metadata index of the bundled OpenL docs (filterable, paginated) |
-| 58 | `openl_get_guides` | Guidance | ✅ Complete | none (local guides bundle) | Full markdown bodies for requested guide ids |
+| 42 | `openl_expand_trace_tree` | Trace | ✅ Complete | `GET /projects/{projectId}/trace/tree/children` | Load one paginated level of a profiling call tree |
+| 43 | `openl_stop_trace` | Trace | ✅ Complete | `DELETE /projects/{projectId}/trace` | Terminate the debug session (idempotent) |
+| 44 | `openl_append_table_rows` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`append`/`rows`) | Append one or more rows to a table's raw source |
+| 45 | `openl_append_table_columns` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`append`/`columns`) | Append one or more columns |
+| 46 | `openl_insert_table_rows` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`insert`/`rows`) | Insert one or more rows at a position |
+| 47 | `openl_insert_table_columns` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`insert`/`columns`) | Insert one or more columns at a position |
+| 48 | `openl_delete_table_rows` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`delete`/`rows`) | Delete one or more rows from a position (count default 1) |
+| 49 | `openl_delete_table_columns` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`delete`/`columns`) | Delete one or more columns from a position (count default 1) |
+| 50 | `openl_update_table_row` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`update`/`row`) | Overwrite the row at a position |
+| 51 | `openl_update_table_column` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`update`/`column`) | Overwrite the column at a position |
+| 52 | `openl_update_table_cell` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`update`/`cell`) | Set a single cell's value |
+| 53 | `openl_update_table_range` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`update`/`range`) | Overwrite a rectangular range of cells |
+| 54 | `openl_merge_table_cells` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`merge`/`cells`) | Merge a rectangular range of cells |
+| 55 | `openl_unmerge_table_cells` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/actions` (`unmerge`/`cells`) | Unmerge the cell covering a position |
+| 56 | `openl_delete_table` | Rules | ✅ Complete | `DELETE /projects/{projectId}/tables/{tableId}` | Delete an entire table from the project |
+| 57 | `openl_get_started` | Guidance | ✅ Complete | none (local) | Onboarding bootstrap: workflow protocol + workspace orientation |
+| 58 | `openl_list_guides` | Guidance | ✅ Complete | none (local guides bundle) | Metadata index of the bundled OpenL docs (filterable, paginated) |
+| 59 | `openl_get_guides` | Guidance | ✅ Complete | none (local guides bundle) | Full markdown bodies for requested guide ids |
+| 60 | `openl_run_table` | Rules | ✅ Complete | single-active `POST /projects/{projectId}/run` + bounded `GET /run/result` polling (`DELETE /run` on failure) | Execute a regular table within one session-wide deadline and wait inside one tool call for its result |
+| 61 | `openl_get_table_dependencies` | Rules | ✅ Complete | `GET /projects/{projectId}/tables/graph` or `/tables/{tableId}/graph` | Get the project/module graph or one table's dependency neighborhood |
+| 62 | `openl_list_project_modules` | Project | ✅ Complete | `GET /projects/{projectId}/modules` | List modules declared by a project |
+| 63 | `openl_list_module_sheets` | Project | ✅ Complete | `GET /projects/{projectId}/modules/{moduleName}/sheets` | List worksheet names in a module |
+| 64 | `openl_list_table_property_definitions` | Rules | ✅ Complete | `GET /projects/{projectId}/properties` | List properties allowed for a table context |
+| 65 | `openl_copy_table` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/copy` | Copy a table server-side with its source structure and formatting |
+| 66 | `openl_list_project_branches` | Project | ✅ Complete | `GET /projects/{projectId}/branches` | List project branches with base/protected flags |
+| 67 | `openl_check_project_merge` | Project | ✅ Complete | `POST /projects/{projectId}/merge/check` | Preview merge direction, feasibility, permissions, and blockers |
+| 68 | `openl_merge_project_branches` | Project | ✅ Complete | `POST /merge/check` + `POST /projects/{projectId}/merge` | Recheck and merge branches; return session-bound conflicts when present |
+| 69 | `openl_get_merge_conflicts` | Project | ✅ Complete | `GET /projects/{projectId}/merge/conflicts` | Get conflicted paths, revision sides, and default merge message |
+| 70 | `openl_read_merge_conflict_file` | Project | ✅ Complete | `GET /projects/{projectId}/merge/conflicts/files` | Read bounded BASE/OURS/THEIRS conflict-file content |
+| 71 | `openl_cancel_merge_conflicts` | Project | ✅ Complete | `DELETE /projects/{projectId}/merge/conflicts` | Clear pending session-bound conflict state after user handoff or cancellation |
+| 72 | `openl_delete_project` | Project | ✅ Complete | `DELETE /projects/{projectId}?comment=…` | Delete a project after exact-name confirmation |
+| 73 | `openl_delete_project_branch` | Project | ✅ Complete | `DELETE /projects/{projectId}/branches/{branch}?force=…` | Delete a non-base project branch with confirmation/protection guards |
 
 **Legend:**
 - ✅ **Complete**: Tool is fully implemented and working
@@ -587,27 +584,28 @@ The server registers **58 tools**. All are listed below.
 
 | Status | Count | Tools |
 |--------|-------|-------|
-| ✅ Complete | 57 | All guidance, repository, project, file, table, raw table-source action, deployment, testing, and trace tools (excluding `openl_list_deployments`, which is partial). |
-| ⚠️ Partial | 1 | `openl_list_deployments` (missing `repository` filter parameter) |
+| ✅ Complete | 73 | All registered guidance, repository, project, file, table, raw table-source action, deployment, testing, and trace tools. |
+| ⚠️ Partial | 0 | None. |
 
-Total registered tools: **58**.
+Total registered tools: **73**.
+
+Conflict resolution is intentionally excluded. Studio's current API is not safe
+enough for an agent to apply BASE/OURS/THEIRS decisions without risking data loss;
+the registered tools expose conflict metadata and file sides only so the agent can
+hand the evidence to the user for manual resolution in Studio.
 
 ### Critical Issues
 
 1. **Missing Inputs**:
-   - `openl_list_deployments`: Missing `repository` filter parameter
+   - None known for the registered MCP abstractions
 
 2. **Extra Parameters** (not in API):
    - None
 
 ### Recommendations Priority
 
-**HIGH PRIORITY**:
-1. Add `repository` parameter to `openl_list_deployments`
-
 **MEDIUM PRIORITY**:
-2. Consider adding `openl_delete_project` (client `DELETE /projects/{projectId}`) as a `destructiveHint: true` tool with a confirmation parameter.
-3. Consider adding an `openl_health_check` tool (uses `GET /repos` as a connectivity check) for diagnosing connection issues.
+1. Consider adding an `openl_health_check` tool (uses `GET /repos` as a connectivity check) for diagnosing connection issues.
 
 **LOW PRIORITY**:
 1. Add timeout parameters to long-running operations.

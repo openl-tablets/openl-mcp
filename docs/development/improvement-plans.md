@@ -17,7 +17,7 @@ test suite. The problems cluster in four places: (1) a handful of real correctne
 bugs, mostly at the client/handler seam (pagination, filters, formatting) and in
 the STOMP wait path; (2) the HTTP transport, which is the least tested and least
 hardened component while being the only network-exposed one; (3) a validation
-layer that is advertisement-only for ~30 of 58 tools — rich Zod schemas are
+layer that is advertisement-only for ~30 of 59 tools — rich Zod schemas are
 published to clients but never executed; and (4) accumulated drift: dead code the
 project's own conventions forbid, formatters reading fields the wire types no
 longer have, and docs describing infrastructure that no longer exists.
@@ -130,8 +130,8 @@ is actually ≤ 25 K chars.
 results.numberOfTests` (individual **tests**) — `has_more`/`next_offset` are
 computed across incompatible units, sending agents to empty pages. Both test-result
 tools also set `skipTruncation: true`, so `unpaged: true` returns megabytes with no
-size bound at all. Fix: use table-count totals (`totalElements`) for the pagination
-block, and replace blanket `skipTruncation` with a raised `characterLimit` (the
+size bound at all. Fix: use the current page's table count (`numberOfElements`)
+and short-page termination for pagination, and replace blanket `skipTruncation` with a raised `characterLimit` (the
 `FormatOptions.characterLimit` option exists and is otherwise unused).
 
 ### A6. `open_project` swallows `switchBranch`/`openProject` errors and re-runs the mutation [P0, S]
@@ -328,22 +328,27 @@ The residual risk is `readProjectFile`/`getRepositoryFileContent`/
 
 ### D1. Enforce every tool's Zod schema at dispatch [P1, M — the single highest-leverage change]
 
-Two reviewers converged on this independently. Rich Zod schemas exist for all 58
-tools but are runtime-enforced for only the 15 table tools wired to `validateArgs`;
-everything else runs on hand-rolled `if (!args.x)` guards. Consequences verified
-in code: `.strict()` is advertised (`additionalProperties: false`) but typo'd args
-are silently ignored; the `.refine` mutual-exclusivity on the test-results schemas
-never executes anywhere (pure dead logic); `project_status.timeoutMs`'s 600 000 cap
-and `read_project_file.offset`'s nonnegativity are prose — a 10-hour timeout or a
-negative offset (which `Buffer.subarray` interprets as *from the end*) sail
-through; 38 hand-rolled missing-arg throws duplicate ~4 lines each.
+**Status: completed by EPBDS-16385.** Every registered tool now retains its Zod
+schema as the single source for both MCP JSON Schema publication and runtime
+parsing. Dispatch applies defaults and refinements, rejects unknown top-level and
+nested fields, and passes inferred schema output to handlers. The change also
+audited every MCP request and response contract against the current Studio OpenAPI,
+updated changed endpoints and fields, centralized the two inline list schemas, and
+removed the now-unreachable required-argument guards.
 
-**Fix:** keep each tool's Zod schema on its `ToolDefinition` and default
-`validateArgs` to `schema.safeParse` in `executeTool`; type handler args via
-`z.infer` instead of `args as {...}` casts. This activates all dormant
-constraints/defaults, deletes ~150 lines of guard boilerplate, removes the
-drift-prone casts, and guarantees the published JSON Schema can never diverge from
-runtime behavior again. Fold in the schema-consistency fixes found on the way:
+Two reviewers converged on this independently. Before this change, rich Zod
+schemas existed for all 59 tools but were runtime-enforced for only the 15 table
+tools wired to `validateArgs`; everything else ran on hand-rolled `if (!args.x)`
+guards. As a result, `.strict()` was advertised (`additionalProperties: false`)
+while typo'd args were silently ignored; test-results refinements and numeric
+bounds were dead metadata; and 38 missing-argument guards duplicated the schema.
+
+**Implementation:** each tool's Zod schema now lives on its `ToolDefinition`, and
+`executeTool` validates against it before dispatch; handler args are inferred
+instead of cast with `args as {...}`. This activates all dormant
+constraints/defaults, removes the guard boilerplate and drift-prone casts, and
+keeps the published JSON Schema aligned with runtime behavior. The change also
+includes the schema-consistency fixes found on the way:
 `size` capped like its alias `limit`; defaults declared via `.default()` not
 prose; `startProjectTestsSchema.tableId` using the shared `tableIdSchema`; the
 two inline pagination schemas in `repository-handlers.ts`/`deployment-handlers.ts`
@@ -377,18 +382,18 @@ thrice-duplicated data-type auto-detection block.
 The repo's own convention is "no dead code", and the review found a substantial
 accumulation (all verified by repo-wide grep — kept alive only by their own tests):
 
-- **`client.ts` (~220 lines):** `downloadFile`, `updateProjectStatus`,
-  `createRule`, `healthCheck` — zero production callers. Plus `validateProject`,
-  called only from `saveProject` against an endpoint the method's own docblock
-  says does not exist — every save performs a known-doomed GET.
+- **`client.ts`:** `downloadFile`, `updateProjectStatus`,
+  `healthCheck` — zero production callers. The obsolete `validateProject` and
+  project-scoped `getProjectHistory` and legacy `createRule` methods were removed
+  by EPBDS-16385 because their contracts do not exist in the current Studio OpenAPI.
 - **`utils.ts`:** `parseProjectId` (actively dangerous — invites splitting opaque
   ids), `extractErrorDetails`, `createProjectId` (its own JSDoc says "legacy,
   should not be used").
-- **`types.ts`:** the orphaned chains `CreateRuleRequest/Result`,
+- **`types.ts`:** the orphaned `CreateRuleRequest/Result`,
   `ValidationResult/Error/Warning`, `GetProjectHistoryRequest/Result`,
   `ProjectHistoryCommit`, `CommitType`, `ProjectRevision_Short`,
-  `PageResponseProjectRevision_Short`, `DatatypeView`; three empty "Phase 2/3/4"
-  banner blocks.
+  `PageResponseProjectRevision_Short`, `DatatypeView`, and `SimpleRulesView`
+  types were removed by EPBDS-16385.
 - **`project-templates.ts`:** the ~12 KB base64 `"sample"` template blob
   (`getProjectTemplateZip` is only ever called with `"empty"`) and the
   unreachable `if (!base64)` throw.
@@ -432,8 +437,6 @@ doing D1.
   off to a code-point boundary.
 - `update_table` client-side id-mismatch throws a plain `Error` → surfaces as
   `InternalError` though it's a caller mistake (`InvalidParams`).
-- `getProjectHistory` fabricates `timestamp: new Date()` and `branch: "main"`
-  when fields are missing (dead code today — delete with D4, or fix if kept).
 - Markdown truncation overshoots the cap by the note length and can split a
   surrogate pair; pagination footer prints "Showing items 21-10" when `offset`
   exceeds `total`.
@@ -504,7 +507,7 @@ vs none, oversized body, unknown session id, origin checks, shutdown.
   inside the *test* step (hidden network dependency; "Test" runs before "Build"
   in quick-build). Compare against the newest mtime under `src/**` and make CI
   build first.
-- Remove the duplicated `validators.test.ts` limit-validation tests (repo rule:
+- Remove duplicated limit-validation tests (repo rule:
   strengthen, don't duplicate) and fix the `openl-live.test.ts` "expected 404"
   tests that pass regardless of the behavior in their name.
 
@@ -514,10 +517,8 @@ vs none, oversized body, unknown session id, origin checks, shutdown.
 
 ### F1. User-facing doc corrections [P2, S]
 
-- `README.npm.md` claims "**40 active tools**"; the server registers **58** — and
-  this is the exact file the release workflow swaps in as the npmjs.com README.
-  Fix the count or drop hard-coded counts (a catalog cross-validation test exists
-  for `--help`; extend it to any kept count).
+- **Resolved by EPBDS-16385:** `README.npm.md` no longer publishes a stale
+  hard-coded active-tool count.
 - `.specify/memory/constitution.md` says **License: MIT**, version 1.0.0, and an
   old repo URL — actual: LGPL-3.0 (LICENSE + package.json + README), 1.1.0,
   `openl-tablets/openl-mcp`. The constitution also declares "zero tolerance for

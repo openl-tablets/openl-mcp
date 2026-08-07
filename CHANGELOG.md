@@ -7,12 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Studio workflow coverage for running and copying tables, dependency/property/module discovery, project-aware branches, branch merging with read-only conflict inspection, and confirmed project/branch deletion (EPBDS-16385).
+
+### Changed
+
+- **BREAKING:** tool responses now default to structured JSON so read results can be reused safely in later tool calls; Markdown remains available through explicit `response_format` values (EPBDS-16385).
+- **BREAKING:** table content is now exposed only as the authoritative `RawSource` cell matrix. `openl_get_table` always requests raw content, while create/update/append reject the incomplete typed table DTOs that could lose workbook structure during round trips (EPBDS-16385).
+- Aligned MCP project, repository, table, test, trace, deployment, and file contracts with the current OpenL Studio OpenAPI (EPBDS-16385).
+- `openl_create_project` now creates blank projects on an optional target branch and copies existing projects through Studio's atomic, indexed server-side copy API instead of downloading ZIPs or writing branch files individually (EPBDS-16385).
+
 ### Fixed
 
-- `openl_list_projects` and `openl_list_tables` now preserve the Studio's page metadata instead of treating one backend page as the complete result and paginating it a second time. `total_count`, `has_more`, and `next_offset` now describe the full collection; page 2+ no longer comes back empty. Because these Studio endpoints use page/size pagination, an `offset` that is not a multiple of `limit` is rejected instead of returning the wrong range (EPBDS-16387).
+- Windowed `openl_get_table` responses can no longer be passed to `openl_update_table`, preventing omitted rows from being deleted during a partial-view round trip (EPBDS-16385).
+- Large single-object JSON responses are now replaced with a bounded valid-JSON preview instead of exceeding the response limit while claiming to be truncated (EPBDS-16385).
+- `openl_run_table` now bounds the complete start-and-result workflow with backoff, rejects overlapping session-scoped runs, and cancels pending Studio state after any failed workflow, preventing result mix-ups, endless polling, and stale runs (EPBDS-16385).
+- Markdown responses from `openl_get_table_dependencies` now render dependency and dependent edges, table metadata, and query context instead of silently collapsing the graph into a flat table list (EPBDS-16385).
+- `openl_project_status` now defaults to waiting for a conclusive result and lazily starts compilation when Studio initially reports `idle`, instead of leaving agents with a status that cannot distinguish an uncompiled project from a valid one. Explicit `wait=false` remains a read-only snapshot (EPBDS-16385).
+- `openl_create_project` now returns the same opaque backend `projectId` as `openl_list_projects` instead of incorrectly labeling the project name as its ID, including projects created or copied onto a target branch (EPBDS-16385).
+- `openl_list_projects` and `openl_list_tables` now preserve Studio's pagination metadata instead of treating one backend page as the complete result and paginating it a second time. `total_count`, `has_more`, and `next_offset` describe the full collection, and current Studio's true item offsets preserve non-page-aligned requests exactly (EPBDS-16387).
 
 ### Removed
 
+- **BREAKING:** `openl_resolve_merge_conflicts` is removed because Studio does not expose a sufficiently safe API for autonomous conflict resolution. Agents can inspect BASE/OURS/THEIRS evidence, but must hand the decision to the user for manual resolution in Studio rather than risk discarding work (EPBDS-16385).
 - **BREAKING:** the `openl-mcp login` / `openl-mcp logout` browser sign-in commands and the
   credential cache (`~/.config/openl-mcp/credentials.json`) are removed. Authentication is now
   explicit-token-only: `OPENL_PERSONAL_ACCESS_TOKEN` / `--token` when supplied, otherwise

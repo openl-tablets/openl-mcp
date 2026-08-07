@@ -38,7 +38,7 @@ Most environment variables have a matching flag that overrides them, and are rea
 
 ### Response format
 
-Every tool accepts `response_format`: `markdown` (default), `json`, `markdown_concise`, `markdown_detailed`.
+Every tool accepts `response_format`: `json` (default), `markdown`, `markdown_concise`, `markdown_detailed`. Use JSON for structured, round-trippable agent workflows and request Markdown only for human-readable output.
 
 ### Debug logging
 

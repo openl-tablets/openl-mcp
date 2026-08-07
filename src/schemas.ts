@@ -12,7 +12,7 @@
  * 1. Define the schema using z.object() with descriptive field names
  * 2. Add .describe() to each field for documentation
  * 3. Export the schema
- * 4. Reference it in tools.ts
+ * 4. Attach it to the tool's `schema` field in its handler module
  */
 
 import { z } from "zod";
@@ -23,25 +23,15 @@ export { z };
 // Response format enum
 export const ResponseFormat = z
   .enum(["json", "markdown", "markdown_concise", "markdown_detailed"])
-  .default("markdown")
+  .default("json")
   .describe(
-    "Response format: 'json' for structured data, 'markdown' for human-readable (default), 'markdown_concise' for brief summary (1-2 paragraphs), 'markdown_detailed' for full details with context"
+    "Response format: 'json' for structured, round-trippable data (default), 'markdown' for human-readable output, 'markdown_concise' for a brief summary (1-2 paragraphs), or 'markdown_detailed' for full details with context"
   );
 
 // Pagination parameters
 export const PaginationParams = z.object({
   limit: z.number().int().positive().max(200).default(50).optional(),
   offset: z.number().int().nonnegative().default(0).optional(),
-});
-
-// Studio's project/table list APIs use page/size, so their offset must identify
-// the start of a page exactly. The cross-field constraint is enforced by the
-// handlers; these descriptions expose it in the generated tool schema.
-export const PagePaginationParams = z.object({
-  limit: z.number().int().positive().max(200).default(50).optional()
-    .describe("Number of results per page (default 50, maximum 200)."),
-  offset: z.number().int().nonnegative().default(0).optional()
-    .describe("Zero-based item offset. Must be a multiple of limit so it maps exactly to the Studio endpoint's page/size pagination."),
 });
 
 // Project ID: opaque backend identifier from openl_list_projects() response
@@ -58,25 +48,42 @@ export const branchNameSchema = z.string().describe("Git branch name (e.g., 'mai
 export const commentSchema = z.string().optional().describe("Commit comment describing the change (e.g., 'Updated CA premium rates', 'Fixed calculation bug')");
 
 // Tool input schemas
+export const listRepositoriesSchema = z.object({
+  response_format: ResponseFormat.optional(),
+}).merge(PaginationParams).strict();
+
+export const listDeploymentsSchema = z.object({
+  repository: z.string().optional().describe("Production repository ID to filter deployments by."),
+  project: z.string().optional().describe("Deployed project name to filter deployments by."),
+  response_format: ResponseFormat.optional(),
+}).merge(PaginationParams).strict();
+
 export const listProjectsSchema = z.object({
   repository: z.string().optional().describe("Filter by repository name (display name, not ID). Use the 'name' field from openl_list_repositories() response (e.g., if list_repositories returns {id: 'design-repo', name: 'Design Repository'}, use 'Design Repository' here, NOT 'design-repo'). Omit to show projects from all repositories."),
-  status: z.enum(["LOCAL", "ARCHIVED", "OPENED", "VIEWING_VERSION", "EDITING", "CLOSED"]).optional().describe("Filter by project status. Valid values: 'LOCAL', 'ARCHIVED', 'OPENED', 'VIEWING_VERSION', 'EDITING', 'CLOSED'."),
+  status: z.enum(["LOCAL", "DELETED", "OPENED", "VIEWING_VERSION", "EDITING", "CLOSED"]).optional().describe("Filter by project status."),
+  dependsOn: z.string().optional().describe("Return projects that depend on this project identifier."),
+  name: z.string().optional().describe("Project name filter (partial, case-insensitive)."),
+  author: z.string().optional().describe("Last-modifying author filter (partial, case-insensitive)."),
+  branch: z.string().optional().describe("Branch filter (partial, case-insensitive)."),
+  sort: z.enum(["name", "status", "updated"]).optional().describe("Field used to sort the returned page."),
+  include: z.array(z.enum(["summary", "status", "deleted", "descriptor"])).optional().describe("Optional response expansions and listing behavior from the Studio API."),
   tags: z.record(z.string(), z.string()).optional().describe("Filter by project tags. Tags must be prefixed with 'tags.' in the query string (e.g., tags.version='1.0', tags.environment='production'). This is handled automatically by the API client - provide as object with tag names as keys."),
   response_format: ResponseFormat.optional(),
-}).merge(PagePaginationParams).strict();
+}).merge(PaginationParams).strict();
 
 export const getProjectSchema = z.object({
   projectId: projectIdSchema,
+  include: z.array(z.enum(["summary", "status", "deleted", "descriptor"])).optional().describe("Optional response expansions from the Studio API."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
 export const projectStatusSchema = z.object({
   projectId: projectIdSchema,
   branch: branchNameSchema.optional().describe(
-    "Optional branch name. When provided, must match the project's currently opened branch (the backend returns 409 on mismatch). Omit for repositories that do not support branches and for projects with repository 'local'."
+    "Optional target branch. With wait=true (default), the tool switches an opened design project to this branch before validating it. With wait=false, this is a read-only assertion and Studio returns 409 when it differs from the currently opened branch. Omit for repositories that do not support branches and for repository 'local'."
   ),
-  wait: z.boolean().default(false).optional().describe(
-    "When true, the tool subscribes to the studio's real-time status topic and blocks until compileState is terminal (ok/warnings/errors), emitting MCP progress notifications along the way. Use this immediately after an edit (openl_update_table/openl_append_table/openl_upload_file) to get the post-compile state in one call instead of polling. If the initial state is already terminal, returns immediately. Default false (one-shot snapshot)."
+  wait: z.boolean().default(true).optional().describe(
+    "When true (default), returns a conclusive compile state: an idle project is compiled lazily through Studio's tables API, while an already-running compilation is followed over the real-time status topic until compileState is terminal (ok/warnings/errors). Progress notifications are emitted when available. Set false only for a one-shot read-only snapshot that may return idle or compiling."
   ),
   timeoutMs: z.number().int().positive().max(600000).default(120000).optional().describe(
     "Max time in milliseconds to wait for compilation when wait=true. On expiry, the last-seen status is returned (no error). Default 120000 (2 minutes). Cap 600000 (10 minutes). Ignored when wait=false."
@@ -94,6 +101,7 @@ export const openProjectSchema = z.object({
   projectId: projectIdSchema,
   branch: branchNameSchema.optional().describe("Open project on a specific Git branch (e.g., 'main', 'development', 'feature/new-rules')"),
   revision: z.string().optional().describe("Open project at a specific Git revision/commit hash for read-only viewing"),
+  openDependencies: z.boolean().optional().describe("Also open dependency projects (backend default false)."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
@@ -112,15 +120,14 @@ export const listTablesSchema = z.object({
   name: z.string().optional().describe("Filter by table name fragment (e.g., 'calculate', 'Premium'). Omit to show all tables."),
   properties: z.record(z.string(), z.string()).optional().describe("Filter by project properties. Properties must be prefixed with 'properties.' in the query string (e.g., properties.state='CA', properties.lob='Auto'). This is handled automatically by the API client."),
   response_format: ResponseFormat.optional(),
-}).merge(PagePaginationParams).strict();
+}).merge(PaginationParams).strict();
 
 export const getTableSchema = z.object({
   projectId: projectIdSchema,
   tableId: tableIdSchema,
-  raw: z.boolean().optional().describe("If true, returns the raw table view as a 2D matrix of cells without any parsing or structure interpretation. Useful for reading tables of unknown or custom types, preserving exact cell positioning and merge regions."),
-  startRow: z.number().int().min(0).optional().describe("Zero-based index of the first row of the raw view; omit to start at the top. Combine with maxRows to read a large table in slices. Requires raw=true."),
-  maxRows: z.number().int().min(1).optional().describe("Maximum number of rows of the raw view, counted from startRow; omit to read to the end. When the returned window omits rows, the response carries 'totalRows' (the table's total row count). Requires raw=true."),
-  styles: z.boolean().optional().describe("If true, each raw cell carries its Excel style (background/font colour, bold/italic/underline, alignment, indent, borders) in a 'style' field; a style field is absent for its default. Requires raw=true."),
+  startRow: z.number().int().min(0).optional().describe("Zero-based index of the first source row; omit to start at the top. Combine with maxRows to read a large table in slices."),
+  maxRows: z.number().int().min(1).optional().describe("Maximum number of source rows, counted from startRow; omit to read to the end. A windowed response carries totalRows."),
+  styles: z.boolean().optional().describe("If true, each raw cell carries its Excel style (background/font colour, bold/italic/underline, alignment, indent, borders)."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
@@ -130,90 +137,102 @@ export const deleteTableSchema = z.object({
   response_format: ResponseFormat.optional(),
 }).strict();
 
-export const updateTableSchema = z.object({
+export const runTableSchema = z.object({
   projectId: projectIdSchema,
-  tableId: tableIdSchema,
-  view: z.record(z.string(), z.any()).describe("FULL table structure from get_table() with your modifications applied. MUST include: id, tableType, kind, name, plus type-specific data (rules for SimpleRules, rows for Spreadsheet, fields for Datatype). Keep 'tableType' EXACTLY as get_table() returned it (it is a CASE-SENSITIVE discriminator: Datatype, Spreadsheet, SimpleRules, SmartRules, SimpleSpreadsheet, Vocabulary, Data, Test, SimpleLookup, SmartLookup, RawSource — lowercase is rejected). Do NOT send only the changed fields - send the complete structure. Workflow: 1) currentTable = get_table(), 2) currentTable.rules[0]['Column'] = newValue, 3) update_table(view=currentTable)"),
+  tableId: tableIdSchema.describe("Table ID of a regular executable table. Use openl_list_tables() to discover it; use the Tests tools instead for Test tables."),
+  inputJson: z.union([
+    z.array(z.unknown()),
+    z.record(z.string(), z.unknown()),
+  ]).describe("Method input as JSON. Pass either the raw parameter array/object, or { params, runtimeContext? }. The value is sent to Studio unchanged."),
+  fromModule: z.string().trim().min(1).optional().describe("Optional module name whose runtime context should be used. Usually omit; discover module names with openl_list_project_modules()."),
+  withSchema: z.boolean().optional().describe("Include result and parameter JSON Schemas. Default false because schemas can be large."),
+  timeoutMs: z.number().int().positive().max(600000).default(120000).optional().describe("Maximum time for the complete Studio start-and-result workflow, in milliseconds. Default 120000 (2 minutes), maximum 600000 (10 minutes). A timeout cancels the pending Studio run."),
   response_format: ResponseFormat.optional(),
 }).strict();
+
+export const getTableDependenciesSchema = z.object({
+  projectId: projectIdSchema,
+  tableId: tableIdSchema.optional().describe("Optional table whose dependency neighborhood to return. Omit to return the whole project (or module) graph."),
+  module: z.string().trim().min(1).optional().describe("When tableId is omitted, limit the project graph to this module. Discover names with openl_list_project_modules()."),
+  direction: z.enum(["DEPENDENCIES", "DEPENDENTS", "BOTH"]).optional().describe("When tableId is provided, relations to traverse (backend default BOTH)."),
+  depth: z.number().int().min(1).optional().describe("When tableId is provided, maximum traversal depth from that table."),
+  response_format: ResponseFormat.optional(),
+}).strict().superRefine((value, ctx) => {
+  if (value.tableId && value.module) {
+    ctx.addIssue({ code: "custom", path: ["module"], message: "module cannot be combined with tableId; it applies only to the whole-project graph." });
+  }
+  if (!value.tableId && (value.direction || value.depth !== undefined)) {
+    ctx.addIssue({ code: "custom", path: [value.direction ? "direction" : "depth"], message: "direction and depth require tableId." });
+  }
+});
+
+export const listProjectModulesSchema = z.object({
+  projectId: projectIdSchema,
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+export const listModuleSheetsSchema = z.object({
+  projectId: projectIdSchema,
+  moduleName: z.string().trim().min(1).describe("Module name exactly as returned by openl_list_project_modules()."),
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+export const listTablePropertyDefinitionsSchema = z.object({
+  projectId: projectIdSchema,
+  tableType: z.string().trim().min(1).optional().describe("Optional public table kind. Omit for properties allowed inside a Properties table; provide a kind to get properties allowed on that table kind."),
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+export const copyTableSchema = z.object({
+  projectId: projectIdSchema,
+  tableId: tableIdSchema.describe("ID of the source table to copy."),
+  moduleName: z.string().trim().min(1).describe("Name of the destination module. It must already exist unless modulePath is supplied."),
+  modulePath: z.string().regex(/.+\.xlsx$/i).optional().describe("Project-relative .xlsx path for a new destination module. Omit when moduleName already exists."),
+  name: z.string().trim().min(1).describe("Name for the copied table."),
+  sheetName: z.string().optional().describe("Destination worksheet name. Defaults to the copied table's name."),
+  properties: z.array(z.object({
+    name: z.string().trim().min(1).describe("Property name."),
+    value: z.string().optional().describe("Property value in display-string form. A blank value removes the property."),
+  }).strict()).optional().describe("Replacement table properties. Omit to retain the source table's properties."),
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+const rawBorderSideView = z.strictObject({
+  style: z.enum(["solid", "dashed", "dotted", "double"]).optional(),
+  width: z.number().int().optional(),
+});
+const rawCellStyleView = z.strictObject({
+  align: z.enum(["right", "center", "justify"]).optional(),
+  background: z.string().optional(),
+  bold: z.boolean().optional(),
+  border: z.strictObject({
+    bottom: rawBorderSideView.optional(),
+    left: rawBorderSideView.optional(),
+    right: rawBorderSideView.optional(),
+    top: rawBorderSideView.optional(),
+  }).optional(),
+  color: z.string().optional(),
+  indent: z.number().int().min(1).optional(),
+  italic: z.boolean().optional(),
+  underline: z.boolean().optional(),
+  valign: z.enum(["center", "top"]).optional(),
+});
+const rawTableCellSchema = z.strictObject({
+  value: z.unknown().optional(),
+  colspan: z.number().int().min(1).optional(),
+  rowspan: z.number().int().min(1).optional(),
+  covered: z.boolean().optional(),
+  cell: z.string().optional(),
+  style: rawCellStyleView.optional(),
+});
 
 export const appendTableSchema = z.object({
   projectId: projectIdSchema,
   tableId: tableIdSchema,
-  appendData: z.discriminatedUnion("tableType", [
-    // DatatypeAppend
-    z.object({
-      tableType: z.literal("Datatype"),
-      fields: z.array(z.object({
-        name: z.string().describe("Field name"),
-        type: z.string().describe("Field type (e.g., 'String', 'int', 'double')"),
-        required: z.union([z.boolean(), z.string()]).optional().describe("Whether the field is required (backend field is a String; a boolean is accepted and coerced)."),
-        defaultValue: z.any().optional().describe("Default value for the field"),
-      })).describe("Array of field definitions to append"),
-    }),
-    // SimpleRulesAppend
-    z.object({
-      tableType: z.literal("SimpleRules"),
-      rules: z.array(z.record(z.string(), z.unknown())).describe("Array of rule objects to append. Each rule is a map with condition and action columns."),
-    }),
-    // SimpleSpreadsheetAppend
-    z.object({
-      tableType: z.literal("SimpleSpreadsheet"),
-      steps: z.array(z.object({
-        name: z.string().describe("Step name (referenced elsewhere as $StepName)."),
-        type: z.string().optional().describe("Step result type, e.g. 'Double'."),
-        value: z.any().describe("The step's formula or value, e.g. '= app.annualIncome / 12'. NOT 'formula'."),
-      })).describe("Array of spreadsheet steps to append: [{ name, type?, value }]."),
-    }),
-    // SpreadsheetAppend — append rows to a FULL (multi-column) Spreadsheet: row
-    // headers in `rows` plus the matching grid of cell values in `cells` (one inner
-    // array per appended row). Use SimpleSpreadsheet for the single-column form.
-    z.object({
-      tableType: z.literal("Spreadsheet"),
-      rows: z.array(z.object({
-        name: z.string().optional().describe("Row name (referenced elsewhere as $RowName)."),
-        type: z.string().optional().describe("Row result type, e.g. 'Double', 'String'."),
-      })).optional().describe("Optional spreadsheet row headers to append: [{ name, type? }] — when provided, one per appended row (must align 1:1 with 'cells')."),
-      cells: z.array(z.array(z.object({ value: z.any() }))).min(1).describe(
-        "Required. Cells to append as a non-empty 2D array — one inner array (the row's cells across the columns) per appended row: [[{ value }]]. The formula/value goes in each cell's 'value'."
-      ),
-    }),
-    // SmartRulesAppend
-    z.object({
-      tableType: z.literal("SmartRules"),
-      rules: z.array(z.record(z.string(), z.unknown())).describe("Array of rule objects to append. Each rule is a map with condition and action columns."),
-    }),
-    // VocabularyAppend
-    z.object({
-      tableType: z.literal("Vocabulary"),
-      values: z.array(z.object({ value: z.any() })).describe("Array of vocabulary values to append: [{ value }]."),
-    }),
-    // LookupAppend (SimpleLookup / SmartLookup) — rows are an array of maps.
-    z.object({
-      tableType: z.literal("SimpleLookup"),
-      rows: z.array(z.record(z.string(), z.unknown())).describe("Array of lookup rows to append; each row is a map keyed by the table's columns."),
-    }),
-    z.object({
-      tableType: z.literal("SmartLookup"),
-      rows: z.array(z.record(z.string(), z.unknown())).describe("Array of lookup rows to append; each row is a map keyed by the table's columns."),
-    }),
-    // DataAppend — rows are positional { values: [...] }.
-    z.object({
-      tableType: z.literal("Data"),
-      rows: z.array(z.object({ values: z.array(z.any()) })).describe("Array of data rows to append: [{ values: [...] }] (one value per column)."),
-    }),
-    // TestAppend — rows are positional { values: [...] }; use this to add test cases
-    // to an existing Test table (create writes only the header, then append the cases).
-    z.object({
-      tableType: z.literal("Test"),
-      rows: z.array(z.object({ values: z.array(z.any()) })).describe("Array of test cases to append: [{ values: [...] }] (one value per header column)."),
-    }),
-    // RawSourceAppend
-    z.object({
-      tableType: z.literal("RawSource"),
-      rows: z.array(z.array(z.record(z.string(), z.unknown()))).describe("Array of rows to append; each row is an array of cell objects (e.g. { value: string, colspan?: number } or { covered?: boolean }). Each row must cover ALL columns of the table (read it back with openl_get_table(raw=true) to see the width) — use { value: \"\" } for intentionally blank cells; a row narrower than the table is rejected before anything is written."),
-    }),
-  ]).describe("Data structure to append to the table. Structure depends on tableType: Datatype uses 'fields'; SimpleRules/SmartRules use 'rules'; SimpleLookup/SmartLookup use 'rows' (array of maps); Data/Test use 'rows' (array of { values }); SimpleSpreadsheet uses 'steps'; Spreadsheet uses 'rows' (row headers) + 'cells' (2D cell array); Vocabulary uses 'values'; RawSource uses 'rows' (array of cell-arrays)."),
+  appendData: z.strictObject({
+    tableType: z.literal("RawSource"),
+    rows: z.array(z.array(rawTableCellSchema).min(1)).min(1).describe("Non-empty source rows to append. Every row must cover the table's full width; use { value: null } for an intentionally blank cell."),
+  }).describe("RawSource append payload. Typed table append DTOs are intentionally unsupported because they are lossy and incomplete."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
@@ -221,8 +240,8 @@ export const appendTableSchema = z.object({
 // Raw table-source actions (POST /projects/{projectId}/tables/{tableId}/actions)
 //
 // One narrow tool per operation×orientation. Each applies a SINGLE in-place edit
-// to the table's RAW source (any table type), unlike openl_update_table /
-// openl_append_table which take the parsed, per-type structure. Positions are
+// to the table's RAW source (any table type), like every table-content tool.
+// Positions are
 // 0-based; row 0 is the header row and column 0 carries the leading labels, so
 // insert positions start at 1. An edit that relocates the table changes its id —
 // the tools surface the new id the same way update/append do.
@@ -374,6 +393,76 @@ export const createBranchSchema = z.object({
   response_format: ResponseFormat.optional(),
 }).strict();
 
+export const listProjectBranchesSchema = z.object({
+  projectId: projectIdSchema,
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+const mergeRequestFields = {
+  projectId: projectIdSchema,
+  otherBranch: z.string().trim().min(1).describe("The other branch: source for receive mode, target for send mode. Discover project branches with openl_list_project_branches()."),
+  mode: z.enum(["receive", "send"]).describe("receive merges the other branch into the project's current branch; send merges the current branch into otherBranch."),
+};
+
+export const checkProjectMergeSchema = z.object({
+  ...mergeRequestFields,
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+export const mergeProjectBranchesSchema = z.object({
+  ...mergeRequestFields,
+  force: z.boolean().optional().describe("Bypass eligible protected-target restrictions. Default false. Use only after Studio reports blockedBy='bypass-required'."),
+  confirmForce: z.boolean().optional().describe("Must be true when force=true, confirming the protected-branch bypass."),
+  response_format: ResponseFormat.optional(),
+}).strict().superRefine((value, ctx) => {
+  if (value.force && value.confirmForce !== true) {
+    ctx.addIssue({ code: "custom", path: ["confirmForce"], message: "confirmForce must be true when force=true." });
+  }
+});
+
+export const getMergeConflictsSchema = z.object({
+  projectId: projectIdSchema,
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+export const readMergeConflictFileSchema = z.object({
+  projectId: projectIdSchema,
+  file: z.string().trim().min(1).describe("Project-relative conflicted file path from openl_get_merge_conflicts()."),
+  side: z.enum(["BASE", "OURS", "THEIRS"]).describe("Version to read: common ancestor, current branch, or merging branch."),
+  encoding: z.enum(["auto", "utf-8", "base64"]).optional().describe("Content encoding. Default auto detects binary content."),
+  offset: z.number().int().nonnegative().optional().describe("Byte offset in the downloaded file. Default 0."),
+  length: z.number().int().min(1).max(16000).optional().describe("Target bytes returned from offset. Default and maximum target 16000; a UTF-8 response may add up to 3 bytes to finish a character. Continue with nextOffset when hasMore is true."),
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+export const cancelMergeConflictsSchema = z.object({
+  projectId: projectIdSchema,
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+export const deleteProjectSchema = z.object({
+  projectId: projectIdSchema,
+  confirmProjectName: z.string().trim().min(1).describe("Required safety confirmation: exact project name returned by openl_get_project(). The delete is rejected if it does not match."),
+  comment: z.string().optional().describe("Optional deletion commit message, validated by the repository's comment template when configured."),
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+export const deleteProjectBranchSchema = z.object({
+  projectId: projectIdSchema,
+  branch: z.string().trim().min(1).describe("Exact branch name from openl_list_project_branches(). The repository base branch cannot be deleted."),
+  confirmBranchName: z.string().trim().min(1).describe("Required safety confirmation; must exactly equal branch."),
+  force: z.boolean().optional().describe("Bypass protected-branch restrictions for eligible managers. Default false."),
+  confirmForce: z.boolean().optional().describe("Must be true when force=true, confirming the protected-branch bypass."),
+  response_format: ResponseFormat.optional(),
+}).strict().superRefine((value, ctx) => {
+  if (value.branch !== value.confirmBranchName) {
+    ctx.addIssue({ code: "custom", path: ["confirmBranchName"], message: "confirmBranchName must exactly equal branch." });
+  }
+  if (value.force && value.confirmForce !== true) {
+    ctx.addIssue({ code: "custom", path: ["confirmForce"], message: "confirmForce must be true when force=true." });
+  }
+});
+
 // =============================================================================
 // Project Creation & Cloning Schema (single tool: blank create or clone)
 // =============================================================================
@@ -387,10 +476,10 @@ export const createProjectSchema = z.object({
     "How to create the project (the ticket's `template`). OMIT to create a BLANK project from the default empty skeleton. To CLONE an existing project, pass its name (from openl_list_projects()): its full structure is copied (rules, tests, settings, request/response examples) and the project is renamed to projectName. The clone source must be in the same repository."
   ),
   branch: branchNameSchema.optional().describe(
-    "Target branch (the ticket's `defaultBranch`). Honored when CLONING (the source is read from and the clone written to this branch). For a BLANK project, omit this — blank projects are created on the repository's default branch (the create endpoint cannot target a branch); passing branch without template is rejected."
+    "Target branch for either BLANK creation or CLONING. Omit for the repository's configured/default branch. Studio selects an existing branch case-insensitively; when the branch does not exist, Studio may create it from the repository base branch. Use openl_list_branches() first to avoid accidental branch creation."
   ),
   comment: commentSchema.describe(
-    "Commit comment for audit. Applied when creating a BLANK project; clone commit messages are system-generated. Defaults to 'Project <name> is created.' when omitted."
+    "Commit comment for audit. Applied to both BLANK creation and CLONING; Studio supplies its configured create/copy comment when omitted."
   ),
   response_format: ResponseFormat.optional(),
 }).strict();
@@ -409,226 +498,53 @@ export const deployProjectSchema = z.object({
 
 export const saveProjectSchema = z.object({
   projectId: projectIdSchema,
-  comment: z.string().min(1).describe("Required. Comment for the new revision (commit message). Save only works when project status is EDITING; after save a new revision is created and project transitions to OPENED."),
+  comment: z.string().trim().min(1).describe("Required. Comment for the new revision (commit message). Save only works when project status is EDITING; after save a new revision is created and project transitions to OPENED."),
   closeAfterSave: z.boolean().optional().describe("Optional. If true, close the project after saving (sends status CLOSED with comment in one request). Use when user asks to 'save and close'."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
-// -----------------------------------------------------------------------------
-// EditableTableView — discriminated union on the CASE-SENSITIVE `tableType`.
-//
-// The backend EditableTableView is a polymorphic Jackson type (one shape per
-// tableType) that rejects unknown fields with an opaque 400 "Failed to read
-// request". Modelling it as a discriminated union (mirroring appendTableSchema)
-// publishes the correct REQUIRED/allowed fields PER table type in the tool's JSON
-// Schema, so an LLM picks the right shape up front instead of reusing, say, the
-// SimpleRules shape (args/returnType/headers[title]/rules) for a Test table — which
-// actually needs the data-table shape (testedTableName/headers[fieldName]/rows[values]).
-// Field sets mirror the backend view classes (TableView + per-type subtypes).
-// -----------------------------------------------------------------------------
-const commonTableFields = {
-  name: z.string().describe("Table name (a valid Java identifier, e.g. 'calculatePremium')."),
-  id: z.string().optional().describe("Optional; ignored on create."),
-  kind: z.string().optional().describe("Informational only — NOT the discriminator (that is tableType)."),
-  properties: z.record(z.string(), z.any()).optional().describe("Dimension/table properties, e.g. { state: 'CA', lob: 'Auto' }."),
-  messages: z.array(z.any()).optional().describe("Read-only diagnostics; tolerated if a payload is copied from openl_get_table()."),
-};
-// ExecutableView base (rules, lookups, spreadsheets): the method signature is
-// defined by name + returnType + args — there is NO 'signature' field.
-const executableFields = {
-  returnType: z.string().optional().describe("Return type, e.g. 'String', 'Double', 'EligibilityResult', 'SpreadsheetResult'."),
-  args: z.array(z.object({
-    name: z.string().describe("Parameter name, e.g. 'app'."),
-    type: z.string().describe("Parameter type, e.g. 'LoanApplication', 'Integer'."),
-  })).optional().describe("Input parameters: [{ name, type }]. There is NO 'signature' field — use this instead."),
-};
-const rulesHeaderView = z.object({ title: z.string().describe("Column caption.") });
-const dataHeaderView = z.object({
-  fieldName: z.string().describe("Column accessor, e.g. 'app.age' (an input) or '_res_.eligible' (an expected result)."),
-  displayName: z.string().optional(),
-  foreignKey: z.string().optional(),
-});
-const dataRowView = z.object({
-  values: z.array(z.any()).describe("Positional cell values — one per header, in header order."),
-});
-// Spreadsheet step/row/column/cell shapes (backend SpreadsheetStepView etc.).
-// IMPORTANT: a step's formula goes in `value` (e.g. "= app.annualIncome / 12"),
-// NOT a `formula` field.
-const spreadsheetStepView = z.object({
-  name: z.string().describe("Step name (referenced elsewhere as $StepName)."),
-  type: z.string().optional().describe("Step result type, e.g. 'Double', 'String'."),
-  value: z.any().describe("The step's formula or value, e.g. '= app.annualIncome / 12'. NOT 'formula'."),
-});
-const spreadsheetRowColView = z.object({
-  name: z.string(),
-  type: z.string().optional(),
-});
-// Lookup column header (LookupView/LookupHeaderView): a caption plus optional
-// nested sub-columns for multi-level column grouping (modelled one level deep —
-// nested children are open maps of the same {title, children} shape).
-const lookupHeaderView = z.object({
-  title: z.string().optional().describe("Header caption."),
-  children: z.array(z.record(z.string(), z.any())).optional().describe("Nested sub-column headers ({ title, children }) for multi-level grouping."),
+// Table content contracts are deliberately RawSource-only. Studio's typed table
+// DTOs are incomplete and lossy, so exposing them here would advertise edits
+// that cannot reliably round-trip the underlying workbook.
+
+const rawTableViewSchema = z.strictObject({
+    tableType: z.literal("RawSource"),
+    name: z.string().optional().describe("Table name (a valid Java identifier)."),
+    id: z.string().optional().describe("Table id; ignored on create and validated against the path on update."),
+    kind: z.enum(["Rules", "Spreadsheet", "Datatype", "Data", "Test", "TBasic", "Column Match", "Method", "Run", "Constants", "Conditions", "Actions", "Returns", "Environment", "Properties", "Other"]).optional().describe("Informational table kind."),
+    messages: z.array(z.any()).optional().describe("Read-only diagnostics tolerated when a get response is round-tripped."),
+    pos: z.string().optional(),
+    source: z.array(z.array(rawTableCellSchema)).describe("Complete 2D source matrix. Preserve cell positions, covered placeholders, spans, and styles when replacing a table."),
+    totalRows: z.number().int().optional().describe("Total row count when the response contains a window."),
+}).describe("Complete RawSource table structure. Typed table DTOs are intentionally unsupported because they cannot reliably round-trip workbook content.");
+
+export const updateTableSchema = z.object({
+  projectId: projectIdSchema,
+  tableId: tableIdSchema,
+  view: rawTableViewSchema.describe("Full, non-windowed RawSource structure from openl_get_table() with modifications applied. Send the complete source matrix, not only changed cells; a view carrying totalRows is a partial window and is rejected."),
+  response_format: ResponseFormat.optional(),
+}).strict().superRefine((value, ctx) => {
+  if (value.view.totalRows !== undefined) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["view", "totalRows"],
+      message: "A windowed RawSource view cannot replace the whole table because omitted rows would be deleted. Call openl_get_table without startRow/maxRows and update that complete response, or use a narrow raw table action.",
+    });
+  }
 });
 
-const editableTableViewSchema = z.discriminatedUnion("tableType", [
-  // Datatype — a data structure definition.
-  z.object({
-    tableType: z.literal("Datatype"),
-    ...commonTableFields,
-    extends: z.string().optional().describe("Parent datatype to extend, if any."),
-    fields: z.array(z.object({
-      name: z.string(),
-      type: z.string(),
-      required: z.union([z.boolean(), z.string()]).optional().describe("Whether the field is required (backend stores a String; a boolean is accepted and coerced)."),
-      defaultValue: z.any().optional(),
-    })).optional().describe("Field definitions: [{ name, type }]."),
-  }),
-  // Vocabulary — an enumeration of values.
-  z.object({
-    tableType: z.literal("Vocabulary"),
-    ...commonTableFields,
-    type: z.string().optional().describe("Vocabulary element type."),
-    values: z.array(z.object({ value: z.any() })).optional().describe("Vocabulary values: [{ value }]."),
-  }),
-  // SimpleRules / SmartRules — decision tables. headers are captions [{title}];
-  // each rules row is a MAP keyed by those titles (return column usually 'RET1').
-  z.object({
-    tableType: z.literal("SimpleRules"),
-    ...commonTableFields,
-    ...executableFields,
-    collect: z.boolean().optional(),
-    headers: z.array(rulesHeaderView).optional().describe("Column captions, e.g. [{title:'creditScore'},{title:'RET1'}]."),
-    rules: z.array(z.record(z.string(), z.any())).optional().describe("Rows as maps keyed by the header titles, e.g. { creditScore: '< 580', RET1: 'Poor' }."),
-  }),
-  z.object({
-    tableType: z.literal("SmartRules"),
-    ...commonTableFields,
-    ...executableFields,
-    collect: z.boolean().optional(),
-    headers: z.array(z.object({
-      title: z.string().optional().describe("Condition column caption."),
-      width: z.number().int().optional().describe("Number of condition columns this header spans (defaults to 1)."),
-    })).optional().describe("Condition column headers: [{ title, width? }]."),
-    rules: z.array(z.record(z.string(), z.any())).optional().describe("Rows as maps keyed by the header captions."),
-  }),
-  // SimpleLookup / SmartLookup — lookup tables (LookupView): rows is an array of maps.
-  z.object({
-    tableType: z.literal("SimpleLookup"),
-    ...commonTableFields,
-    ...executableFields,
-    collect: z.boolean().optional(),
-    headers: z.array(lookupHeaderView).optional().describe("Lookup column headers: [{ title?, children? }] — children nest for multi-level column grouping."),
-    rows: z.array(z.record(z.string(), z.any())).optional().describe("Lookup rows as maps keyed by the columns."),
-  }),
-  z.object({
-    tableType: z.literal("SmartLookup"),
-    ...commonTableFields,
-    ...executableFields,
-    collect: z.boolean().optional(),
-    headers: z.array(lookupHeaderView).optional().describe("Lookup column headers: [{ title?, children? }] — children nest for multi-level column grouping."),
-    rows: z.array(z.record(z.string(), z.any())).optional().describe("Lookup rows as maps keyed by the columns."),
-  }),
-  // SimpleSpreadsheet — a single-column spreadsheet of named steps. Each step's
-  // formula goes in `value` (e.g. value: "= app.annualIncome / 12"), NOT 'formula'.
-  z.object({
-    tableType: z.literal("SimpleSpreadsheet"),
-    ...commonTableFields,
-    ...executableFields,
-    steps: z.array(spreadsheetStepView).optional().describe(
-      "Named steps: [{ name, type?, value }]. The formula goes in 'value' (e.g. value: '= app.annualIncome / 12'); there is NO 'formula' field. Reference earlier steps as $StepName."
-    ),
-  }),
-  // Spreadsheet — full row/column/cell grid.
-  z.object({
-    tableType: z.literal("Spreadsheet"),
-    ...commonTableFields,
-    ...executableFields,
-    rows: z.array(spreadsheetRowColView).optional().describe("Row headers: [{ name, type? }]."),
-    columns: z.array(spreadsheetRowColView).optional().describe("Column headers: [{ name, type? }]."),
-    cells: z.array(z.array(z.object({ value: z.any() }))).optional().describe("2D matrix of cells: [[{ value }]]. The formula/value goes in each cell's 'value'."),
-  }),
-  // Data — a data table (AbstractDataView): headers[fieldName] + rows[{values}].
-  z.object({
-    tableType: z.literal("Data"),
-    ...commonTableFields,
-    dataType: z.string().optional().describe("Element type of the data table."),
-    headers: z.array(dataHeaderView).optional().describe("Columns: [{fieldName}]."),
-    rows: z.array(dataRowView).optional().describe("Rows as positional { values: [...] }."),
-  }),
-  // Test — a test table (AbstractDataView). NOTE: 'testedTableName' (NOT
-  // 'testedMethodName'), headers use 'fieldName' (NOT 'title'), and test cases go
-  // in 'rows' as positional { values } (NOT 'rules').
-  z.object({
-    tableType: z.literal("Test"),
-    ...commonTableFields,
-    testedTableName: z.string().describe("Name of the table/method under test (NOT 'testedMethodName')."),
-    headers: z.array(dataHeaderView).optional().describe("Test columns: [{fieldName}] — inputs like 'app.age' and expected results like '_res_.eligible'."),
-    rows: z.array(dataRowView).optional().describe("Test cases as positional { values: [...] } (NOT 'rules'); one value per header."),
-  }),
-  // RawSource — raw 2D cell matrix.
-  z.object({
-    tableType: z.literal("RawSource"),
-    ...commonTableFields,
-    pos: z.string().optional(),
-    source: z.array(z.array(z.object({
-      value: z.any().optional(),
-      colspan: z.number().int().optional(),
-      rowspan: z.number().int().optional(),
-      covered: z.boolean().optional(),
-    }))).optional().describe("2D matrix of raw cells: [[{ value, colspan?, rowspan?, covered? }]]."),
-  }),
-]).describe(
-  "Complete table structure (EditableTableView), selected by the CASE-SENSITIVE 'tableType' discriminator " +
-  "(Datatype, Vocabulary, Spreadsheet, SimpleSpreadsheet, SimpleRules, SmartRules, SimpleLookup, SmartLookup, Data, Test, RawSource — " +
-  "lowercase like 'datatype' is rejected). Each table type has a DIFFERENT shape (shown per branch); the backend rejects unknown/extra " +
-  "fields with a 400 'Failed to read request'. Rules tables use args/returnType/headers[{title}]/rules; Data and Test tables use " +
-  "headers[{fieldName}]/rows[{values}] (Test also needs testedTableName) — do NOT mix the two. There is NO 'signature' field. " +
-  "Tip: openl_get_table() on an existing table of the SAME type returns this exact shape to copy."
-);
+const createTableViewSchema = rawTableViewSchema.omit({ totalRows: true }).extend({
+  name: z.string().trim().min(1).describe("Required nonblank table name (a valid Java identifier, e.g. 'calculatePremium')."),
+});
 
 export const createProjectTableSchema = z.object({
   projectId: projectIdSchema,
-  moduleName: z.string().min(1).describe("Name of an existing project module where the table will be created (for example, 'Main' or 'Rules')."),
+  moduleName: z.string().trim().min(1).describe("Name of an existing project module where the table will be created (for example, 'Main' or 'Rules')."),
+  modulePath: z.string().regex(/.+\.xlsx$/i).optional().describe("Project-relative .xlsx path for a new module. When omitted, moduleName must identify an existing module."),
   sheetName: z.string().optional().describe("Name of the sheet where the table will be created within the Excel file. If not provided, the table name will be used as the sheet name."),
-  table: editableTableViewSchema,
+  table: createTableViewSchema,
   response_format: ResponseFormat.optional(),
 }).strict();
-
-// -----------------------------------------------------------------------------
-// Canonical, CASE-SENSITIVE tableType discriminators, derived from the
-// discriminated unions above so the lists cannot drift from the schemas they
-// describe. Both unions now cover the same 11 tableType values (append gained the
-// full multi-column Spreadsheet alongside SimpleSpreadsheet). The `options[].shape.tableType`
-// access mirrors what z.discriminatedUnion exposes; discriminatorValues asserts
-// it extracted non-empty strings, so a future Zod-internal change throws here at
-// load time rather than silently degrading to `[]`/`[undefined, …]`. The
-// "derived tableType constants" test in schemas.test.ts pins the expected values.
-// -----------------------------------------------------------------------------
-interface DiscriminatedUnionLike {
-  options: ReadonlyArray<{ shape: { tableType: { value: string } } }>;
-}
-
-function discriminatorValues(union: DiscriminatedUnionLike): readonly string[] {
-  const values = union.options.map((option) => option.shape.tableType.value);
-  if (values.length === 0 || values.some((v) => typeof v !== "string" || v.length === 0)) {
-    throw new Error(
-      `discriminatorValues: failed to extract tableType discriminators (got ${JSON.stringify(values)}). ` +
-        `The Zod discriminated-union internal shape may have changed.`
-    );
-  }
-  return values;
-}
-
-/** Append-able tableType discriminators (from appendTableSchema.appendData). */
-export const APPEND_TABLE_TYPES: readonly string[] = discriminatorValues(
-  appendTableSchema.shape.appendData as unknown as DiscriminatedUnionLike,
-);
-
-/** EditableTableView tableType discriminators (from createProjectTableSchema.table). */
-export const EDITABLE_TABLE_TYPES: readonly string[] = discriminatorValues(
-  editableTableViewSchema as unknown as DiscriminatedUnionLike,
-);
 
 // =============================================================================
 // Trace Debug API Schemas (BETA) — interactive debugger
@@ -652,6 +568,8 @@ export const startTraceSchema = z.object({
   fromModule: z.string().optional().describe("Module name to trace in the context of a specific opened module. Usually omit."),
   stopAtEntry: z.boolean().optional().describe("Suspend at the entry of the first frame (default true). Set false to run straight to the first breakpoint — or, with no breakpoints, to completion."),
   profiling: z.boolean().optional().describe("Retain the executed call tree — structure and timings, NO values (default false). With stopAtEntry: false and no breakpoints the run completes in this single call and returns a constant-size 'profile' overview (top-N slowest tables); the tree's root node comes with includeTree: true and is browsed level by level with openl_expand_trace_tree."),
+  detailedTitles: z.boolean().optional().describe("Build value-rich business-view titles in the retained tree (backend default false). This can substantially increase response size."),
+  breakOnErrors: z.boolean().optional().describe("Suspend on an uncaught rule error so its frame can be inspected (backend default true). Set false to let the error terminate the run."),
   breakpoints: z.array(z.string()).optional().describe("Initial breakpoint set — REPLACES the current set before starting. Key forms: '<name>' (entry of any same-named table), '<uri>' (entry of that table), '<uri>#R{r}C{c}' (spreadsheet cell), '<uri>#rule' (any decision-table rule fires), '<uri>#<ruleName>' (specific rule fires). Append '@N' to any key to break only on the table's N-th execution (0-based) — e.g. '<uri>#R48C0@3' hits the 4th run; N matches frames[].instance and a watch series' instance, so a watch outlier at instance 3 is reached with '@3'. Without '@N' a cell breakpoint hits EVERY pass."),
   ...traceProfileParams,
   response_format: ResponseFormat.optional(),
@@ -661,6 +579,7 @@ export const stepTraceSchema = z.object({
   projectId: projectIdSchema,
   type: z.enum(["into", "over", "out"]).describe("'out' (main tool for declarative rules — decision tables, spreadsheets, rating): run the current frame to its own exit so its result is inspectable, then continue in the caller. 'into' / 'over' are ADVANCED (imperative TBasic / loops): 'into' enters the next call or sub-step; 'over' advances to the next sub-step of the current frame (nested calls run through). For 'which table returned what', prefer 'out' plus breakpoints over stepping through expressions."),
   withValues: z.boolean().optional().describe("After the step, also return the active frame's variables (the same content as openl_inspect_trace_frame on the top frame) as 'variables' — saves the usual step→inspect round-trip when you step 'out' to read a frame's result. Default false."),
+  ...traceProfileParams,
   response_format: ResponseFormat.optional(),
 }).strict();
 
@@ -734,11 +653,15 @@ export const getProjectRevisionsSchema = z.object({
   projectName: projectNameSchema,
   branch: branchNameSchema.optional().describe("Branch name (optional, only if repository supports branches)"),
   search: z.string().optional().describe("Search term to filter revisions by commit message or author"),
-  techRevs: z.boolean().optional().describe("Include technical revisions (default: false)"),
-  page: z.number().int().nonnegative().optional().describe("Page number (0-based, default: 0)"),
-  size: z.number().int().positive().max(200).optional().describe("Page size (default: 50, max: 200)"),
+  techRevs: z.boolean().default(false).optional().describe("Include technical revisions (default: false)"),
+  offset: z.number().int().nonnegative().optional().describe("Item offset (0-based). Mutually exclusive with page."),
+  page: z.number().int().nonnegative().optional().describe("Page number (0-based). Mutually exclusive with offset; the backend defaults to 0 when both are omitted."),
+  size: z.number().int().positive().max(200).default(50).optional().describe("Page size (default: 50, max: 200)"),
   response_format: ResponseFormat.optional(),
-}).strict();
+}).strict().refine(
+  (data) => data.page === undefined || data.offset === undefined,
+  { message: "page and offset are mutually exclusive" },
+);
 
 export const listDeployRepositoriesSchema = z.object({
   response_format: ResponseFormat.optional(),
@@ -763,14 +686,15 @@ export const restoreProjectLocalChangeSchema = z.object({
 
 export const startProjectTestsSchema = z.object({
   projectId: projectIdSchema,
-  tableId: z.string().optional().describe("Table ID to run tests for a specific table. Table type can be test table or any other table. If not provided, tests for all test tables in the project will be run."),
+  tableId: tableIdSchema.optional().describe("Table ID to run tests for a specific table. Table type can be test table or any other table. If not provided, tests for all test tables in the project will be run."),
   testRanges: z.string().optional().describe("Test ranges to run. Can be provided only if tableId is Test table. Example: '1-3,5' to run tests with numbers 1,2,3 and 5. If not provided, all tests in the test table will be run."),
-  fromModule: z.string().optional().describe("Module name to run tests from (reserved for future use - not currently used)"),
+  fromModule: z.string().optional().describe("Module name to run tests from."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
 export const getTestResultsSummarySchema = z.object({
   projectId: projectIdSchema,
+  failuresOnly: z.boolean().optional().describe("Include only failed tests."),
   failures: z.number().int().positive().default(5).optional().describe("Number of failed test units to include in the summary (default: 5, min: 1)"),
   unpaged: z.boolean().default(false).optional().describe("Return all results without pagination"),
   response_format: ResponseFormat.optional(),
@@ -782,7 +706,7 @@ export const getTestResultsSchema = z.object({
   failures: z.number().int().positive().default(5).optional().describe("Number of failed test units to include in the summary (default: 5, min: 1)"),
   page: z.number().int().nonnegative().optional().describe("Page number (0-based). Mutually exclusive with offset"),
   offset: z.number().int().nonnegative().optional().describe("Offset for pagination. Mutually exclusive with page"),
-  size: z.number().int().positive().optional().describe("Page size (number of results per page)"),
+  size: z.number().int().positive().max(200).optional().describe("Page size (number of results per page, maximum 200)"),
   limit: z.number().int().positive().max(200).optional().describe("Page size (alias for size, maps to size parameter)"),
   unpaged: z.boolean().default(false).optional().describe("Return all results without pagination. Mutually exclusive with page, offset, size, and limit"),
   response_format: ResponseFormat.optional(),
@@ -810,7 +734,7 @@ export const getTestResultsByTableSchema = z.object({
   failures: z.number().int().positive().default(5).optional().describe("Number of failed test units to include in the summary (default: 5, min: 1)"),
   page: z.number().int().nonnegative().optional().describe("Page number (0-based). Mutually exclusive with offset"),
   offset: z.number().int().nonnegative().optional().describe("Offset for pagination. Mutually exclusive with page"),
-  size: z.number().int().positive().optional().describe("Page size (number of results per page)"),
+  size: z.number().int().positive().max(200).optional().describe("Page size (number of results per page, maximum 200)"),
   limit: z.number().int().positive().max(200).optional().describe("Page size (alias for size, maps to size parameter)"),
   unpaged: z.boolean().default(false).optional().describe("Return all results without pagination. Mutually exclusive with page, offset, size, and limit"),
   response_format: ResponseFormat.optional(),

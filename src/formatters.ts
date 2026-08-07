@@ -23,11 +23,16 @@ interface PaginationMetadata {
  * Paginated response wrapper
  */
 interface PaginatedResponse<T> {
+  [key: string]: unknown;
   data: T;
   pagination?: PaginationMetadata;
   truncated?: boolean;
   truncation_message?: string;
 }
+
+const RESPONSE_WRAPPER_FIELDS = new Set([
+  "data", "pagination", "truncated", "truncation_message",
+]);
 
 /**
  * Format response options
@@ -40,10 +45,14 @@ interface FormatOptions {
     total?: number;
     hasMore?: boolean;
   };
+  /** Backend fields returned alongside a collection page (for example list expansions). */
+  responseMetadata?: Record<string, unknown>;
   /** Character limit (defaults to RESPONSE_LIMITS.MAX_CHARACTERS) */
   characterLimit?: number;
   /** Data type hint for markdown formatting */
   dataType?: string;
+  /** Tool-specific context shown only in Markdown responses. */
+  markdownContext?: Record<string, unknown>;
   /** Skip truncation for this response (useful for test results and other large data) */
   skipTruncation?: boolean;
 }
@@ -65,22 +74,74 @@ function pageItemCount(data: unknown): number {
   return 1;
 }
 
+/** Keep backend metadata from overriding formatter-owned response fields. */
+function withoutWrapperFields(record: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(record).filter(([key]) => !RESPONSE_WRAPPER_FIELDS.has(key)),
+  );
+}
+
+/** Extract non-wrapper fields that should remain visible in Markdown responses. */
+function getResponseMetadata<T>(response: PaginatedResponse<T>): Record<string, unknown> {
+  return withoutWrapperFields(response);
+}
+
+/** Build a bounded, valid-JSON preview when one response value cannot be sliced structurally. */
+function truncateJsonPreview(response: PaginatedResponse<unknown>, charLimit: number): string {
+  const serializedData = safeStringify(response.data, 2);
+  const metadata: Record<string, unknown> = { ...response };
+  delete metadata.data;
+  delete metadata.truncated;
+  delete metadata.truncation_message;
+  const build = (previewLength: number, includeMetadata: boolean): string => safeStringify({
+    ...(includeMetadata ? metadata : {}),
+    data: {
+      preview_format: "json",
+      truncated_json_preview: serializedData.slice(0, previewLength),
+    },
+    truncated: true,
+    truncation_message: RESPONSE_LIMITS.TRUNCATION_MESSAGE,
+  }, 2);
+
+  // Preserve small pagination/expansion metadata when it fits; otherwise the
+  // bounded preview and truncation notice are more important than that metadata.
+  const includeMetadata = build(0, true).length <= charLimit;
+  let low = 0;
+  let high = serializedData.length;
+  let best = build(0, includeMetadata);
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const candidate = build(middle, includeMetadata);
+    if (candidate.length <= charLimit) {
+      best = candidate;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+
+  if (best.length <= charLimit) return best;
+  const minimal = safeStringify({ truncated: true }, 2);
+  return minimal.length <= charLimit ? minimal : "null";
+}
+
 /**
  * Format response data as JSON or Markdown (standard, concise, or detailed)
  *
  * @param data - Data to format
- * @param format - Output format: "json" (structured), "markdown" (default full format),
+ * @param format - Output format: "json" (default structured format), "markdown" (human-readable full format),
  *                 "markdown_concise" (1-2 paragraph summary), "markdown_detailed" (full + context)
  * @param options - Formatting options
  * @returns Formatted response string
  */
 export function formatResponse<T>(
   data: T,
-  format: "json" | "markdown" | "markdown_concise" | "markdown_detailed" = "markdown",
+  format: "json" | "markdown" | "markdown_concise" | "markdown_detailed" = "json",
   options?: FormatOptions
 ): string {
   // Create paginated response structure
   const response: PaginatedResponse<T> = {
+    ...withoutWrapperFields(options?.responseMetadata ?? {}),
     data,
   };
 
@@ -103,12 +164,12 @@ export function formatResponse<T>(
   if (format === "json") {
     formattedString = safeStringify(response, 2);
   } else if (format === "markdown_concise") {
-    formattedString = toMarkdownConcise(response, options && options.dataType);
+    formattedString = toMarkdownConcise(response, options?.dataType, options?.markdownContext);
   } else if (format === "markdown_detailed") {
-    formattedString = toMarkdownDetailed(response, options && options.dataType);
+    formattedString = toMarkdownDetailed(response, options?.dataType, options?.markdownContext);
   } else {
-    // Default markdown
-    formattedString = toMarkdown(response, options && options.dataType);
+    // Standard markdown
+    formattedString = toMarkdown(response, options?.dataType, options?.markdownContext);
   }
 
   // Check character limit (skip if skipTruncation is true)
@@ -127,8 +188,8 @@ export function formatResponse<T>(
           let result: string;
           do {
             const truncatedWrapper = {
+              ...parsedResponse,
               data: parsedResponse.data.slice(0, itemCount),
-              ...(parsedResponse.pagination ? { pagination: parsedResponse.pagination } : {}),
               truncated: true,
               truncation_message: RESPONSE_LIMITS.TRUNCATION_MESSAGE,
             };
@@ -136,14 +197,11 @@ export function formatResponse<T>(
             if (result.length <= charLimit) break;
             itemCount = Math.max(1, Math.floor(itemCount * 0.8));
           } while (itemCount > 1);
-          return result;
+          return result.length <= charLimit
+            ? result
+            : truncateJsonPreview(parsedResponse, charLimit);
         }
-        const truncatedWrapper: PaginatedResponse<T> = {
-          ...parsedResponse,
-          truncated: true,
-          truncation_message: RESPONSE_LIMITS.TRUNCATION_MESSAGE,
-        };
-        return safeStringify(truncatedWrapper, 2);
+        return truncateJsonPreview(parsedResponse, charLimit);
       } catch {
         return safeStringify({
           truncated: true,
@@ -171,7 +229,8 @@ export function formatResponse<T>(
  */
 export function toMarkdown<T>(
   response: PaginatedResponse<T>,
-  dataType?: string
+  dataType?: string,
+  markdownContext?: Record<string, unknown>,
 ): string {
   const parts: string[] = [];
 
@@ -207,6 +266,9 @@ export function toMarkdown<T>(
     case "tables":
       parts.push(formatTables(data as any));
       break;
+    case "table_dependencies":
+      parts.push(formatTableDependencies(data as Types.TableNodeView[], markdownContext));
+      break;
     case "deployments":
       parts.push(formatDeployments(data as any));
       break;
@@ -229,6 +291,11 @@ export function toMarkdown<T>(
     parts.push(formatPagination(response.pagination, pageItemCount(data)));
   }
 
+  const metadata = getResponseMetadata(response);
+  if (Object.keys(metadata).length > 0) {
+    parts.push(`## Response Metadata\n\n${formatGeneric(metadata)}`);
+  }
+
   return parts.join("\n\n");
 }
 
@@ -241,7 +308,8 @@ export function toMarkdown<T>(
  */
 export function toMarkdownConcise<T>(
   response: PaginatedResponse<T>,
-  dataType?: string
+  dataType?: string,
+  markdownContext?: Record<string, unknown>,
 ): string {
   const data = response.data;
   const parts: string[] = [];
@@ -267,6 +335,10 @@ export function toMarkdownConcise<T>(
       parts.push(`Showing ${count} ${count === 1 ? 'item' : 'items'} on this page; the total count is unavailable.`);
       if (response.pagination && response.pagination.has_more) {
         parts.push(`Use offset=${response.pagination.next_offset} to retrieve more results.`);
+      }
+      const metadata = getResponseMetadata(response);
+      if (Object.keys(metadata).length > 0) {
+        parts.push(`Response metadata: ${safeStringify(metadata)}.`);
       }
       return parts.join(" ");
     }
@@ -294,6 +366,23 @@ export function toMarkdownConcise<T>(
           parts.push(`Table types: ${types}.`);
         }
         break;
+      case "table_dependencies": {
+        const nodes = data as Types.TableNodeView[];
+        const edges = nodes.reduce((sum, node) => sum + (node.dependencies?.length ?? 0), 0);
+        parts.push(`Dependency graph contains ${total} ${total === 1 ? "table" : "tables"} and ${edges} ${edges === 1 ? "dependency link" : "dependency links"}.`);
+        const connectedNodes = nodes.filter(
+          (node) => (node.dependencies?.length ?? 0) + (node.dependents?.length ?? 0) > 0,
+        );
+        const connected = connectedNodes
+          .slice(0, 3)
+          .map((node) => `${node.name ?? node.id ?? "unnamed"}: ${node.dependencies?.length ?? 0} dependencies, ${node.dependents?.length ?? 0} dependents`);
+        if (connected.length > 0) {
+          parts.push(`Connected tables: ${connected.join("; ")}${connectedNodes.length > connected.length ? "; …" : ""}.`);
+        }
+        const query = formatDependencyQuery(markdownContext, true);
+        if (query) parts.push(query);
+        break;
+      }
       case "deployments":
         parts.push(`Found ${total} ${total === 1 ? 'deployment' : 'deployments'}${count < total ? ` (showing ${count})` : ''}.`);
         if (count > 0) {
@@ -321,6 +410,11 @@ export function toMarkdownConcise<T>(
     parts.push(`Use offset=${response.pagination.next_offset} to retrieve more results.`);
   }
 
+  const metadata = getResponseMetadata(response);
+  if (Object.keys(metadata).length > 0) {
+    parts.push(`Response metadata: ${safeStringify(metadata)}.`);
+  }
+
   return parts.join(" ");
 }
 
@@ -333,7 +427,8 @@ export function toMarkdownConcise<T>(
  */
 export function toMarkdownDetailed<T>(
   response: PaginatedResponse<T>,
-  dataType?: string
+  dataType?: string,
+  markdownContext?: Record<string, unknown>,
 ): string {
   const parts: string[] = [];
   const data = response.data;
@@ -354,7 +449,10 @@ export function toMarkdownDetailed<T>(
   if (Array.isArray(data)) {
     const count = data.length;
     const total = response.pagination ? response.pagination.total_count : count;
-    parts.push(`# ${dataType ? dataType.charAt(0).toUpperCase() + dataType.slice(1) : 'Results'}`);
+    const title = dataType === "table_dependencies"
+      ? "Table Dependency Graph"
+      : dataType ? dataType.charAt(0).toUpperCase() + dataType.slice(1) : "Results";
+    parts.push(`# ${title}`);
     parts.push(total === undefined
       ? `\n**Summary:** showing ${count} ${count === 1 ? 'item' : 'items'} on this page; total count unavailable`
       : `\n**Summary:** ${total} total ${total === 1 ? 'item' : 'items'}${count < total ? ` (showing ${count} on this page)` : ''}`);
@@ -364,7 +462,7 @@ export function toMarkdownDetailed<T>(
   }
 
   // Use standard markdown formatting (calls existing formatters)
-  const standardMarkdown = toMarkdown(response, dataType);
+  const standardMarkdown = toMarkdown(response, dataType, markdownContext);
   parts.push(standardMarkdown);
 
   // Add additional context based on data type
@@ -506,6 +604,68 @@ function formatTables(tables: any[]): string {
     const file = escapeTableCell(table.file || "N/A");
     const properties = escapeTableCell(formatProperties(table.properties));
     lines.push(`| ${name} | ${type} | ${kind} | ${tableId} | ${signature} | ${returnType} | ${file} | ${properties} |`);
+  }
+
+  return lines.join("\n");
+}
+
+function dependencyLabel(id: string, nodesById: ReadonlyMap<string, Types.TableNodeView>): string {
+  const name = nodesById.get(id)?.name;
+  return name ? `${String(name).replace(/\n/g, " ")} (\`${id}\`)` : `\`${id}\``;
+}
+
+function formatDependencyQuery(
+  context: Record<string, unknown> | undefined,
+  inline: boolean = false,
+): string {
+  if (!context) return "";
+  const values: string[] = [];
+  if (context.scope) values.push(`scope ${String(context.scope)}`);
+  if (context.tableId) values.push(`root table \`${String(context.tableId)}\``);
+  if (context.module) values.push(`module \`${String(context.module)}\``);
+  if (context.direction) values.push(`direction ${String(context.direction)}`);
+  if (context.depth !== undefined) values.push(`depth ${String(context.depth)}`);
+  if (values.length === 0) return "";
+  return inline ? `Query: ${values.join(", ")}.` : `**Query:** ${values.join(", ")}`;
+}
+
+/** Render graph edges explicitly instead of losing them in the flat table-list template. */
+function formatTableDependencies(
+  nodes: Types.TableNodeView[],
+  context?: Record<string, unknown>,
+): string {
+  if (!Array.isArray(nodes) || nodes.length === 0) {
+    return "# Table Dependency Graph\n\nNo tables found.";
+  }
+
+  const nodesById = new Map(
+    nodes.flatMap((node) => node.id ? [[node.id, node] as const] : []),
+  );
+  const lines = ["# Table Dependency Graph"];
+  const query = formatDependencyQuery(context);
+  if (query) lines.push("", query);
+
+  for (const node of nodes) {
+    const name = String(node.name ?? node.id ?? "Unnamed table").replace(/\n/g, " ");
+    const dependencies = node.dependencies?.map((id) => dependencyLabel(id, nodesById)).join(", ") || "None";
+    const dependents = node.dependents?.map((id) => dependencyLabel(id, nodesById)).join(", ") || "None";
+    lines.push("", `## ${name}`);
+    if (node.id) lines.push(`- **Table ID:** \`${node.id}\``);
+    if (node.tableType || node.kind) {
+      lines.push(`- **Type:** ${node.tableType ?? "N/A"}${node.kind ? ` (${node.kind})` : ""}`);
+    }
+    if (node.project) lines.push(`- **Project:** ${node.project}`);
+    if (node.file || node.pos) lines.push(`- **Location:** ${node.file ?? "N/A"}${node.pos ? ` at ${node.pos}` : ""}`);
+    if (node.signature) lines.push(`- **Signature:** \`${node.signature}\``);
+    if (node.returnType) lines.push(`- **Return type:** \`${node.returnType}\``);
+    lines.push(`- **Depends on:** ${dependencies}`);
+    lines.push(`- **Used by:** ${dependents}`);
+    if (node.dimensionProperties && Object.keys(node.dimensionProperties).length > 0) {
+      lines.push(`- **Dimension properties:** \`${safeStringify(node.dimensionProperties)}\``);
+    }
+    if (node.properties && Object.keys(node.properties).length > 0) {
+      lines.push(`- **Properties:** \`${safeStringify(node.properties)}\``);
+    }
   }
 
   return lines.join("\n");
@@ -764,14 +924,11 @@ export function paginateCollection<T>(
   }
 
   const pageLimit = page.pageSize ?? limit;
-  const pageOffset = page.pageNumber !== undefined
-    ? page.pageNumber * pageLimit
-    : offset;
-  if (pageOffset !== offset) {
-    throw new RangeError(
-      `Requested offset ${offset} does not align with backend page offset ${pageOffset}; offset must be a multiple of limit ${pageLimit}.`,
-    );
-  }
+  // Current Studio collection endpoints accept a true item offset. Their
+  // PageResponse may still expose a derived pageNumber (floor(offset / size)),
+  // which cannot reconstruct a non-aligned requested offset. Preserve the
+  // request value instead of replacing it with pageNumber * pageSize.
+  const pageOffset = offset;
   const hasMore = page.total !== undefined
     ? pageOffset + page.items.length < page.total
     : page.totalPages !== undefined && page.pageNumber !== undefined

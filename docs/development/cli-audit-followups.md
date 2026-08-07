@@ -148,7 +148,7 @@ Tracks items identified in the `EPBDS-16027` CLI audit (May 2026) that were **no
 
 ## 🟢 P2.13 — TTY-aware output: pretty JSON to terminal, compact to pipe
 
-**Problem.** We always emit compact JSON. When a user runs `openl-mcp openl_list_repositories` in a terminal (no pipe), reading is harder than it needs to be. When piped to `jq`, compact is right.
+**Problem.** The default JSON is always pretty-printed. That is readable in a terminal but unnecessarily large in a pipe or redirected file.
 
 **Best practice.** Detect with `process.stdout.isTTY`; if true, pretty-print (2-space indent); if false (pipe/redirect), keep compact.
 
@@ -157,8 +157,8 @@ Tracks items identified in the `EPBDS-16027` CLI audit (May 2026) that were **no
 - [`vitest` auto-switches modes on TTY](https://vitest.dev/) (same pattern)
 
 **Sketch.**
-- After applying `applyDefaultResponseFormat`, if `process.stdout.isTTY && response_format === 'json'`, set a flag.
-- In `formatResponse` (or post-process in CLI), pretty-print JSON when TTY.
+- After `resolveToolArgs`, detect whether stdout is a TTY and the effective `response_format` is `json`.
+- Keep the current pretty JSON for a TTY; compact it for a pipe or redirect.
 
 **Estimate.** ~10 lines + 1 test. **~30 min.** Watch: tool currently returns a pre-formatted string; we'd need to re-parse + re-stringify, or alter the formatter signature.
 
@@ -252,7 +252,7 @@ built `dist/index.js` via `node:child_process` (no extra dep). Covers:
 
 **Sketch.**
 - Add `--dry-run` flag.
-- After `resolveToolArgs` and `applyDefaultResponseFormat`, validate against the tool's Zod schema directly (not via `executeTool`).
+- After `resolveToolArgs`, validate against the tool's Zod schema directly (not via `executeTool`).
 - Emit `{ "valid": true, "args": <effective_args> }` (or `valid: false` with errors) and exit 0/65.
 
 **Estimate.** ~25 lines + 3 tests. **~45 min.**

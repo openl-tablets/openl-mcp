@@ -4,9 +4,9 @@
 calls — handy for scripting, CI/CD, or debugging one tool call without an MCP client. New here? Start with the
 [Quick Start](quick-start.md).
 
-CLI mode is **agent-first**: an LLM agent shells out to the binary and reads the default **markdown** output
-directly. Everything the MCP server can do is available here, with the same tools, schemas, validation, and
-formatting.
+CLI mode is **agent-first**: its default **JSON** output preserves the exact response structure for subsequent
+tool calls and shell pipelines. Everything the MCP server can do is available here, with the same tools, schemas,
+validation, and formatting.
 
 ## CLI vs. server mode
 
@@ -99,16 +99,14 @@ shell-quoting issues.
 
 ## Output format
 
-Output defaults to **markdown**, the same as the MCP server. For machine-parseable output — piping into `jq` —
-request JSON in the args:
+Output defaults to **JSON**, the same as the MCP server, so it can be piped directly into `jq`:
 
 ```bash
-npx -y openl-mcp list_projects '{"response_format":"json"}' | jq '.data[].name'
+npx -y openl-mcp list_projects | jq '.data[].name'
 ```
 
-Formats: `markdown` (default), `markdown_concise`, `markdown_detailed`, `json`. Rule of thumb: **whenever you pipe
-into `jq`, ask for `"response_format":"json"`** — otherwise `jq` receives markdown and errors. (`--list-tools` is
-always JSON regardless.)
+Formats: `json` (default), `markdown`, `markdown_concise`, `markdown_detailed`. Request a Markdown format when the
+output is intended for a human rather than another tool. (`--list-tools` is always JSON regardless.)
 
 ## Trace flows (cookie jar)
 
@@ -181,7 +179,7 @@ done
 - **`OPENL_BASE_URL is required`** — set the env var or pass `--base-url` (`--help` / `--list-tools` don't need it).
 - **`Failed to parse tool arguments as JSON`** — malformed JSON; use `@file.json` or `--stdin` to dodge shell quoting.
 - **`Unknown tool: …`** — a typo, or a temporarily disabled tool. `--list-tools` is the source of truth for the active set.
-- **Output isn't JSON** — the default is markdown; pass `"response_format":"json"`.
+- **Need human-readable output** — pass `"response_format":"markdown"` (or one of its concise/detailed variants).
 - **`step_trace` / `inspect_trace_frame` answer 404 (no debug session) after `start_trace`** — you're missing `--cookie-jar`; see [Trace flows](#trace-flows-cookie-jar).
 
 More: [general troubleshooting](troubleshooting.md).

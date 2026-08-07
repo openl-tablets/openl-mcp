@@ -495,22 +495,6 @@ async function saveCookieJar(
 }
 
 /**
- * CLI mode is **agent-first**: the primary consumer is an LLM agent that
- * shells out to this binary, and LLMs read markdown more naturally (and more
- * token-efficiently) than escaped JSON. So the CLI inherits the same default
- * `response_format` as the MCP server — markdown — by NOT overriding it here.
- *
- * Callers (human or agent) who want machine-parseable output pass
- * `response_format: "json"` explicitly, e.g. for piping into `jq`.
- *
- * Kept as a single documented seam: if the CLI's format policy ever needs to
- * diverge from the handler default again, change it here only.
- */
-function applyDefaultResponseFormat(args: unknown): unknown {
-  return args;
-}
-
-/**
  * Suppress informational stderr logs from the OpenL client / auth manager
  * (e.g. `[Auth] 🔐 PAT Authentication ...`) while the CLI is running.
  *
@@ -667,9 +651,8 @@ function renderHelp(): string {
     `large structured JSON — pass it via @file.json or --stdin rather than`,
     `inline. On Windows cmd, prefer @file.json (single quotes won't work).`,
     ``,
-    `Output: defaults to markdown (agent-friendly, same as the MCP server).`,
-    `For machine-parseable output, pass "response_format":"json" in args:`,
-    `  npx -y openl-mcp list_repositories '{"response_format":"json"}' | jq`,
+    `Output: defaults to structured JSON, the same as the MCP server.`,
+    `For human-readable output, pass "response_format":"markdown" in args.`,
     ``,
     `Discovery:`,
     `  --help                      human-readable: this catalog of tool titles`,
@@ -814,7 +797,7 @@ export async function runCli(options: RunCliOptions): Promise<number> {
 
     let toolArgs: unknown;
     try {
-      toolArgs = applyDefaultResponseFormat(await resolveToolArgs(parsed, stdin));
+      toolArgs = await resolveToolArgs(parsed, stdin);
     } catch (error) {
       // Malformed JSON from inline / @file / --stdin → EX_DATAERR
       throw new CliError(

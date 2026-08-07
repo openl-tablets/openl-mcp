@@ -13,13 +13,11 @@ import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 
 import * as schemas from "../schemas.js";
 import { formatResponse, paginateResults, formatAgentsDocument } from "../formatters.js";
-import { validateResponseFormat, validatePagination } from "../validators.js";
 import {
   findKnownGuideIds,
   guidesOverview,
   listGuides,
   readGuideBodies,
-  type GuideType,
 } from "../guides-registry.js";
 import { registerTool, type ToolResponse } from "./common.js";
 
@@ -104,7 +102,7 @@ export function registerGuideHandlers(): void {
     title: "Get Started",
     description:
       "Read-only. Call this FIRST, once per session, before any other openl_ tool. Returns the mandatory workflow protocol and a workspace orientation: when to call openl_get_project_agent_context (before working on or creating any project), how to discover the bundled OpenL reference documentation (openl_list_guides / openl_get_guides), and the edit → validate → save loop. Takes no arguments and never calls OpenL Studio.",
-    inputSchema: schemas.z.toJSONSchema(schemas.getStartedSchema) as Record<string, unknown>,
+    schema: schemas.getStartedSchema,
     annotations: {
       readOnlyHint: true,
       idempotentHint: true,
@@ -123,23 +121,17 @@ export function registerGuideHandlers(): void {
     title: "List Guides",
     description:
       "List the OpenL reference documentation bundled with this server — METADATA ONLY (id, type, title, source path, size in bytes), never bodies; fetch bodies with openl_get_guides. The bundle embeds the OpenL Tablets docs at the release tag matching the targeted OpenL Studio version: 'specification' entries are config-file/project-layout specs (rules.xml, rules-deploy.xml, project structure, openl-maven-plugin), 'guide' entries are the Reference Guide chapters (table types, table properties, functions and data types, projects, BEX/function appendices). Filter with 'type' and/or case-insensitive 'search' over id+title; results are paginated (limit/offset). Read-only, local — never calls OpenL Studio.",
-    inputSchema: schemas.z.toJSONSchema(schemas.listGuidesSchema) as Record<string, unknown>,
+    schema: schemas.listGuidesSchema,
     annotations: {
       readOnlyHint: true,
       idempotentHint: true,
       openWorldHint: false,
     },
     handler: async (args): Promise<ToolResponse> => {
-      const typedArgs = (args ?? {}) as {
-        type?: GuideType;
-        search?: string;
-        limit?: number;
-        offset?: number;
-        response_format?: "json" | "markdown" | "markdown_concise" | "markdown_detailed";
-      };
+      const typedArgs = args;
 
-      const format = validateResponseFormat(typedArgs.response_format);
-      const { limit, offset } = validatePagination(typedArgs.limit, typedArgs.offset);
+      const format = typedArgs.response_format;
+      const { limit = 50, offset = 0 } = typedArgs;
 
       const entries = listGuides({ type: typedArgs.type, search: typedArgs.search });
       const paginated = paginateResults(entries, limit, offset);
@@ -161,27 +153,15 @@ export function registerGuideHandlers(): void {
     title: "Get Guides",
     description:
       "Return the FULL markdown bodies of 1-5 bundled documents by the exact ids from openl_list_guides (e.g. 'spec/rules.xml', 'guide/introduction/basic-concepts'). Unknown ids fail with an error naming them — this tool never falls back to the index; look ids up with openl_list_guides first. Bodies are returned verbatim and are NOT truncated, so mind each entry's size_bytes from the index and request only what you need. Read-only, local — never calls OpenL Studio.",
-    inputSchema: schemas.z.toJSONSchema(schemas.getGuidesSchema) as Record<string, unknown>,
+    schema: schemas.getGuidesSchema,
     annotations: {
       readOnlyHint: true,
       idempotentHint: true,
       openWorldHint: false,
     },
     handler: async (args): Promise<ToolResponse> => {
-      const typedArgs = args as { ids?: unknown };
-      const ids = typedArgs?.ids;
-      if (!Array.isArray(ids) || ids.length === 0 || !ids.every((id) => typeof id === "string" && id.length > 0)) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          "Provide 'ids': a non-empty array of guide ids. Look ids up with openl_list_guides (optionally filtered with 'search')."
-        );
-      }
-      if (ids.length > 5) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          `Too many ids (${ids.length}); request at most 5 per call and page through the rest in further calls.`
-        );
-      }
+      const typedArgs = args;
+      const ids = typedArgs.ids;
 
       const { found, unknown } = readGuideBodies(ids);
       if (unknown.length > 0) {
@@ -210,25 +190,14 @@ export function registerGuideHandlers(): void {
     title: "Get Project Agent Context",
     description:
       "Resolve the agent guidance (AGENTS.md hierarchy) that applies to a project — call this BEFORE working on or creating anything in the project. Starting at the project directory — or the optional 'folder' sub-directory — this walks UP through every parent folder to the repository root, collects every AGENTS.md found, and returns them concatenated in ONE markdown document ordered from the root folder (lowest priority) down to the project folder (highest priority); on conflicting instructions, each later section overrides the earlier ones. AGENTS.md files live not only in the project but often in a workspace/monorepo root above it. Levels with no AGENTS.md are skipped (not an error); a project with none returns a short 'no files' note. When the guidance references bundled reference guides by id, those ids are listed at the end — fetch them with openl_get_guides. The search direction is fixed — to search a project's own subtree by glob/content instead, use openl_search_project_files.",
-    inputSchema: schemas.z.toJSONSchema(schemas.getProjectAgentContextSchema) as Record<string, unknown>,
+    schema: schemas.getProjectAgentContextSchema,
     annotations: {
       readOnlyHint: true,
       idempotentHint: true,
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        folder?: string;
-        branch?: string;
-      };
-
-      if (!typedArgs || !typedArgs.projectId) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          "Missing required argument: projectId. To find valid project IDs, use: openl_list_projects()"
-        );
-      }
+      const typedArgs = args;
 
       const files = await client.getProjectAgentContext(typedArgs.projectId, {
         folder: typedArgs.folder,

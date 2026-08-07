@@ -244,21 +244,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 ### Response Format Support
 
-**Guideline**: All tools MUST support `response_format` parameter (json/markdown).
+**Guideline**: All tools MUST support the shared `ResponseFormat` contract:
+`json`, `markdown`, `markdown_concise`, and `markdown_detailed`.
 
-**Default**: `markdown` (better for AI consumption)
+**Default**: `json` (preserves exact fields for round trips and subsequent tool calls)
 
 **Rationale**:
 - Flexibility for different use cases
-- Markdown provides better readability for AI agents
-- JSON enables programmatic processing
+- JSON preserves the authoritative response structure for agents and programmatic processing
+- Markdown remains available for human-readable output
 - Consistent user experience across tools
 
 **Implementation**:
 ```typescript
 // Schema definition
 export const BaseToolArgsSchema = z.object({
-  response_format: z.enum(['json', 'markdown']).default('markdown'),
+  response_format: ResponseFormat.optional(),
 }).strict();
 
 // Usage in tool
@@ -450,7 +451,7 @@ export function registerAllTools(
 - ❌ **Tools without `openl_` prefix** - All tools must use namespace prefix.
 - ❌ **Schemas without `.strict()` mode** - All Zod schemas must be strict.
 - ❌ **List operations without pagination support** - All list tools must support limit/offset.
-- ❌ **Tools without `response_format` parameter** - All tools must support json/markdown output.
+- ❌ **Tools without `response_format` parameter** - All tools must support the shared JSON and three Markdown output formats.
 - ❌ **Switch statements for tool handling** - Use `registerTool()` pattern only.
 
 **Security**:

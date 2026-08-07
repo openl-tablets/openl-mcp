@@ -23,11 +23,12 @@ System (BRMS). Through its tools you can:
 
 The server calls the OpenL Studio REST API (JSON, optional Personal Access Token).
 For the studio's asynchronous work it also opens a STOMP WebSocket so a single tool
-call can wait for the result instead of polling — project compilation
-(`openl_project_status` with `wait: true`). Details:
+call can wait for the result instead of agent-side polling — project compilation
+uses STOMP (`openl_project_status` with `wait: true`), while regular table execution
+is polled internally by `openl_run_table`. STOMP details:
 [docs/development/websockets.md](docs/development/websockets.md).
 
-## Tools (58 Total)
+## Tools (73 Total)
 
 All tools are prefixed with `openl_` and share the server's version.
 
@@ -35,9 +36,9 @@ All tools are prefixed with `openl_` and share the server's version.
 The onboarding and reference-documentation layer. Call `openl_get_started` once per
 session before anything else; call `openl_get_project_agent_context` before working on
 or creating any project. The documentation tools serve a bundle of the official OpenL
-Tablets docs **embedded at build time** from the release tag matching the targeted
-OpenL Studio version — progressive disclosure: the index is metadata-only, bodies are
-fetched by id on demand.
+Tablets docs **embedded at build time** from the revision configured in
+`package.json` — progressive disclosure: the index is metadata-only, bodies are fetched
+by id on demand.
 - `openl_get_started` - Read-only onboarding bootstrap: the mandatory workflow protocol (load agent context per project, consult guides on demand, edit → validate → save) plus a workspace orientation (which specification/guide categories exist and how to discover more — not an index dump)
 - `openl_get_project_agent_context` - Resolve the **AGENTS.md hierarchy** for a project as a **single aggregated markdown document**: walks UP from the project (or an optional `folder`) to the repository root, collects every applicable `AGENTS.md`, and returns them concatenated in one response — ordered from the root folder (lowest priority) down to the project folder (highest priority), later sections winning on conflict. Ends with the ids of bundled guides the guidance references
 - `openl_list_guides` - The canonical index of the bundled docs: **metadata only** (id, type, title, source path, size), filterable by `type` ('specification'/'guide') and case-insensitive `search` over id+title, paginated
@@ -49,11 +50,11 @@ fetched by id on demand.
 - `openl_list_repository_features` - Get repository capabilities
 - `openl_repository_project_revisions` - Get project revision history
 
-### Project Tools (14)
+### Project Tools (16)
 - `openl_list_projects` - List projects with filters and pagination; follow `has_more` / `next_offset` until `has_more` is false when a complete inventory is required
 - `openl_get_project` - Get project details
-- `openl_project_status` - Get project compile state and diagnostics (errors/warnings with location)
-- `openl_create_project` - Create a new project: omit `template` for a BLANK project (atomic commit on the default branch; returns commit revision), or pass `template` = an existing project name to CLONE it (full copy + rename in rules.xml). A default (branch-less) clone is committed atomically and indexed, so it appears in `openl_list_projects` immediately. Cloning onto a specific `branch` writes directly to repository Git via the files API, so a branch clone may not appear in `openl_list_projects` (and its revision may be unavailable) until OpenL re-indexes the repository
+- `openl_project_status` - Compile lazily when needed and return project compile state and diagnostics (errors/warnings with location); `wait=true` is the default, while explicit `wait=false` is a snapshot that may return `idle`/`compiling`
+- `openl_create_project` - Create or copy a project atomically through Studio: omit `template` for a BLANK project, or pass an existing project name to copy its full structure and rename it. Both modes accept an optional target `branch`, are indexed immediately, and return the commit revision plus Studio's opaque `projectId`
 - `openl_open_project` - Open project for editing (supports branch/revision switching)
 - `openl_save_project` - Save project changes to Git with validation
 - `openl_close_project` - Close project with save/discard options (prevents data loss)
@@ -64,14 +65,41 @@ fetched by id on demand.
 - `openl_get_test_results_summary` - Get brief test execution summary
 - `openl_get_test_results` - Get full test execution results with pagination
 - `openl_get_test_results_by_table` - Get test results filtered by table ID
+- `openl_list_project_modules` - List declared project modules, including path patterns and their matched modules
+- `openl_list_module_sheets` - List worksheets in a project module
 
-### Rules/Tables Tools (6)
+### Project Branch/Merge/Deletion Tools (8, BETA)
+
+Merge conflict state is bound to the Studio HTTP session. After a merge returns
+`status: "conflicts"`, inspect it through the same MCP server instance, present
+the evidence to the user, and leave resolution to them in Studio. Conflict
+resolution is intentionally not exposed: Studio does not provide a sufficiently
+safe API for autonomous resolution, and choosing `OURS` or `THEIRS` can discard
+valid work. Never choose or apply a conflict side automatically. Use the cancel
+tool only to clear pending MCP session state after the user takes over or the
+merge is abandoned. `receive` merges the other branch into the project's current
+branch; `send` merges the current branch into the other branch.
+
+- `openl_list_project_branches` - List branches available to a project with base/protected flags
+- `openl_check_project_merge` - Preview merge direction, status, permissions, and blockers without changing Git
+- `openl_merge_project_branches` - Recheck and merge branches; creates session-bound conflict state when needed
+- `openl_get_merge_conflicts` - Get grouped conflicted paths, BASE/OURS/THEIRS revisions, and the default message
+- `openl_read_merge_conflict_file` - Read a bounded UTF-8/base64 chunk of one BASE/OURS/THEIRS file version
+- `openl_cancel_merge_conflicts` - Clear the pending conflict session without modifying files or branches
+- `openl_delete_project` - Delete a project after exact current-name confirmation
+- `openl_delete_project_branch` - Delete a non-base branch after exact branch confirmation; protected bypass requires explicit force confirmation
+
+### Rules/Tables Tools (10)
 - `openl_list_tables` - List project tables with pagination; follow `has_more` / `next_offset` until `has_more` is false when a complete inventory is required
-- `openl_get_table` - Get table structure and data (use `raw=true` for raw 2D cell matrix view; raw-only options: `startRow`/`maxRows` read a large table in row slices — a windowed response carries `totalRows` — and `styles=true` adds each cell's Excel style: background/font colour, bold/italic/underline, alignment, indent, borders)
-- `openl_update_table` - Replace entire table
-- `openl_append_table` - Add rows/fields to table
-- `openl_create_project_table` - Create new table
+- `openl_get_table` - Get the authoritative `RawSource` 2D cell matrix; `startRow`/`maxRows` read a large table in row slices and `styles=true` includes Excel cell styles. A sliced response carries `totalRows` and is for reading or narrow raw actions only
+- `openl_update_table` - Replace the complete `RawSource` matrix; rejects a window carrying `totalRows` because writing it would delete omitted rows
+- `openl_append_table` - Append full-width `RawSource` rows
+- `openl_create_project_table` - Create a table from a complete `RawSource` matrix in an existing module, or pass `modulePath` (an `.xlsx` project-relative path) to create a new module
 - `openl_delete_table` - Delete an entire table (to remove a row/column WITHIN a table, use the raw action tools below)
+- `openl_run_table` - Execute a regular (non-Test) table with JSON input and wait for its result; `timeoutMs` bounds the complete start-and-result workflow (default 2 minutes), and cancellation, timeout, or any other failed workflow clears the pending Studio run. Studio permits only one run per HTTP session, so concurrent calls through the same MCP connection are rejected rather than allowed to replace each other's result
+- `openl_get_table_dependencies` - Get the whole project/module dependency graph or a table's dependency/dependent neighborhood
+- `openl_list_table_property_definitions` - List properties allowed in a table context, including types and enum values
+- `openl_copy_table` - Copy a table server-side inside the project while preserving formatting, merged cells, comments, and structure
 
 ### Raw Table-Source Action Tools (12)
 In-place edits to a table's raw source (any table type). One tool per operation×orientation handles **one OR more** rows/columns — pass a single row/column or several; the studio takes a single `rows`/`columns` block target (one row/column is just a one-element block), so there is no separate "row" vs "rows" tool. Positions are 0-based (row 0 is the header, column 0 the leading labels). `cells` is required and non-empty (one cell per column/row; use `{ value: null }` for a blank cell). An edit that relocates the table changes its id; each tool returns the table's CURRENT `tableId` (plus `previousTableId` when it changed) and reads the table back to trigger a recompile.
@@ -150,12 +178,15 @@ Projects with `repository: 'local'` are stored on disk without Git; **OPENED/EDI
 
 **For local, these work:**
 - `openl_list_projects` (call without repository filter, follow pagination to completion, then filter by `repository: "local"` in the response; the `repository: "local"` filter may fail because the "local" repository is often not returned by `openl_list_repositories`), `openl_get_project`;
-- Table tools: `openl_list_tables`, `openl_get_table`, `openl_update_table`, `openl_append_table`, `openl_create_project_table`, `openl_delete_table`, and the raw table-source action tools (`openl_insert_table_rows`/`openl_delete_table_rows`/`openl_update_table_cell`/`openl_merge_table_cells`/…);
+- Table tools: `openl_list_tables`, `openl_get_table`, `openl_update_table`, `openl_append_table`, `openl_create_project_table`, `openl_copy_table`, `openl_delete_table`, dependency/property discovery, and the raw table-source action tools (`openl_insert_table_rows`/`openl_delete_table_rows`/`openl_update_table_cell`/`openl_merge_table_cells`/…);
+- Module/sheet discovery and regular table execution: `openl_list_project_modules`, `openl_list_module_sheets`, `openl_run_table`;
+- Project deletion: `openl_delete_project` after exact project-name confirmation;
 - Test execution and results: `openl_start_project_tests`, `openl_get_test_results_summary`, `openl_get_test_results`, `openl_get_test_results_by_table` (the project is not opened before running tests for local).
 
 **For local, do not use:**
 - `openl_open_project`, `openl_save_project`, `openl_close_project` (no commits or status changes);
 - Git tools: `openl_list_branches`, `openl_create_project_branch`, `openl_repository_project_revisions`;
+- Project branch/merge tools: `openl_list_project_branches`, `openl_check_project_merge`, `openl_merge_project_branches`, read-only merge-conflict inspection, conflict-session cancellation, and `openl_delete_project_branch`;
 - `openl_list_project_local_changes`, `openl_restore_project_local_change` (require an opened project; local projects cannot be opened).
 
 Deployment (`openl_deploy_project`, `openl_redeploy_project`) for projects with `repository: 'local'` is typically not used via the studio.
@@ -190,7 +221,7 @@ HTTP), never from the server. A PAT is supplied as
 
 ## Response formatting
 
-- Formats: `json`, `markdown`, `markdown_concise`, `markdown_detailed` (the `response_format` argument).
+- Formats: `json` (default), `markdown`, `markdown_concise`, `markdown_detailed` (the `response_format` argument). JSON is the authoritative, round-trippable representation for agent workflows; request a Markdown format only for human-readable output.
 - List operations return pagination metadata.
 - Large responses are truncated at a 25K-character limit — except `openl_get_guides` bodies, which are returned verbatim (sizes are published in the index so callers can budget).
 
@@ -199,6 +230,23 @@ HTTP), never from the server. A PAT is supplied as
 - **Dual versioning** — Git commits (temporal) and dimension properties (business context).
 - **Table types** — Rules, SimpleRules, SmartRules, Lookups, Spreadsheet, Datatype, Method, Test, and others.
 - **Project ID formats** — both the current and legacy path formats are handled.
+
+### RawSource-only table content
+
+- The MCP table-content contract is intentionally **RawSource-only**. `openl_get_table`
+  always returns the raw cell matrix; create, update, and append accept only
+  `tableType: "RawSource"` payloads.
+- Never add typed table request/response variants such as `EditableTableView`,
+  `AppendTableView`, `SimpleRules`, `Spreadsheet`, `Datatype`, or `Test` DTOs to
+  MCP schemas, TypeScript content types, handlers, prompts, or examples. Studio's
+  typed views are incomplete and lossy and cannot reliably round-trip workbook
+  cells, layout, styles, merged regions, and less common table features.
+- A table's semantic kind still appears in list/run/dependency metadata and is
+  encoded by the OpenL grid itself. That metadata is not authorization to expose
+  a typed content contract.
+- Prefer the narrow raw table-source action tools for isolated edits. When a full
+  replacement is necessary, round-trip the complete `source` returned by
+  `openl_get_table`, preserving blank/covered cells, spans, and styles.
 
 ## External Resources
 

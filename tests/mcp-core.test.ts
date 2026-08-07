@@ -82,7 +82,7 @@ describe("MCP core — tool-call error channel", () => {
     });
 
     expect(result.isError).toBe(true);
-    expect(textOf(result)).toContain("Missing required arguments");
+    expect(textOf(result)).toContain("Invalid arguments for get_table");
     expect(called).toBe(false);
   });
 

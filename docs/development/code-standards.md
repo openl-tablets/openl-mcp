@@ -29,7 +29,6 @@ This document outlines all the best practices implemented in the OpenL MCP Serve
 - `schemas.ts` - Input validation schemas
 - `types.ts` - Type definitions
 - `formatters.ts` - Response formatting
-- `validators.ts` - Input validation utilities
 - `utils.ts` - Security and utility functions
 - `logger.ts` - Logging utilities
 - `prompts.ts` - Prompt definitions
@@ -221,7 +220,6 @@ handlers/           Moderate
 schemas.ts          Low
 types.ts            Low
 formatters.ts       Low
-validators.ts       Low
 utils.ts            Low
 logger.ts           Low
 prompts.ts          Low

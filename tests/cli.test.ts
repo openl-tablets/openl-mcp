@@ -249,7 +249,7 @@ describe("CLI", () => {
       expect(h.getStdout()).toContain("Design Repository");
     });
 
-    it("defaults to markdown when caller omits response_format (agent-first)", async () => {
+    it("defaults to JSON when caller omits response_format", async () => {
       const { client, mock: m } = createMockClient();
       mock = m;
       m.onGet("/repos").reply(200, mockRepositories);
@@ -265,20 +265,18 @@ describe("CLI", () => {
       });
 
       expect(code).toBe(0);
-      // Markdown output contains the repo name but is NOT valid JSON
-      // (markdown wraps content in headings/sections).
-      expect(h.getStdout()).toContain("Design Repository");
-      expect(() => JSON.parse(h.getStdout())).toThrow();
+      const parsed = JSON.parse(h.getStdout());
+      expect(parsed.data[0].name).toBe("Design Repository");
     });
 
-    it("honors explicit response_format=json for pipe-friendly output", async () => {
+    it("honors explicit response_format=markdown for human-readable output", async () => {
       const { client, mock: m } = createMockClient();
       mock = m;
       m.onGet("/repos").reply(200, mockRepositories);
 
       const h = createHarness();
       const code = await runCli({
-        argv: ["list_repositories", '{"response_format":"json"}'],
+        argv: ["list_repositories", '{"response_format":"markdown"}'],
         env: ENV_OK,
         stdin: h.stdin,
         stdout: h.stdout,
@@ -287,9 +285,8 @@ describe("CLI", () => {
       });
 
       expect(code).toBe(0);
-      // Explicit json → parseable
-      const parsed = JSON.parse(h.getStdout());
-      expect(parsed).toBeDefined();
+      expect(h.getStdout()).toContain("Design Repository");
+      expect(() => JSON.parse(h.getStdout())).toThrow();
     });
 
     it("sets OPENL_CLI_QUIET=1 during the run and restores afterwards", async () => {

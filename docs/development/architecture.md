@@ -40,7 +40,7 @@ subscribed, why, and how authentication works.
 - **Where:** Standalone repository (separate from OpenL Studio project)
 - **Role:** 
   - Converts Claude commands to API requests to OpenL
-  - Provides 58 tools for working with OpenL
+  - Provides 73 tools for working with OpenL
   - Manages authentication
 
 ### 3. OpenL Studio
@@ -59,10 +59,23 @@ subscribed, why, and how authentication works.
    │
 4. OpenL → MCP Server: returns JSON with repositories
    │
-5. MCP Server → Claude: formats response as markdown
+5. MCP Server → Claude: returns JSON by default; explicit `response_format` may request Markdown
    │
 6. Claude → You: shows list of repositories
 ```
+
+### Table content boundary
+
+All table-content operations cross the MCP boundary as Studio's `RawSource`
+representation. `openl_get_table` always requests `raw=true`; create, update, and
+append schemas accept only raw cell matrices. This is an intentional architecture
+constraint, not a temporary API limitation.
+
+Do not add Studio's typed `EditableTableView`/`AppendTableView` variants to MCP.
+Those views cover only a subset of table features and can lose cells, layout,
+styles, merged regions, and uncommon table constructs during a read-modify-write
+cycle. Semantic table kinds remain visible in summary metadata and are encoded in
+the raw OpenL grid, while raw action tools provide safe narrow edits.
 
 ## Configuration Files
 

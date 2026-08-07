@@ -42,7 +42,6 @@ src/
 ├── tools.ts             # Tool metadata definitions
 ├── schemas.ts           # Zod validation schemas
 ├── formatters.ts        # Response formatting
-├── validators.ts        # Input validation
 ├── utils.ts             # Utility functions
 ├── types.ts             # TypeScript types
 ├── constants.ts         # Configuration constants
@@ -59,9 +58,7 @@ export const myToolSchema = z.object({
   projectId: projectIdSchema,
   param: z.string().describe("Parameter description"),
   response_format: ResponseFormat.optional(),
-  limit: z.number().int().positive().max(200).default(50).optional(),
-  offset: z.number().int().nonnegative().default(0).optional(),
-}).strict(); // Always use .strict()
+}).merge(PaginationParams).strict(); // Always use .strict()
 ```
 
 ### 2. Register the Tool in its category module under `src/handlers/`
@@ -72,20 +69,20 @@ registerTool({
   title: "My Tool",
   description: "Tool description",
   category: "Project",             // one of TOOL_CATEGORIES (src/constants.ts)
-  inputSchema: schemas.z.toJSONSchema(myToolSchema),
+  schema: myToolSchema,
   annotations: {
     readOnlyHint: true,    // If read-only
     idempotentHint: true, // If safe to retry
     openWorldHint: true,
   },
   handler: async (args, client) => {
-    const typedArgs = args as z.infer<typeof myToolSchema>;
-    const result = await client.someMethod(typedArgs.projectId);
+    // args is already the validated z.output<typeof myToolSchema>.
+    const result = await client.someMethod(args.projectId);
     
     return {
       content: [{
         type: "text",
-        text: formatResponse(result, typedArgs.response_format || "markdown")
+        text: formatResponse(result, args.response_format)
       }]
     };
   },
@@ -96,9 +93,9 @@ registerTool({
 
 ```typescript
 async myMethod(projectId: string): Promise<ReturnType> {
-  const [repository, projectName] = this.parseProjectId(projectId);
+  const projectPath = this.buildProjectPath(projectId);
   const response = await this.axiosInstance.get<ReturnType>(
-    `/repos/${repository}/projects/${projectName}/endpoint`
+    `${projectPath}/endpoint`
   );
   return response.data;
 }
@@ -125,17 +122,21 @@ Add examples to `../guides/examples.md` and update `README.md` if needed.
 ## Key Guidelines
 
 ### Tool Naming
-- **MUST** use `openl_` prefix
-- Use snake_case: `openl_list_projects`
+- Register bare snake_case names such as `list_projects`; the server adds the
+  `openl_` prefix at the MCP boundary.
+- Do not store or compare prefixed names inside the registry.
 
 ### Response Formatting
 - Use `formatResponse()` from `formatters.ts`
-- Support `response_format` parameter (json/markdown)
-- Apply `paginateResults()` for array data
+- Support all shared `response_format` values: `json` (default), `markdown`,
+  `markdown_concise`, and `markdown_detailed`
+- Use `paginateCollection()` for backend page envelopes; use
+  `paginateResults()` only for genuinely local arrays.
 
 ### Validation
 - Always use `.strict()` on Zod schemas
-- Validate all inputs before processing
+- Let the central tool dispatcher parse inputs with the registered schema;
+  handlers consume the validated output directly.
 - Use descriptive error messages
 
 ### Error Handling
@@ -178,15 +179,15 @@ npm run test:watch          # Watch mode
 
 ### Commit Messages
 
-Use conventional commits:
+Follow the repository convention in `AGENTS.md`: prefix ticket-related work with
+the Jira key and write an imperative subject that explains the benefit.
 
 ```
-feat(tools): add support for table validation
-fix(auth): handle token refresh race condition
-docs: update contributing guide
+EPBDS-16385 Align MCP contracts with current Studio API
 ```
 
-Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
+Fold unpushed review fixes into the commit that introduced them; do not add
+co-author trailers.
 
 ## Security
 

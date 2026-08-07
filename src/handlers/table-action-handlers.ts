@@ -5,37 +5,20 @@
  * columns (the studio takes a single `rows`/`columns` block target; one row is a
  * one-element block), update a row/column/cell/range, and merge/unmerge cells.
  * Each edits the table's RAW source regardless of table type, unlike
- * openl_update_table / openl_append_table which take the parsed, per-type
+ * openl_update_table / openl_append_table which take complete raw structures
  * structure. All share one runner that handles the stale-id retry, the post-edit
  * id change, and the recompile-on-read — the same machinery the full
  * update/append tools use (see `table-id-tracking.ts`).
  */
 
-import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { ZodType } from "zod";
 
 import * as schemas from "../schemas.js";
 import type * as Types from "../types.js";
 import { formatResponse } from "../formatters.js";
-import { validateResponseFormat } from "../validators.js";
 import { registerTool, type ToolResponse } from "./common.js";
 import { finalizeTableEdit, withStaleIdRetry } from "./table-id-tracking.js";
 import type { OpenLClient } from "../client.js";
-
-/**
- * Validate a tool's raw arguments against its Zod schema, throwing an actionable
- * McpError(InvalidParams) on a violation. Returns the parsed (typed) arguments.
- */
-function validateActionArgs(toolName: string, schema: ZodType, args: unknown): unknown {
-  const result = schema.safeParse(args);
-  if (!result.success) {
-    throw new McpError(
-      ErrorCode.InvalidParams,
-      `Invalid arguments for ${toolName}:\n${schemas.z.prettifyError(result.error)}`,
-    );
-  }
-  return result.data;
-}
 
 /**
  * Apply one raw-source edit and report the table's current id.
@@ -52,7 +35,7 @@ async function runTableSourceAction(
   requestedId: string,
   action: Types.RawTableSourceAction,
   pastTenseEdit: string,
-  format: ReturnType<typeof validateResponseFormat>,
+  format: Parameters<typeof formatResponse>[1],
 ): Promise<ToolResponse> {
   // The studio reports the new id directly (200 + { id }) when the edit relocated
   // the table; an in-place edit answers 204 and the id is unchanged. So unlike
@@ -325,12 +308,11 @@ export function registerTableActionHandlers(): void {
       category: "Rules & Tables",
       title: spec.title,
       description: spec.description,
-      inputSchema: schemas.z.toJSONSchema(spec.schema) as Record<string, unknown>,
+      schema: spec.schema,
       annotations: spec.annotations,
-      validateArgs: (args) => validateActionArgs(spec.name, spec.schema, args),
       handler: async (args, client): Promise<ToolResponse> => {
         const typedArgs = args as BaseActionArgs & Record<string, unknown>;
-        const format = validateResponseFormat(typedArgs.response_format);
+        const format = typedArgs.response_format;
         const action = spec.buildAction(typedArgs);
         return runTableSourceAction(client, typedArgs.projectId, typedArgs.tableId, action, spec.pastTenseEdit, format);
       },

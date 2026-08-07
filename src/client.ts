@@ -331,10 +331,12 @@ export class OpenLClient {
    * @returns Repository features
    */
   async getRepositoryFeatures(repository: string): Promise<Types.RepositoryFeatures> {
-    const response = await this.axiosInstance.get<Types.RepositoryFeatures>(
-      `/repos/${encodeURIComponent(repository)}/features`
-    );
-    return response.data;
+    const repositories = await this.listRepositories();
+    const match = repositories.find((candidate) => candidate.id === repository);
+    if (!match) {
+      throw new Error(`Repository "${repository}" not found.`);
+    }
+    return match.features ?? {};
   }
 
   /**
@@ -393,15 +395,16 @@ export class OpenLClient {
       branch?: string;
       search?: string;
       techRevs?: boolean;
+      offset?: number;
       page?: number;
       size?: number;
     }
   ): Promise<Types.PageResponse<Types.ProjectRevision>> {
     const params: Record<string, string | number | boolean> = {};
-    if (options?.branch) params.branch = options.branch;
     if (options?.search) params.search = options.search;
     if (options?.techRevs !== undefined) params.techRevs = options.techRevs;
     if (options?.page !== undefined) params.page = options.page;
+    else if (options?.offset !== undefined) params.offset = options.offset;
     if (options?.size !== undefined) params.size = options.size;
 
     const url = options?.branch
@@ -424,20 +427,20 @@ export class OpenLClient {
    *
    * Maps to `PUT /repos/{repo}/projects/{name}` (multipart, `template` = zip),
    * which commits the project in a single FULL changeset and returns the commit
-   * revision. The repository's default/base branch is used (this endpoint does
-   * not accept a branch). A name collision returns HTTP 409.
+   * revision. An optional branch targets an existing branch (or lets Studio
+   * create a missing branch from the repository base). A collision returns 409.
    *
    * @param repositoryId - Canonical repository id (resolve via getRepositoryIdByName)
    * @param projectName - New project name (also the project folder)
    * @param templateZip - ZIP archive whose root entries become the project files
-   * @param options - Optional commit comment and (mapped-folder repos only) path
+   * @param options - Optional comment, target branch, and mapped-folder path
    * @returns The created project's revision (commit SHA) and branch (if supported)
    */
   async createProjectFromZip(
     repositoryId: string,
     projectName: string,
     templateZip: Buffer,
-    options?: { comment?: string; path?: string }
+    options?: { comment?: string; path?: string; branch?: string }
   ): Promise<Types.CreateProjectResult> {
     const form = new FormData();
     form.append("template", templateZip, {
@@ -446,6 +449,7 @@ export class OpenLClient {
     });
     if (options?.comment) form.append("comment", options.comment);
     if (options?.path) form.append("path", options.path);
+    if (options?.branch) form.append("branch", options.branch);
 
     const response = await this.axiosInstance.put<Types.CreateProjectResult>(
       `/repos/${encodeURIComponent(repositoryId)}/projects/${encodeURIComponent(projectName)}`,
@@ -455,135 +459,26 @@ export class OpenLClient {
     return response.data;
   }
 
-  /**
-   * Copy a file or folder within a design repository on a single branch.
-   *
-   * Maps to `POST /repos/{repo}/file-copy` with a {sourcePath, destinationPath}
-   * body. Copying a project folder recursively copies all of its contents. The
-   * copy is committed file-by-file (one commit per file, not atomic). A
-   * destination collision returns HTTP 409; a missing source returns HTTP 404.
-   *
-   * @param repositoryId - Canonical repository id
-   * @param sourcePath - Mount-relative source path (e.g. the source project name)
-   * @param destinationPath - Mount-relative destination path (e.g. the new project name)
-   * @param branch - Optional branch (source and destination share this branch)
-   */
-  async copyRepositoryFile(
-    repositoryId: string,
-    sourcePath: string,
-    destinationPath: string,
-    branch?: string
-  ): Promise<void> {
-    const body: Types.FilePathPairRequest = { sourcePath, destinationPath };
-    await this.axiosInstance.post(
-      `/repos/${encodeURIComponent(repositoryId)}/file-copy`,
-      body,
-      branch ? { params: { branch } } : undefined
-    );
-  }
-
-  /**
-   * Read a single file's contents from a design repository branch.
-   *
-   * Maps to `GET /repos/{repo}/files/{path}`. Returns the file content as a
-   * UTF-8 string, or `null` if the file does not exist (HTTP 404).
-   *
-   * @param repositoryId - Canonical repository id
-   * @param filePath - Mount-relative file path (e.g. "MyProject/rules.xml")
-   * @param branch - Optional branch
-   */
-  async getRepositoryFileContent(
-    repositoryId: string,
-    filePath: string,
-    branch?: string
-  ): Promise<string | null> {
-    const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
-    try {
-      const response = await this.axiosInstance.get<ArrayBuffer>(
-        `/repos/${encodeURIComponent(repositoryId)}/files/${encodedPath}`,
-        {
-          responseType: "arraybuffer",
-          params: branch ? { branch } : undefined,
-          headers: { Accept: "*/*" },
-        }
-      );
-      return Buffer.from(response.data).toString("utf-8");
-    } catch (error: unknown) {
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
-        return null;
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * Download a repository folder (e.g. a whole project) as a ZIP archive.
-   *
-   * Maps to `GET /repos/{repo}/files/{path}/?download=true`. The backend streams
-   * the folder's readable files into a ZIP whose entry names are RELATIVE to the
-   * folder — downloading a project folder therefore yields an archive with the
-   * project files at the archive root, exactly the layout the create-from-zip
-   * endpoint (PUT /repos/{repo}/projects/{name}) expects. A missing folder
-   * returns HTTP 404.
-   *
-   * @param repositoryId - Canonical repository id
-   * @param folderPath - Mount-relative folder path (e.g. the project name)
-   * @param branch - Optional branch
-   * @returns The ZIP archive bytes
-   */
-  async downloadRepositoryFolderZip(
-    repositoryId: string,
-    folderPath: string,
-    branch?: string
-  ): Promise<Buffer> {
-    // Trailing slash marks the path as a folder to the files API.
-    const encodedPath = folderPath
-      .replace(/\/+$/, "")
-      .split("/")
-      .map(encodeURIComponent)
-      .join("/");
-    const params: Record<string, string> = { download: "true" };
-    if (branch) params.branch = branch;
-
-    const response = await this.axiosInstance.get<ArrayBuffer>(
-      `/repos/${encodeURIComponent(repositoryId)}/files/${encodedPath}/`,
+  /** Copy an existing project server-side and register the copy in Studio. */
+  async copyProject(
+    targetRepositoryId: string,
+    targetProjectName: string,
+    sourceRepositoryId: string,
+    sourceProjectName: string,
+    options?: { comment?: string; branch?: string; revision?: string; path?: string },
+  ): Promise<Types.CreateProjectResult> {
+    const response = await this.axiosInstance.post<Types.CreateProjectResult>(
+      `/repos/${encodeURIComponent(targetRepositoryId)}/projects/${encodeURIComponent(targetProjectName)}/from-project`,
       {
-        responseType: "arraybuffer",
-        params,
-        headers: { Accept: "*/*" },
-      }
+        sourceRepositoryId,
+        sourceProjectName,
+        ...(options?.comment ? { comment: options.comment } : {}),
+        ...(options?.branch ? { branch: options.branch } : {}),
+        ...(options?.revision ? { revision: options.revision } : {}),
+        ...(options?.path ? { path: options.path } : {}),
+      },
     );
-    return Buffer.from(response.data);
-  }
-
-  /**
-   * Replace a single file's contents on a design repository branch.
-   *
-   * Maps to the raw `PUT /repos/{repo}/files/{path}` variant (updateResource).
-   * A non-JSON, non-multipart Content-Type is used so the request routes to the
-   * raw update handler (the JSON variant is the create-folder operation).
-   *
-   * @param repositoryId - Canonical repository id
-   * @param filePath - Mount-relative file path
-   * @param content - New file content
-   * @param branch - Optional branch
-   */
-  async updateRepositoryFileRaw(
-    repositoryId: string,
-    filePath: string,
-    content: Buffer | string,
-    branch?: string
-  ): Promise<void> {
-    const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
-    const body = Buffer.isBuffer(content) ? content : Buffer.from(content, "utf-8");
-    await this.axiosInstance.put(
-      `/repos/${encodeURIComponent(repositoryId)}/files/${encodedPath}`,
-      body,
-      {
-        headers: { "Content-Type": "application/xml" },
-        params: branch ? { branch } : undefined,
-      }
-    );
+    return response.data;
   }
 
   // =============================================================================
@@ -619,6 +514,12 @@ export class OpenLClient {
     return `/projects/${encodeURIComponent(normalizedId)}`;
   }
 
+  /** Encode a slash-delimited trailing path while preserving its separators. */
+  private encodePathSegments(value: string): string {
+    this.assertSafeProjectPath(value);
+    return value.split("/").map(encodeURIComponent).join("/");
+  }
+
   /** Normalize the response shapes used by Studio collection endpoints. */
   private normalizeCollectionPage<T>(responseData: unknown): Types.CollectionPage<T> {
     if (Array.isArray(responseData)) {
@@ -632,8 +533,20 @@ export class OpenLClient {
     const outer = responseData as Record<string, unknown>;
     const candidate = outer.data && typeof outer.data === "object" ? outer.data : outer;
 
+    const pageFields = new Set([
+      "content", "data", "numberOfElements", "pageNumber", "pageSize",
+      "total", "totalElements", "totalPages",
+    ]);
+    const extractMetadata = (source: Record<string, unknown>): Record<string, unknown> =>
+      Object.fromEntries(Object.entries(source).filter(([key]) => !pageFields.has(key)));
+    const outerMetadata = candidate === outer ? {} : extractMetadata(outer);
+
     if (Array.isArray(candidate)) {
-      return { items: candidate as T[], serverPaginated: false };
+      return {
+        items: candidate as T[],
+        serverPaginated: false,
+        ...(Object.keys(outerMetadata).length > 0 ? { metadata: outerMetadata } : {}),
+      };
     }
 
     const page = candidate as Record<string, unknown>;
@@ -645,6 +558,7 @@ export class OpenLClient {
       typeof value === "number" && Number.isFinite(value) ? value : undefined;
     const pageNumber = number(page.pageNumber);
     const pageSize = number(page.pageSize);
+    const metadata = { ...outerMetadata, ...extractMetadata(page) };
 
     return {
       items: page.content as T[],
@@ -653,6 +567,7 @@ export class OpenLClient {
       pageSize,
       total: number(page.total) ?? number(page.totalElements),
       totalPages: number(page.totalPages),
+      ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
     };
   }
 
@@ -666,9 +581,15 @@ export class OpenLClient {
       filters?: Types.ProjectFilters
   ): Promise<Types.CollectionPage<Types.ProjectSummary>> {
     // Build query parameters, handling tags with 'tags.' prefix and pagination
-    const params: Record<string, string | number> = {};
+    const params: Record<string, string | number | string[]> = {};
     if (filters?.repository) params.repository = filters.repository;
     if (filters?.status) params.status = filters.status;
+    if (filters?.dependsOn) params.dependsOn = filters.dependsOn;
+    if (filters?.name) params.name = filters.name;
+    if (filters?.author) params.author = filters.author;
+    if (filters?.branch) params.branch = filters.branch;
+    if (filters?.sort) params.sort = filters.sort;
+    if (filters?.include?.length) params.include = filters.include;
     if (filters?.tags) {
       // Tags must be prefixed with 'tags.' in query string
       Object.entries(filters.tags).forEach(([key, value]) => {
@@ -676,13 +597,12 @@ export class OpenLClient {
       });
     }
 
-    // Handle pagination parameters
-    // Support both page/size (OpenL API format) and offset/limit (alternative format)
+    // The current Studio API accepts a true item offset. Keep page/size support
+    // for direct client consumers, but never approximate offset as a page.
     if (filters?.page !== undefined) {
       params.page = filters.page;
-    } else if (filters?.offset !== undefined && filters?.limit !== undefined) {
-      // Convert offset/limit to page/size
-      params.page = Math.floor(filters.offset / filters.limit);
+    } else if (filters?.offset !== undefined) {
+      params.offset = filters.offset;
     }
 
     if (filters?.size !== undefined) {
@@ -693,7 +613,7 @@ export class OpenLClient {
 
     const response = await this.axiosInstance.get<Types.PageResponse<Types.ProjectSummary> | Types.ProjectSummary[] | { content?: Types.ProjectSummary[]; data?: Types.ProjectSummary[] }>(
         "/projects",
-        { params }
+        { params, paramsSerializer: { indexes: null } }
     );
 
     return this.normalizeCollectionPage<Types.ProjectSummary>(response.data);
@@ -717,9 +637,15 @@ export class OpenLClient {
    * @param projectId - Opaque project ID returned by backend.
    * @returns Project details
    */
-  async getProject(projectId: string): Promise<Types.ComprehensiveProject> {
+  async getProject(
+    projectId: string,
+    include?: Types.ProjectFilters["include"],
+  ): Promise<Types.ComprehensiveProject> {
     const projectPath = this.buildProjectPath(projectId);
-    const response = await this.axiosInstance.get<Types.Project>(projectPath);
+    const response = await this.axiosInstance.get<Types.Project>(projectPath, {
+      params: include?.length ? { include } : undefined,
+      paramsSerializer: { indexes: null },
+    });
     return response.data as Types.ComprehensiveProject;
   }
 
@@ -739,6 +665,25 @@ export class OpenLClient {
     }
     const response = await this.axiosInstance.get<Types.ProjectStatusView>(url, { params });
     return response.data;
+  }
+
+  /**
+   * Lazily initialize and await project compilation through Studio's tables API.
+   * Studio has no dedicated compile endpoint: listing even one table opens the
+   * project model, registers its compilation job, and waits for it to finish.
+   * The caller supplies the wait timeout so large projects are not constrained
+   * by the client's shorter general-purpose HTTP timeout.
+   */
+  async triggerProjectCompilation(
+    projectId: string,
+    options: { signal?: AbortSignal; timeoutMs?: number } = {},
+  ): Promise<void> {
+    const projectPath = this.buildProjectPath(projectId);
+    await this.axiosInstance.get(`${projectPath}/tables`, {
+      params: { offset: 0, size: 1 },
+      signal: options.signal,
+      timeout: options.timeoutMs,
+    });
   }
 
   /**
@@ -770,9 +715,12 @@ export class OpenLClient {
    * @param projectId - Opaque project ID returned by backend.
    * @returns void (204 No Content on success)
    */
-  async deleteProject(projectId: string): Promise<void> {
+  async deleteProject(projectId: string, comment?: string): Promise<void> {
     const projectPath = this.buildProjectPath(projectId);
-    await this.axiosInstance.delete(projectPath);
+    await this.axiosInstance.delete(
+      projectPath,
+      comment !== undefined ? { params: { comment } } : undefined,
+    );
     // Returns 204 No Content
   }
 
@@ -790,7 +738,7 @@ export class OpenLClient {
    */
   async openProject(
     projectId: string,
-    options?: { branch?: string; revision?: string; comment?: string }
+    options?: { branch?: string; revision?: string; comment?: string; openDependencies?: boolean }
   ): Promise<boolean> {
     await this.ensureNotLocalRepository(projectId);
     const projectPath = this.buildProjectPath(projectId);
@@ -843,12 +791,16 @@ export class OpenLClient {
    * @param comment - Optional comment describing why the project is being closed
    * @returns Success status (204 No Content on success)
    */
-  async closeProject(projectId: string, comment?: string): Promise<boolean> {
+  async closeProject(
+    projectId: string,
+    options?: { comment?: string; discardChanges?: boolean },
+  ): Promise<boolean> {
     await this.ensureNotLocalRepository(projectId);
     const projectPath = this.buildProjectPath(projectId);
     const updateModel: Types.ProjectStatusUpdateModel = {
       status: "CLOSED",
-      comment,
+      comment: options?.comment,
+      discardChanges: options?.discardChanges,
     };
 
     await this.axiosInstance.patch(projectPath, updateModel);
@@ -858,7 +810,7 @@ export class OpenLClient {
   /**
    * Update project status with safety checks for unsaved changes
    *
-   * Only OPENED and CLOSED can be set; other statuses (LOCAL, ARCHIVED, VIEWING_VERSION, EDITING) are set automatically by the backend.
+   * Only OPENED and CLOSED can be set; other statuses are set automatically by the backend.
    * Prevents accidental data loss by requiring explicit confirmation when closing projects with unsaved changes.
    *
    * @param projectId - Opaque project ID returned by backend.
@@ -896,12 +848,13 @@ export class OpenLClient {
       await this.ensureNotLocalRepository(projectId);
     }
 
-    // Build the API request (discardChanges is MCP-only, not sent to API)
+    // Build the API request using ProjectStatusUpdateModel from the current API.
     const updateModel: Types.ProjectStatusUpdateModel = {
       status: request.status,
       comment: request.comment,
       branch: request.branch,
       revision: request.revision,
+      discardChanges: request.discardChanges,
     };
 
     // Call the OpenL Studio API
@@ -929,8 +882,6 @@ export class OpenLClient {
    * revision with that comment and transitions the project to OPENED (or CLOSED if closeAfterSave).
    * Uses PATCH /projects/{projectId} with body { comment } or { comment, status: "CLOSED" }.
    *
-   * This method validates the project before saving (if validation endpoint is available).
-   *
    * @param projectId - Opaque project ID returned by backend.
    * @param comment - Comment for the new revision (required when project is EDITING; used as commit message)
    * @param options - Optional. closeAfterSave: if true, send status CLOSED so project is saved and closed in one request.
@@ -954,28 +905,6 @@ export class OpenLClient {
     }
 
     const projectPath = this.buildProjectPath(projectId);
-
-    // First validate the project (if validation endpoint is available)
-    try {
-      const validation = await this.validateProject(projectId);
-
-      // If there are errors, return them without saving
-      if (!validation.valid) {
-        return {
-          success: false,
-          message: `Project has ${validation.errors.length} validation error(s). Fix errors before saving.`,
-          validationErrors: validation.errors,
-        };
-      }
-    } catch (error: any) {
-      // If validation endpoint returns 404 (not available), proceed with save
-      // Other errors are rethrown
-      if (error.response && error.response.status === 404) {
-        // Validation unavailable - proceed as if validation passed
-      } else {
-        throw error;
-      }
-    }
 
     // Save via PATCH /projects/{projectId} (Update project status API).
     // When project is EDITING and comment is present, the server creates a new revision and sets status to OPENED (or CLOSED if requested).
@@ -1468,6 +1397,92 @@ export class OpenLClient {
     return true;
   }
 
+  /** List branches available to one project, including base/protected flags. */
+  async listProjectBranches(projectId: string): Promise<Types.ProjectBranchInfo[]> {
+    const projectPath = this.buildProjectPath(projectId);
+    const response = await this.axiosInstance.get<Types.ProjectBranchInfo[]>(`${projectPath}/branches`);
+    return response.data;
+  }
+
+  /** Delete a project branch; slash-delimited branch names remain path segments. */
+  async deleteProjectBranch(projectId: string, branch: string, force: boolean = false): Promise<void> {
+    const projectPath = this.buildProjectPath(projectId);
+    await this.axiosInstance.delete(
+      `${projectPath}/branches/${this.encodePathSegments(branch)}`,
+      { params: { force } },
+    );
+  }
+
+  /** Preview merge feasibility and permissions without changing either branch. */
+  async checkProjectMerge(
+    projectId: string,
+    request: Types.MergeRequest,
+  ): Promise<Types.CheckMergeResult> {
+    const projectPath = this.buildProjectPath(projectId);
+    const response = await this.axiosInstance.post<Types.CheckMergeResult>(
+      `${projectPath}/merge/check`,
+      request,
+    );
+    return response.data;
+  }
+
+  /** Perform a branch merge, returning success or the created conflict session. */
+  async mergeProjectBranches(
+    projectId: string,
+    request: Types.MergeRequest,
+    force: boolean = false,
+  ): Promise<Types.MergeResultResponse> {
+    const projectPath = this.buildProjectPath(projectId);
+    const response = await this.axiosInstance.post<Types.MergeResultResponse>(
+      `${projectPath}/merge`,
+      request,
+      { params: { force } },
+    );
+    return response.data;
+  }
+
+  /** Read the pending merge conflict details stored in this HTTP session. */
+  async getMergeConflicts(projectId: string): Promise<Types.ConflictDetailsResponse> {
+    const projectPath = this.buildProjectPath(projectId);
+    const response = await this.axiosInstance.get<Types.ConflictDetailsResponse>(
+      `${projectPath}/merge/conflicts`,
+    );
+    return response.data;
+  }
+
+  /** Download one BASE/OURS/THEIRS version of a conflicted file. */
+  async readMergeConflictFile(
+    projectId: string,
+    file: string,
+    side: "BASE" | "OURS" | "THEIRS",
+  ): Promise<Types.MergeConflictFileResponse> {
+    const projectPath = this.buildProjectPath(projectId);
+    const response = await this.axiosInstance.get<ArrayBuffer>(
+      `${projectPath}/merge/conflicts/files`,
+      {
+        responseType: "arraybuffer",
+        params: { file, side },
+        headers: { Accept: "*/*" },
+      },
+    );
+    const headers = (response.headers ?? {}) as Record<string, unknown>;
+    const header = (name: string): string => {
+      const value = headers[name] ?? headers[name.toLowerCase()];
+      return typeof value === "string" ? value : "";
+    };
+    return {
+      data: Buffer.from(response.data),
+      contentType: header("content-type").toLowerCase(),
+      contentDisposition: header("content-disposition"),
+    };
+  }
+
+  /** Clear the pending merge conflict state from this HTTP session. */
+  async cancelMergeConflicts(projectId: string): Promise<void> {
+    const projectPath = this.buildProjectPath(projectId);
+    await this.axiosInstance.delete(`${projectPath}/merge/conflicts`);
+  }
+
   // =============================================================================
   // Rules (Tables) Management
   // =============================================================================
@@ -1493,13 +1508,11 @@ export class OpenLClient {
       });
     }
 
-    // Handle pagination parameters
-    // Support both page/size (OpenL API format) and offset/limit (alternative format)
+    // The current Studio API accepts a true item offset.
     if (filters?.page !== undefined) {
       params.page = filters.page;
-    } else if (filters?.offset !== undefined && filters?.limit !== undefined) {
-      // Convert offset/limit to page/size
-      params.page = Math.floor(filters.offset / filters.limit);
+    } else if (filters?.offset !== undefined) {
+      params.offset = filters.offset;
     }
 
     if (filters?.size !== undefined) {
@@ -1510,7 +1523,7 @@ export class OpenLClient {
 
     const response = await this.axiosInstance.get<Types.PageResponse<Types.TableMetadata> | Types.TableMetadata[]>(
         `${projectPath}/tables`,
-        { params }
+        { params, paramsSerializer: { indexes: null } }
     );
 
     return this.normalizeCollectionPage<Types.TableMetadata>(response.data);
@@ -1527,68 +1540,118 @@ export class OpenLClient {
     return (await this.listTablesPage(projectId, filters)).items;
   }
 
-  /**
-   * Create a new rule/table in a project
-   *
-   * @param projectId - Opaque project ID returned by backend.
-   * @param request - Rule creation request with name, type, and properties
-   * @returns Creation result with table ID
-   */
-  async createRule(
+  /** Execute a regular (non-test) table asynchronously. */
+  async startTableRun(
     projectId: string,
-    request: Types.CreateRuleRequest
-  ): Promise<Types.CreateRuleResult> {
+    tableId: string,
+    inputJson: unknown[] | Record<string, unknown>,
+    options?: { fromModule?: string; signal?: AbortSignal; timeoutMs?: number }
+  ): Promise<void> {
     const projectPath = this.buildProjectPath(projectId);
-
-    try {
-      // Build table signature if parameters provided
-      let signature = request.name;
-      if (request.returnType && request.parameters) {
-        const params = request.parameters.map(p => `${p.type} ${p.name}`).join(", ");
-        signature = `${request.returnType} ${request.name}(${params})`;
+    await this.axiosInstance.post(
+      `${projectPath}/run`,
+      inputJson,
+      {
+        params: {
+          tableId,
+          ...(options?.fromModule && { fromModule: options.fromModule }),
+        },
+        signal: options?.signal,
+        timeout: options?.timeoutMs,
       }
+    );
+  }
 
-      const response = await this.axiosInstance.post(
-        `${projectPath}/tables`,
-        {
-          name: request.name,
-          type: request.tableType,
-          signature,
-          returnType: request.returnType,
-          parameters: request.parameters,
-          properties: request.properties,
-          file: request.file,
-          comment: request.comment,
-        }
-      );
-
-      return {
-        success: true,
-        tableId: response.data.id || `${request.name}-${request.tableType}`,
-        tableName: request.name,
-        tableType: request.tableType,
-        file: response.data.file || request.file,
-        message: `Created ${request.tableType} table '${request.name}' successfully`,
-      };
-    } catch (error: unknown) {
-      const errorMsg = sanitizeError(error);
-
-      // Newer OpenL versions use CreateNewTableRequest payload for POST /projects/{projectId}/tables
-      // and can reject legacy createRule payload with 400/405.
-      if (errorMsg.includes("400") || errorMsg.includes("405")) {
-        return {
-          success: false,
-          message: `Table creation requires the 'Create New Project Table' contract ` +
-            `(moduleName, optional sheetName, and full EditableTableView payload). ` +
-            `Use openl_create_project_table instead of createRule-style payload.`,
-        };
+  /** Read the completed result of the current regular table run. */
+  async getTableRunResult(
+    projectId: string,
+    options?: { fields?: string; signal?: AbortSignal; timeoutMs?: number }
+  ): Promise<Types.RunExecutionResult> {
+    const projectPath = this.buildProjectPath(projectId);
+    const response = await this.axiosInstance.get<Types.RunExecutionResult>(
+      `${projectPath}/run/result`,
+      {
+        params: options?.fields ? { fields: options.fields } : undefined,
+        signal: options?.signal,
+        timeout: options?.timeoutMs,
       }
+    );
+    return response.data;
+  }
 
-      return {
-        success: false,
-        message: `Failed to create ${request.tableType} table '${request.name}': ${errorMsg}`,
-      };
+  /** Cancel and clear the current regular table run. */
+  async cancelTableRun(projectId: string): Promise<void> {
+    const projectPath = this.buildProjectPath(projectId);
+    await this.axiosInstance.delete(`${projectPath}/run`);
+  }
+
+  /** Return either the whole project graph or one table's dependency neighborhood. */
+  async getTableDependencies(
+    projectId: string,
+    options?: {
+      tableId?: string;
+      module?: string;
+      direction?: "DEPENDENCIES" | "DEPENDENTS" | "BOTH";
+      depth?: number;
     }
+  ): Promise<Types.TableNodeView[]> {
+    const projectPath = this.buildProjectPath(projectId);
+    const url = options?.tableId
+      ? `${projectPath}/tables/${encodeURIComponent(options.tableId)}/graph`
+      : `${projectPath}/tables/graph`;
+    const params = options?.tableId
+      ? {
+          ...(options.direction && { direction: options.direction }),
+          ...(options.depth !== undefined && { depth: options.depth }),
+        }
+      : options?.module
+        ? { module: options.module }
+        : undefined;
+    const response = await this.axiosInstance.get<Types.TableNodeView[]>(url, { params });
+    return response.data;
+  }
+
+  /** Return the modules declared by a project descriptor. */
+  async listProjectModules(projectId: string): Promise<Types.ModuleViewModel[]> {
+    const projectPath = this.buildProjectPath(projectId);
+    const response = await this.axiosInstance.get<Types.ModuleViewModel[]>(`${projectPath}/modules`);
+    return response.data;
+  }
+
+  /** Return worksheet names in one project module. */
+  async listModuleSheets(projectId: string, moduleName: string): Promise<string[]> {
+    const projectPath = this.buildProjectPath(projectId);
+    const response = await this.axiosInstance.get<string[]>(
+      `${projectPath}/modules/${encodeURIComponent(moduleName)}/sheets`
+    );
+    return response.data;
+  }
+
+  /** Return the table properties allowed by Studio for the requested context. */
+  async listTablePropertyDefinitions(
+    projectId: string,
+    tableType?: string
+  ): Promise<Types.PropertyDefinitionView[]> {
+    const projectPath = this.buildProjectPath(projectId);
+    const response = await this.axiosInstance.get<Types.PropertyDefinitionView[]>(
+      `${projectPath}/properties`,
+      { params: tableType ? { tableType } : undefined }
+    );
+    return response.data;
+  }
+
+  /** Copy a table server-side, preserving its source layout and formatting. */
+  async copyTable(
+    projectId: string,
+    tableId: string,
+    request: Types.CopyTableRequest
+  ): Promise<Types.TableMetadata> {
+    const projectPath = this.buildProjectPath(projectId);
+    const response = await this.axiosInstance.post<Types.TableMetadata>(
+      `${projectPath}/tables/${encodeURIComponent(tableId)}/copy`,
+      request
+    );
+    return response.data;
   }
 
   /**
@@ -1608,6 +1671,7 @@ export class OpenLClient {
       `${projectPath}/tables`,
       {
         moduleName: request.moduleName,
+        modulePath: request.modulePath,
         sheetName: request.sheetName,
         table: request.table,
       }
@@ -1621,24 +1685,19 @@ export class OpenLClient {
    *
    * @param projectId - Opaque project ID returned by backend.
    * @param tableId - Table identifier
-   * @param raw - If true, returns raw 2D cell matrix instead of parsed table
-   * @param options - Raw-view-only options: read the matrix in row slices
+   * @param options - Read the matrix in row slices
    *   (`startRow`/`maxRows`) and/or with per-cell Excel styles (`styles`)
-   * @returns Parsed table view or raw table view depending on raw flag
+   * @returns The table's raw source matrix
    */
-  async getTable(projectId: string, tableId: string, raw: true, options?: Types.RawTableViewOptions): Promise<Types.RawTableView>;
-  async getTable(projectId: string, tableId: string, raw?: false): Promise<Types.TableView>;
-  async getTable(projectId: string, tableId: string, raw?: boolean, options?: Types.RawTableViewOptions): Promise<Types.TableView | Types.RawTableView> {
+  async getTable(projectId: string, tableId: string, options?: Types.RawTableViewOptions): Promise<Types.RawTableView> {
     const projectPath = this.buildProjectPath(projectId);
-    const params = raw
-      ? {
-          raw: true,
-          ...(options?.startRow !== undefined && { startRow: options.startRow }),
-          ...(options?.maxRows !== undefined && { maxRows: options.maxRows }),
-          ...(options?.styles && { styles: true }),
-        }
-      : undefined;
-    const response = await this.axiosInstance.get<Types.TableView | Types.RawTableView>(
+    const params = {
+      raw: true,
+      ...(options?.startRow !== undefined && { startRow: options.startRow }),
+      ...(options?.maxRows !== undefined && { maxRows: options.maxRows }),
+      ...(options?.styles && { styles: true }),
+    };
+    const response = await this.axiosInstance.get<Types.RawTableView>(
       `${projectPath}/tables/${encodeURIComponent(tableId)}`,
       { params }
     );
@@ -1681,32 +1740,19 @@ export class OpenLClient {
    *
    * @param projectId - Opaque project ID returned by backend.
    * @param tableId - Table identifier
-   * @param view - Updated table view with modifications (MUST include full table structure from get_table)
-   * @param comment - Optional comment describing the changes (NOTE: not supported by OpenAPI schema, will be ignored)
+   * @param view - Complete raw table source
    * @returns the table's id after the write when the studio relocated it (id
    *   changed), otherwise undefined (204 — id unchanged, or older studio)
-   * @throws Error if view is missing required fields
+   * @throws Error if an optional body id does not match the path table id
    */
   async updateTable(
     projectId: string,
     tableId: string,
-    view: Types.EditableTableView
+    view: Types.RawTableView
   ): Promise<string | undefined> {
-    // Validate that view contains required fields
-    // OpenL API requires the FULL table structure, not just modified fields
-    const requiredFields = ['id', 'tableType', 'kind', 'name'];
-    const missingFields = requiredFields.filter(field => !(field in view));
-
-    if (missingFields.length > 0) {
-      throw new Error(
-        `Invalid table view: missing required fields: ${missingFields.join(', ')}. ` +
-        `The view parameter must contain the FULL table structure from get_table(), not just the modified fields. ` +
-        `Workflow: 1) Call get_table() to retrieve current structure, 2) Modify the returned object, 3) Pass the complete object to update_table().`
-      );
-    }
-
-    // Validate tableId matches view.id
-    if (view.id !== tableId) {
+    // When the optional body id is present, it must identify the same table as
+    // the path. The raw table contract does not require id.
+    if (view.id !== undefined && view.id !== tableId) {
       throw new Error(
         `Table ID mismatch: tableId parameter is "${tableId}" but view.id is "${view.id}". ` +
         `These must match. Use the same ID from get_table() for both parameters.`
@@ -1714,7 +1760,7 @@ export class OpenLClient {
     }
 
     const projectPath = this.buildProjectPath(projectId);
-    // OpenAPI schema expects EditableTableView directly as request body
+    // Studio accepts RawTableView directly as the request body.
     const response = await this.axiosInstance.put(
       `${projectPath}/tables/${encodeURIComponent(tableId)}`,
       view
@@ -1728,14 +1774,14 @@ export class OpenLClient {
    *
    * @param projectId - Opaque project ID returned by backend.
    * @param tableId - Table identifier
-   * @param appendData - Data to append with fields and table type
+   * @param appendData - Raw source rows to append
    * @returns the table's id after the append when the studio relocated it (id
    *   changed), otherwise undefined (204 — id unchanged, or older studio)
    */
   async appendProjectTable(
     projectId: string,
     tableId: string,
-    appendData: Types.AppendTableView
+    appendData: Types.RawTableAppend
   ): Promise<string | undefined> {
     const projectPath = this.buildProjectPath(projectId);
     const response = await this.axiosInstance.post(
@@ -1796,10 +1842,10 @@ export class OpenLClient {
    * @param repository - Optional repository ID to filter deployments
    * @returns Array of deployment information
    */
-  async listDeployments(repository?: string): Promise<Types.DeploymentViewModel_Short[]> {
+  async listDeployments(filters?: { repository?: string; project?: string }): Promise<Types.DeploymentViewModel_Short[]> {
     const response = await this.axiosInstance.get<Types.DeploymentViewModel_Short[]>(
       "/deployments",
-      { params: repository ? { repository } : undefined }
+      { params: filters && Object.values(filters).some((value) => value !== undefined) ? filters : undefined }
     );
     return response.data;
   }
@@ -1998,7 +2044,7 @@ export class OpenLClient {
     options?: {
       tableId?: string;
       testRanges?: string;
-      fromModule?: string; // Reserved for future use - not currently used
+      fromModule?: string;
     }
   ): Promise<Types.TestExecutionStartResponse> {
     const projectPath = this.buildProjectPath(projectId);
@@ -2030,7 +2076,7 @@ export class OpenLClient {
     const params: Record<string, string | number | boolean> = {};
     if (options?.tableId) params.tableId = options.tableId;
     if (options?.testRanges) params.testRanges = options.testRanges;
-    // fromModule is reserved for future use - not currently passed to API
+    if (options?.fromModule) params.fromModule = options.fromModule;
 
     // Start test execution
     const startResponse = await this.axiosInstance.post(
@@ -2064,6 +2110,7 @@ export class OpenLClient {
   async getTestResultsSummary(
     projectId: string,
     options?: {
+      failuresOnly?: boolean;
       failures?: number;
       unpaged?: boolean;
     }
@@ -2079,6 +2126,7 @@ export class OpenLClient {
     }
 
     const params: Record<string, string | number | boolean> = {};
+    if (options?.failuresOnly !== undefined) params.failuresOnly = options.failuresOnly;
     if (options?.failures !== undefined) params.failures = options.failures;
     if (options?.unpaged) params.unpaged = true;
 
@@ -2223,10 +2271,10 @@ export class OpenLClient {
     // We do not use caller's page/offset here to ensure we scan all tables.
     const pageSize = baseOptions.size ?? baseOptions.limit ?? 50;
     
-    // eslint-disable-next-line no-constant-condition
     while (true) {
       const pageResults = await this.getTestResults(projectId, {
         ...baseOptions,
+        size: pageSize,
         page: pageIndex,
       });
       if (!templateSummary) {
@@ -2243,11 +2291,9 @@ export class OpenLClient {
       );
       allMatchingTestCases.push(...pageMatches);
       
-      // Check if we've reached the end of pagination
-      // Use totalPages if available, otherwise check if current page has fewer items than pageSize
-      const hasMorePages = pageResults.totalPages !== undefined
-        ? pageIndex < pageResults.totalPages - 1
-        : (pageResults.numberOfElements !== undefined && pageResults.numberOfElements >= pageSize);
+      // The current TestsExecutionSummary reports current-page counts, not a
+      // totalPages field. A short page terminates the scan.
+      const hasMorePages = pageResults.numberOfElements >= pageSize;
       
       if (!hasMorePages) {
         break;
@@ -2350,102 +2396,6 @@ export class OpenLClient {
   }
 
   // =============================================================================
-  // Testing & Validation
-  // =============================================================================
-  // Note: runAllTests() and runTest() methods removed - endpoints don't exist in API
-
-  /**
-   * Validate a project for errors
-   *
-   * Note: The REST API does not expose a /validation endpoint.
-   * This method will return a 404 error. Validation may occur
-   * automatically when compiling or deploying projects.
-   *
-   * @param projectId - Opaque project ID returned by backend.
-   * @returns Validation results with errors and warnings
-   * @throws Error if endpoint doesn't exist (404)
-   */
-  async validateProject(projectId: string): Promise<Types.ValidationResult> {
-    const projectPath = this.buildProjectPath(projectId);
-    const response = await this.axiosInstance.get<Types.ValidationResult>(
-      `${projectPath}/validation`
-    );
-    return response.data;
-  }
-
-  // =============================================================================
-  // Phase 2: Git Version History Methods
-  // =============================================================================
-
-  /**
-   * Parse commit type from comment
-   *
-   * @param comment - Commit comment
-   * @returns Commit type
-   */
-  private parseCommitType(comment?: string): Types.CommitType {
-    if (!comment) return "SAVE";
-    if (comment.includes("Type: ARCHIVE")) return "ARCHIVE";
-    if (comment.includes("Type: RESTORE")) return "RESTORE";
-    if (comment.includes("Type: ERASE")) return "ERASE";
-    if (comment.includes("Type: MERGE")) return "MERGE";
-    return "SAVE";
-  }
-
-  /**
-   * Get Git commit history for entire project
-   *
-   * Uses project-based endpoint structure:
-   * - /projects/{projectId}/history
-   *
-   * @param request - Project history request with pagination parameters
-   * @returns Project commit history with paginated response
-   */
-  async getProjectHistory(request: Types.GetProjectHistoryRequest): Promise<Types.GetProjectHistoryResult> {
-    const projectPath = this.buildProjectPath(request.projectId);
-    const endpoint = `${projectPath}/history`;
-
-    // Build query parameters using OpenAPI 3.0.1 parameter names
-    const params: Record<string, unknown> = {
-      page: (request.page !== undefined && request.page !== null) ? request.page : 0,
-      size: (request.size !== undefined && request.size !== null) ? request.size : 50,
-    };
-    if (request.search) {
-      params.search = request.search;
-    }
-    if (request.techRevs !== undefined) {
-      params.techRevs = request.techRevs;
-    }
-    if (request.branch) {
-      params.branch = request.branch;
-    }
-
-    const response = await this.axiosInstance.get<Types.PageResponseProjectRevision_Short>(
-      endpoint,
-      { params }
-    );
-
-    // Convert PageResponseProjectRevision_Short to legacy GetProjectHistoryResult format
-    const commits = response.data.content.map((revision) => ({
-      commitHash: revision.commitHash || revision.version || "",
-      author: revision.author || { name: "unknown", email: "" },
-      timestamp: revision.modifiedAt || new Date().toISOString(),
-      comment: revision.comment || "",
-      commitType: this.parseCommitType(revision.comment),
-      filesChanged: revision.filesChanged || 0,
-      tablesChanged: revision.tablesChanged,
-    }));
-
-    return {
-      projectId: request.projectId,
-      branch: request.branch || "main",
-      commits,
-      total: response.data.totalElements || response.data.numberOfElements,
-      hasMore: (response.data.pageNumber + 1) < (response.data.totalPages || 1),
-    };
-  }
-
-  // =============================================================================
   // Trace Debug API (BETA) — interactive debugger
   //
   // The debug session is server-side and bound to the HTTP session (JSESSIONID):
@@ -2470,6 +2420,8 @@ export class OpenLClient {
     if (request.fromModule) params.set("fromModule", request.fromModule);
     if (request.stopAtEntry != null) params.set("stopAtEntry", String(request.stopAtEntry));
     if (request.profiling != null) params.set("profiling", String(request.profiling));
+    if (request.detailedTitles != null) params.set("detailedTitles", String(request.detailedTitles));
+    if (request.breakOnErrors != null) params.set("breakOnErrors", String(request.breakOnErrors));
     if (request.includeTree != null) params.set("includeTree", String(request.includeTree));
     if (request.profileTop != null) params.set("profileTop", String(request.profileTop));
 
@@ -2561,11 +2513,13 @@ export class OpenLClient {
   async traceStep(
     projectId: string,
     type: "into" | "over" | "out",
-    options?: { view?: "full" | "compact" }
+    options?: { view?: "full" | "compact"; includeTree?: boolean; profileTop?: number }
   ): Promise<Types.DebugStackView> {
     const projectPath = this.buildProjectPath(projectId);
     const params: Record<string, string> = { type };
     if (options?.view) params.view = options.view;
+    if (options?.includeTree != null) params.includeTree = String(options.includeTree);
+    if (options?.profileTop != null) params.profileTop = String(options.profileTop);
     const response = await this.axiosInstance.post<Types.DebugStackView>(
       `${projectPath}/trace/step`,
       undefined,
@@ -2592,12 +2546,14 @@ export class OpenLClient {
   async getTraceFrameVariables(
     projectId: string,
     frameIndex: number,
-    fields?: string
+    fields?: string,
+    includeSchema: boolean = false,
   ): Promise<Types.DebugFrameVariables> {
     const projectPath = this.buildProjectPath(projectId);
+    const params = { ...(fields ? { fields } : {}), ...(includeSchema ? { includeSchema: true } : {}) };
     const response = await this.axiosInstance.get<Types.DebugFrameVariables>(
       `${projectPath}/trace/frames/${frameIndex}/variables`,
-      { params: fields ? { fields } : undefined }
+      { params: Object.keys(params).length ? params : undefined }
     );
     return response.data;
   }
@@ -2657,12 +2613,14 @@ export class OpenLClient {
   async getTraceParameter(
     projectId: string,
     parameterId: number,
-    fields?: string
+    fields?: string,
+    includeSchema: boolean = false,
   ): Promise<Types.TraceParameterValue> {
     const projectPath = this.buildProjectPath(projectId);
+    const params = { ...(fields ? { fields } : {}), ...(includeSchema ? { includeSchema: true } : {}) };
     const response = await this.axiosInstance.get<Types.TraceParameterValue>(
       `${projectPath}/trace/parameters/${parameterId}`,
-      { params: fields ? { fields } : undefined }
+      { params: Object.keys(params).length ? params : undefined }
     );
     return response.data;
   }
@@ -2682,11 +2640,16 @@ export class OpenLClient {
    * is the standard response projection — used to drop each point value's JSON
    * Schema from the default reply.
    */
-  async getTraceWatch(projectId: string, fields?: string): Promise<Types.WatchView> {
+  async getTraceWatch(
+    projectId: string,
+    fields?: string,
+    includeSchema: boolean = false,
+  ): Promise<Types.WatchView> {
     const projectPath = this.buildProjectPath(projectId);
+    const params = { ...(fields ? { fields } : {}), ...(includeSchema ? { includeSchema: true } : {}) };
     const response = await this.axiosInstance.get<Types.WatchView>(
       `${projectPath}/trace/watch`,
-      { params: fields ? { fields } : undefined }
+      { params: Object.keys(params).length ? params : undefined }
     );
     return response.data;
   }

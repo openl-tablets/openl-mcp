@@ -5,12 +5,11 @@
  */
 
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
-import type { ZodError, ZodType } from "zod";
+import type { ZodError } from "zod";
 
 import * as schemas from "../schemas.js";
 import type * as Types from "../types.js";
 import { formatResponse, paginateCollection } from "../formatters.js";
-import { validateResponseFormat, validatePagePagination } from "../validators.js";
 import { isNotFoundError, isPlainObject } from "../utils.js";
 import { registerTool, STALE_TABLE_ID_HINT, type ToolResponse } from "./common.js";
 import {
@@ -36,7 +35,7 @@ import {
  * appends.
  */
 function validateRawSourceAppendRows(
-  rows: Array<Array<Record<string, unknown>>>,
+  rows: Types.RawTableCell[][],
   source: Types.RawTableCell[][],
   tableLabel: string,
 ): void {
@@ -77,73 +76,20 @@ function validateRawSourceAppendRows(
       ErrorCode.InvalidParams,
       `Cannot append to table '${tableLabel}': the table is ${width} column(s) wide, but ${problems.join("; ")}. ` +
         `Each appended RawSource row must cover all ${width} column(s) — provide one cell object per column ` +
-        `(use { "value": "" } for intentionally blank cells). Nothing was appended. ` +
-        `Call openl_get_table(raw=true) to inspect the table's exact column layout.`,
+        `(use { "value": null } for intentionally blank cells). Nothing was appended. ` +
+        `Call openl_get_table() to inspect the table's exact column layout.`,
     );
   }
-}
-
-/**
- * Validate and case-normalize the `tableType` discriminator of an EditableTableView
- * payload before it reaches the backend. Returns the view with the canonical token
- * (e.g. "datatype" -> "Datatype"); throws a clear, actionable McpError — instead of
- * the backend's opaque 400 "Failed to read request" — when tableType is missing or
- * not a recognized type. `kind` is informational (not the discriminator) and left
- * untouched.
- */
-function normalizeEditableTableType(view: Types.EditableTableView, argName: string): Types.EditableTableView {
-  // The backend rejects unknown JSON properties (FAIL_ON_UNKNOWN_PROPERTIES) with
-  // an opaque 400 "Failed to read request". 'signature' is a common LLM invention —
-  // OpenL table views have no such field; the method is defined by name+returnType+args.
-  if ((view as { signature?: unknown }).signature !== undefined) {
-    throw new McpError(
-      ErrorCode.InvalidParams,
-      `${argName}.signature is not a valid field — OpenL table views have no 'signature'. ` +
-        `Define the method with 'name', 'returnType' (e.g. "String"), and 'args': [{ name, type }] ` +
-        `(the input parameters). For rules/decision tables also supply 'headers': [{ title }] (the ` +
-        `column captions) and 'rules' (rows keyed by those titles). The backend rejects unknown fields ` +
-        `with a 400 "Failed to read request".`
-    );
-  }
-  const raw = (view as { tableType?: unknown }).tableType;
-  if (typeof raw !== "string" || raw.trim() === "") {
-    throw new McpError(
-      ErrorCode.InvalidParams,
-      `${argName}.tableType is required and is a CASE-SENSITIVE discriminator. Use exactly one of: ${schemas.EDITABLE_TABLE_TYPES.join(", ")}.`
-    );
-  }
-  const canonical = schemas.EDITABLE_TABLE_TYPES.find((t) => t.toLowerCase() === raw.trim().toLowerCase());
-  if (!canonical) {
-    throw new McpError(
-      ErrorCode.InvalidParams,
-      `${argName}.tableType "${raw}" is not a valid table type. Use exactly one of (CASE-SENSITIVE): ${schemas.EDITABLE_TABLE_TYPES.join(", ")}.`
-    );
-  }
-  return canonical === raw ? view : { ...view, tableType: canonical as Types.EditableTableView["tableType"] };
 }
 
 interface ToolValidationSpec {
-  /** Schema the whole arguments object is validated against. */
-  schema: ZodType;
   /** Top-level argument holding the nested object payload (e.g. "appendData"). */
   payloadArg: string;
-  /** Valid tableType discriminators for this tool — used to enrich errors. */
-  tableTypes: readonly string[];
 }
 
-/**
- * Case-normalize a payload's `tableType` to its canonical token (e.g.
- * "datatype" -> "Datatype") so the CASE-SENSITIVE discriminated union accepts
- * it — preserving the forgiveness of normalizeEditableTableType. An unknown
- * value is left untouched for the schema to reject (with a listed-options hint).
- */
-function normalizeTableTypeCase(payload: unknown, validTypes: readonly string[]): unknown {
-  if (!isPlainObject(payload)) return payload;
-  const tableType = payload.tableType;
-  if (typeof tableType !== "string") return payload;
-  const key = tableType.trim().toLowerCase();
-  const canonical = validTypes.find((t) => t.toLowerCase() === key);
-  return canonical && canonical !== tableType ? { ...payload, tableType: canonical } : payload;
+interface StructuredPayloadValidation {
+  validateArgs: (args: unknown) => unknown;
+  formatValidationError: (error: ZodError) => string;
 }
 
 /**
@@ -172,42 +118,37 @@ function coercePayloadJson(value: unknown, payloadArg: string, toolName: string)
 /** Build an actionable message from a Zod validation failure. */
 function formatValidationError(spec: ToolValidationSpec, toolName: string, error: ZodError): string {
   let message = `Invalid arguments for ${toolName}:\n${schemas.z.prettifyError(error)}`;
-  // A discriminated-union failure on `<payloadArg>.tableType` surfaces as Zod's
-  // terse "Invalid input"; spell out the valid (case-sensitive) discriminators.
   const tableTypeIssue = error.issues.some(
     (issue) => issue.path[0] === spec.payloadArg && issue.path[1] === "tableType",
   );
   if (tableTypeIssue) {
     message +=
-      `\n\n${spec.payloadArg}.tableType is required and is a CASE-SENSITIVE discriminator. ` +
-      `Use exactly one of: ${spec.tableTypes.join(", ")}. Each table type has its own shape — ` +
-      `tip: call openl_get_table() on an existing table of the same type and copy its structure.`;
+      `\n\n${spec.payloadArg}.tableType must be exactly "RawSource". Typed table DTOs are intentionally ` +
+      `unsupported because they are incomplete and cannot safely round-trip workbook content. ` +
+      `Call openl_get_table() and edit its raw source matrix.`;
   }
   return message;
 }
 
 /**
- * Validate and lightly coerce a structured-payload tool's arguments before its
- * handler runs. Returns the (possibly coerced) arguments to forward to the
- * handler; throws a descriptive McpError(InvalidParams) on a schema violation.
- * Wired onto each structured-payload table tool as its `validateArgs` callback.
+ * Prepare the validation hooks for a structured-payload tool. The preprocessor
+ * only coerces JSON strings; the shared executor performs the single schema
+ * parse and calls the formatter below if validation fails.
  */
-function validateStructuredArgs(toolName: string, spec: ToolValidationSpec, args: unknown): unknown {
-  let callArgs: unknown = args;
-  if (isPlainObject(args)) {
-    const original = args[spec.payloadArg];
-    let payload = coercePayloadJson(original, spec.payloadArg, toolName);
-    payload = normalizeTableTypeCase(payload, spec.tableTypes);
-    if (payload !== original) {
-      callArgs = { ...args, [spec.payloadArg]: payload };
-    }
-  }
-
-  const result = spec.schema.safeParse(callArgs);
-  if (!result.success) {
-    throw new McpError(ErrorCode.InvalidParams, formatValidationError(spec, toolName, result.error));
-  }
-  return callArgs;
+function structuredPayloadValidation(
+  toolName: string,
+  spec: ToolValidationSpec,
+): StructuredPayloadValidation {
+  return {
+    validateArgs: (args: unknown): unknown => {
+      if (!isPlainObject(args)) return args;
+      const original = args[spec.payloadArg];
+      const coerced = coercePayloadJson(original, spec.payloadArg, toolName);
+      return coerced === original ? args : { ...args, [spec.payloadArg]: coerced };
+    },
+    formatValidationError: (error: ZodError): string =>
+      formatValidationError(spec, toolName, error),
+  };
 }
 
 export function registerTableHandlers(): void {
@@ -216,29 +157,17 @@ export function registerTableHandlers(): void {
     category: "Rules & Tables",
     title: "List Project Tables",
     description: "List tables/rules in a project with optional filters for kind, name, and properties. Results are paginated (default 50, maximum 200): when a complete inventory is required, follow pagination.has_more and call again with pagination.next_offset until has_more is false. Returns table metadata including 'tableId' (the 'id' field) which is required for calling get_table(), update_table(), append_table(), or run_project_tests(). Use the 'tableId' field from the response to reference specific tables in other API calls. IMPORTANT: a table id is derived from its location and changes when an edit relocates the table (it had no room to grow in place). After openl_update_table/openl_append_table, use the 'tableId' those tools return (or re-run openl_list_tables); an id from a listing taken before such an edit is stale.",
-    inputSchema: schemas.z.toJSONSchema(schemas.listTablesSchema) as Record<string, unknown>,
+    schema: schemas.listTablesSchema,
     annotations: {
       readOnlyHint: true,
       idempotentHint: true,
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        kind?: string[];
-        name?: string;
-        properties?: Record<string, string>;
-        response_format?: "json" | "markdown";
-        limit?: number;
-        offset?: number;
-      };
+      const typedArgs = args;
 
-      if (!typedArgs || !typedArgs.projectId) {
-        throw new McpError(ErrorCode.InvalidParams, "Missing required argument: projectId. To find valid project IDs, use: openl_list_projects()");
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
-      const { limit, offset } = validatePagePagination(typedArgs.limit, typedArgs.offset);
+      const format = typedArgs.response_format;
+      const { limit = 50, offset = 0 } = typedArgs;
 
       const filters: Types.TableFilters = {};
       if (typedArgs.kind && typedArgs.kind.length > 0) {
@@ -247,11 +176,8 @@ export function registerTableHandlers(): void {
       if (typedArgs.name) filters.name = typedArgs.name;
       if (typedArgs.properties) filters.properties = typedArgs.properties;
       
-      // Add pagination parameters (convert offset/limit to page/size for API)
-      if (offset !== undefined && limit !== undefined) {
-        filters.offset = offset;
-        filters.limit = limit;
-      }
+      filters.offset = offset;
+      filters.limit = limit;
 
       const tablesPage = await client.listTablesPage(typedArgs.projectId, filters);
 
@@ -275,55 +201,28 @@ export function registerTableHandlers(): void {
     category: "Rules & Tables",
     title: "Get Table Structure & Data",
     description:
-      "Get detailed information about a specific table/rule. By default returns a parsed table structure with signature, conditions, actions, dimension properties, and row data. Set raw=true to get an unparsed 2D cell matrix (RawTableView) instead — useful for unknown/custom table types or preserving exact cell layout. Raw-only options: startRow/maxRows read a large table in row slices (when the returned window omits rows the response carries 'totalRows'), and styles=true adds each cell's Excel style (background/font colour, bold/italic/underline, alignment, indent, borders). Note: raw output cannot be passed directly to openl_update_table (which expects the parsed form). A table id changes when an edit relocates the table; if the given id went stale through an edit made via this server, it is resolved to the current id automatically — otherwise refresh ids with openl_list_tables().",
-    inputSchema: schemas.z.toJSONSchema(schemas.getTableSchema) as Record<string, unknown>,
+      "Get a table as its authoritative RawSource 2D cell matrix. Typed/parsed table views are intentionally unsupported because they are incomplete and cannot safely round-trip workbook content. startRow/maxRows read a large table in row slices (a windowed response carries totalRows), and styles=true adds each cell's Excel style. Only a complete response without totalRows can be modified and passed to openl_update_table; update_table rejects windows because replacing with one would delete omitted rows. A table id changes when an edit relocates the table; stale ids produced by this server are resolved automatically, otherwise refresh ids with openl_list_tables().",
+    schema: schemas.getTableSchema,
     annotations: {
       readOnlyHint: true,
       idempotentHint: true,
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        tableId: string;
-        raw?: boolean;
-        startRow?: number;
-        maxRows?: number;
-        styles?: boolean;
-        response_format?: "json" | "markdown";
-      };
+      const typedArgs = args;
 
-      if (!typedArgs || !typedArgs.projectId || !typedArgs.tableId) {
-        throw new McpError(ErrorCode.InvalidParams, "Missing required arguments: projectId, tableId. Use openl_list_tables() to find valid table IDs");
-      }
+      const format = typedArgs.response_format;
 
-      // styles: false is the default and treated as unset, so callers that
-      // always send boolean flags explicitly are not rejected.
-      const rawOnlyArgs: string[] = (["startRow", "maxRows"] as const).filter((name) => typedArgs[name] !== undefined);
-      if (typedArgs.styles) {
-        rawOnlyArgs.push("styles");
-      }
-      if (rawOnlyArgs.length > 0 && !typedArgs.raw) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          `${rawOnlyArgs.join(", ")} only apply to the raw table view — set raw=true to use ${rawOnlyArgs.length > 1 ? "them" : "it"}.`,
-        );
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
-
-      const fetchTable = (id: string): Promise<Types.TableView | Types.RawTableView> =>
-        typedArgs.raw
-          ? client.getTable(typedArgs.projectId, id, true, {
-              startRow: typedArgs.startRow,
-              maxRows: typedArgs.maxRows,
-              styles: typedArgs.styles,
-            })
-          : client.getTable(typedArgs.projectId, id);
+      const fetchTable = (id: string): Promise<Types.RawTableView> =>
+        client.getTable(typedArgs.projectId, id, {
+          startRow: typedArgs.startRow,
+          maxRows: typedArgs.maxRows,
+          styles: typedArgs.styles,
+        });
 
       // EPBDS-16084: a table's id changes after every edit. If this id went
       // stale through an edit made via this server, resolve it transparently.
-      let table: Types.TableView | Types.RawTableView;
+      let table: Types.RawTableView;
       let staleIdNote: string | undefined;
       try {
         table = await fetchTable(typedArgs.tableId);
@@ -357,23 +256,15 @@ export function registerTableHandlers(): void {
     title: "Delete Table",
     description:
       "Delete an ENTIRE table from a project. The whole table area is cleared from the sheet regardless of table type, so the table no longer exists once the project is recompiled. To remove only a row or column WITHIN a table, use openl_delete_table_rows / openl_delete_table_columns instead. If the given id went stale through an edit made via this server, it is resolved to the current id automatically. The studio does not auto-compile after the delete — run openl_project_status afterward to confirm the project still compiles (a dangling reference to the deleted table surfaces there).",
-    inputSchema: schemas.z.toJSONSchema(schemas.deleteTableSchema) as Record<string, unknown>,
+    schema: schemas.deleteTableSchema,
     annotations: {
       destructiveHint: true,
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        tableId: string;
-        response_format?: "json" | "markdown";
-      };
+      const typedArgs = args;
 
-      if (!typedArgs || !typedArgs.projectId || !typedArgs.tableId) {
-        throw new McpError(ErrorCode.InvalidParams, "Missing required arguments: projectId, tableId. Use openl_list_tables() to find valid table IDs");
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
+      const format = typedArgs.response_format;
       const projectId = typedArgs.projectId;
       const requestedId = typedArgs.tableId;
       const notes: string[] = [
@@ -402,35 +293,24 @@ export function registerTableHandlers(): void {
 
   registerTool({
     name: "update_table",
-    validateArgs: (args) =>
-      validateStructuredArgs("update_table", { schema: schemas.updateTableSchema, payloadArg: "view", tableTypes: schemas.EDITABLE_TABLE_TYPES }, args),
+    ...structuredPayloadValidation("update_table", {
+      payloadArg: "view",
+    }),
     category: "Rules & Tables",
     title: "Replace Entire Table",
     description:
-      "Replace the ENTIRE table structure with a modified version. Use for MODIFYING existing rows, DELETING rows, REORDERING rows, or STRUCTURAL changes. CRITICAL: Must send the FULL table structure (not just modified fields). DO NOT use for simple additions - use append_table instead. Required workflow: 1) Call get_table() to retrieve complete structure, 2) Modify the returned object, 3) Pass the ENTIRE modified object to update_table(). IMPORTANT: an edit that relocates the table (it had no room to grow in place) CHANGES its location-derived id; the response always returns the table's CURRENT id as 'tableId' (plus previousTableId when it changed) — use it for all subsequent calls. Note: the studio does not auto-compile after an edit (it only resets the previous compile status); this tool reads the table back after updating to trigger the recompile, so a subsequent openl_project_status reflects the change.",
-    inputSchema: schemas.z.toJSONSchema(schemas.updateTableSchema) as Record<string, unknown>,
+      "Replace the ENTIRE table RawSource matrix with a modified version. Typed table DTOs are intentionally unsupported. Use for modifying, deleting, reordering, or structural changes; prefer the narrow raw action tools for isolated edits and append_table for additions. Required workflow: call get_table(), preserve the complete matrix including covered cells/spans/styles, modify it, then pass the full RawSource object here. The response returns the CURRENT tableId after relocation. The tool reads the table back to trigger recompilation, so openl_project_status reflects the change.",
+    schema: schemas.updateTableSchema,
     annotations: {
       idempotentHint: true,
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        tableId: string;
-        view: Types.EditableTableView;
-        response_format?: "json" | "markdown";
-      };
+      const typedArgs = args;
 
-      if (!typedArgs || !typedArgs.projectId || !typedArgs.tableId || !typedArgs.view) {
-        throw new McpError(ErrorCode.InvalidParams, "Missing required arguments: projectId, tableId, view");
-      }
+      const format = typedArgs.response_format;
 
-      const format = validateResponseFormat(typedArgs.response_format);
-
-      // Same case-sensitive tableType discriminator guard as create (see
-      // normalizeEditableTableType): catches a miscased view.tableType before it
-      // becomes an opaque backend 400.
-      const view = normalizeEditableTableType(typedArgs.view, "view");
+      const view = typedArgs.view;
 
       const projectId = typedArgs.projectId;
       const requestedId = typedArgs.tableId;
@@ -443,13 +323,13 @@ export function registerTableHandlers(): void {
       // same-name ids exist) before the edit for that fallback.
       const identity: TableIdentity | undefined =
         typeof view.name === "string" && view.name
-          ? { name: view.name, kind: view.kind, file: view.file, pos: view.pos }
+          ? { name: view.name, kind: view.kind }
           : undefined;
       let idsBeforeEdit: Set<string> | undefined;
       if (identity) {
         const before = await listTablesByExactName(client, projectId, identity.name);
         if (before) {
-          idsBeforeEdit = new Set(before.map((t) => t.id));
+          idsBeforeEdit = new Set(before.flatMap((t) => typeof t.id === "string" ? [t.id] : []));
         }
       }
 
@@ -491,99 +371,58 @@ export function registerTableHandlers(): void {
 
   registerTool({
     name: "append_table",
-    validateArgs: (args) =>
-      validateStructuredArgs("append_table", { schema: schemas.appendTableSchema, payloadArg: "appendData", tableTypes: schemas.APPEND_TABLE_TYPES }, args),
+    ...structuredPayloadValidation("append_table", {
+      payloadArg: "appendData",
+    }),
     category: "Rules & Tables",
-    title: "Append Rows/Fields to Table",
+    title: "Append Raw Source Rows",
     description:
-      "Add new rows/fields to an existing table (additions only). Payload by type: Datatype→fields, SimpleRules/SmartRules→rules, SimpleSpreadsheet→steps, Spreadsheet→rows+cells, Vocabulary→values, RawSource→rows. For RawSource, each row must cover ALL columns of the table (one cell object per column; rows with a wrong cell count are rejected before anything is written). For modifying, deleting, or reordering use update_table instead. IMPORTANT: an edit that relocates the table (it had no room to grow in place) CHANGES its location-derived id; the response always returns the table's CURRENT id as 'tableId' (plus previousTableId when it changed) — use it for all subsequent calls. Note: the studio does not auto-compile after an edit (it only resets the previous compile status); this tool reads the table back after appending to trigger the recompile, so a subsequent openl_project_status reflects the change.",
-    inputSchema: schemas.z.toJSONSchema(schemas.appendTableSchema) as Record<string, unknown>,
+      "Append RawSource rows to an existing table. Typed append DTOs are intentionally unsupported. Every row must cover ALL columns of the table; wrong-width rows are rejected before anything is written. Use { value: null } for a blank cell and preserve covered placeholders for merged regions. For modifying, deleting, or reordering use a narrow raw action tool or update_table. The response returns the CURRENT tableId after relocation, and the read-back triggers recompilation.",
+    schema: schemas.appendTableSchema,
     annotations: {
       idempotentHint: true,
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        tableId: string;
-        appendData: {
-          tableType: string;
-          fields?: Array<{ name: string; type: string; required?: boolean; defaultValue?: any }>;
-          rules?: Array<Record<string, any>>;
-          steps?: Array<any>;
-          values?: Array<any>;
-          rows?: Array<Array<Record<string, unknown>>>;
-          cells?: Array<Array<{ value?: any }>>;
-        };
-        response_format?: "json" | "markdown";
-      };
+      const typedArgs = args;
 
-      if (!typedArgs || !typedArgs.projectId || !typedArgs.tableId || !typedArgs.appendData) {
-        throw new McpError(ErrorCode.InvalidParams, "Missing required arguments: projectId, tableId, appendData");
-      }
+      const format = typedArgs.response_format;
 
-      const format = validateResponseFormat(typedArgs.response_format);
-
-      // Convert to AppendTableView format expected by client
-      const appendData: Types.AppendTableView = typedArgs.appendData as any;
+      const appendData: Types.RawTableAppend = typedArgs.appendData;
 
       const projectId = typedArgs.projectId;
       const requestedId = typedArgs.tableId;
       const notes: string[] = [];
-
-      // Spreadsheet append: when row headers are given they must align 1:1 with
-      // the cell rows (one 'cells' entry per 'rows' entry); a mismatch otherwise
-      // reaches the backend as an opaque 400. (cells presence is enforced by the schema.)
-      if (typedArgs.appendData.tableType === "Spreadsheet") {
-        const sheetRows = (typedArgs.appendData as { rows?: unknown }).rows;
-        const sheetCells = (typedArgs.appendData as { cells?: unknown }).cells;
-        if (Array.isArray(sheetRows) && Array.isArray(sheetCells) && sheetRows.length !== sheetCells.length) {
-          throw new McpError(
-            ErrorCode.InvalidParams,
-            `Cannot append to Spreadsheet table '${requestedId}': 'rows' has ${sheetRows.length} row header(s) but 'cells' has ${sheetCells.length} cell row(s). ` +
-              `Provide one 'cells' entry (an array of { value } across the columns) per 'rows' entry, or omit 'rows' to append cell rows only.`,
-          );
-        }
-      }
 
       // Probe the table before editing. This (a) fails fast on a stale id —
       // resolving it transparently when the rename is known (EPBDS-16084),
       // (b) captures the identity needed to find the table's new id after the
       // edit, and (c) for RawSource provides the source matrix used to validate
       // row width before anything is written (EPBDS-16085).
-      const needsRawProbe = appendData.tableType === "RawSource";
       let tableId = requestedId;
-      let probedView: Types.TableView | Types.RawTableView | undefined;
+      let probedView: Types.RawTableView | undefined;
       try {
-        probedView = needsRawProbe
-          ? await client.getTable(projectId, tableId, true)
-          : await client.getTable(projectId, tableId);
+        probedView = await client.getTable(projectId, tableId);
       } catch (error) {
         if (isNotFoundError(error)) {
           const aliased = resolveTableIdAlias(projectId, tableId);
           if (aliased === undefined) {
             throw error;
           }
-          probedView = needsRawProbe
-            ? await client.getTable(projectId, aliased, true)
-            : await client.getTable(projectId, aliased);
+          probedView = await client.getTable(projectId, aliased);
           notes.push(
             `The provided tableId '${requestedId}' was stale (the table was edited after that id was issued) and was automatically resolved to '${aliased}'.`,
           );
           tableId = aliased;
+        } else {
+          throw error;
         }
-        // Non-404 probe failures are tolerated: the append call itself decides.
       }
 
-      if (
-        needsRawProbe &&
-        probedView &&
-        Array.isArray((probedView as Types.RawTableView).source) &&
-        Array.isArray((appendData as { rows?: unknown }).rows)
-      ) {
+      if (probedView && Array.isArray(probedView.source)) {
         validateRawSourceAppendRows(
-          (appendData as { rows: Array<Array<Record<string, unknown>>> }).rows,
-          (probedView as Types.RawTableView).source,
+          appendData.rows,
+          probedView.source,
           probedView.name || tableId,
         );
       }
@@ -592,13 +431,13 @@ export function registerTableHandlers(): void {
       // edit, so the table's new id can be re-resolved on older studios that don't
       // report it. Current studios (PR #1778) report the new id directly below.
       const identity: TableIdentity | undefined = probedView?.name
-        ? { name: probedView.name, kind: probedView.kind, file: probedView.file, pos: probedView.pos }
+        ? { name: probedView.name, kind: probedView.kind }
         : undefined;
       let idsBeforeEdit: Set<string> | undefined;
       if (identity) {
         const before = await listTablesByExactName(client, projectId, identity.name);
         if (before) {
-          idsBeforeEdit = new Set(before.map((t) => t.id));
+          idsBeforeEdit = new Set(before.flatMap((t) => typeof t.id === "string" ? [t.id] : []));
         }
       }
 
@@ -616,33 +455,9 @@ export function registerTableHandlers(): void {
           currentId = resolved;
         }
       }
-      // Generate appropriate success message based on table type
-      let itemCount = 0;
-      let itemType = "items";
-      if (typedArgs.appendData.fields) {
-        itemCount = typedArgs.appendData.fields.length;
-        itemType = "field(s)";
-      } else if (typedArgs.appendData.rules) {
-        itemCount = typedArgs.appendData.rules.length;
-        itemType = "rule(s)";
-      } else if (typedArgs.appendData.steps) {
-        itemCount = typedArgs.appendData.steps.length;
-        itemType = "step(s)";
-      } else if (typedArgs.appendData.values) {
-        itemCount = typedArgs.appendData.values.length;
-        itemType = "value(s)";
-      } else if ("rows" in typedArgs.appendData && Array.isArray(typedArgs.appendData.rows)) {
-        itemCount = typedArgs.appendData.rows.length;
-        itemType = "row(s)";
-      } else if ("cells" in typedArgs.appendData && Array.isArray(typedArgs.appendData.cells)) {
-        // Spreadsheet append with only cells (one inner array per appended row).
-        itemCount = typedArgs.appendData.cells.length;
-        itemType = "row(s)";
-      }
-
       const { result } = await finalizeTableEdit(
         client, projectId, requestedId, tableId, currentId,
-        `Successfully appended ${itemCount} ${itemType} to table ${requestedId}`, "append", notes,
+        `Successfully appended ${appendData.rows.length} raw source row(s) to table ${requestedId}`, "append", notes,
       );
 
       return {
@@ -653,43 +468,27 @@ export function registerTableHandlers(): void {
 
   registerTool({
     name: "create_project_table",
-    validateArgs: (args) =>
-      validateStructuredArgs("create_project_table", { schema: schemas.createProjectTableSchema, payloadArg: "table", tableTypes: schemas.EDITABLE_TABLE_TYPES }, args),
+    ...structuredPayloadValidation("create_project_table", {
+      payloadArg: "table",
+    }),
     category: "Rules & Tables",
     title: "Create New Table",
     description:
-      "Create a new table/rule in an OpenL project (Create New Project Table API). This is the recommended tool for creating new OpenL tables programmatically. Use cases: Create Rules (decision tables), Spreadsheet tables, Datatype definitions, Test tables, or other table types. Requires moduleName (an EXISTING project module — modules correspond to the project's .xlsx files; a freshly created blank project has a single module named 'Main') and a complete table structure (EditableTableView). The table structure must include 'tableType' and 'name'. CRITICAL: 'tableType' is a CASE-SENSITIVE discriminator — use EXACTLY one of: Datatype, Vocabulary, Spreadsheet, SimpleSpreadsheet, SimpleRules, SmartRules, SimpleLookup, SmartLookup, Data, Test, RawSource (a lowercase value like 'datatype' is rejected by the backend). Add type-specific data: fields (Datatype), rules (SimpleRules/SmartRules), rows (Spreadsheet), steps (SimpleSpreadsheet), values (Vocabulary). For RULES/DECISION tables (SimpleRules/SmartRules) and lookups you MUST also provide: 'returnType' (e.g. \"String\"), 'args': [{name,type}] (the input parameters), and 'headers': [{title}] (the column captions — one per rule-row key, the return column is usually titled \"RET1\"); each 'rules' row is a map keyed by those header titles. There is NO 'signature' field — the method is defined by name + returnType + args. Example SimpleRules: {tableType:\"SimpleRules\", name:\"CreditCategory\", returnType:\"String\", args:[{name:\"creditScore\",type:\"Integer\"}], headers:[{title:\"creditScore\"},{title:\"RET1\"}], rules:[{creditScore:\"< 580\", RET1:\"Poor\"}, {creditScore:\">= 800\", RET1:\"Excellent\"}]}. WARNING: the backend rejects unknown/extra fields with an opaque 400 \"Failed to read request\". 'id' is optional. Use get_table() on an existing table as a reference for the structure (for a blank project with no tables, use the tableType list and the SimpleRules example above). The response contains the created table's metadata (id, signature), NOT a compilation result — call openl_project_status afterward to confirm the project still compiles. This tool uses the Create New Project Table API endpoint.",
-    inputSchema: schemas.z.toJSONSchema(schemas.createProjectTableSchema) as Record<string, unknown>,
+      "Create a table from its complete RawSource 2D cell matrix. Typed table creation DTOs are intentionally unsupported because they omit workbook features and do not round-trip reliably. Requires moduleName plus table { tableType: \"RawSource\", name, source }. By default moduleName identifies an existing module; pass modulePath ending in .xlsx to create a new module. Build the exact OpenL grid from the bundled guides or copy an existing raw source, including covered cells/spans where needed. The response is metadata, not a compilation result; call openl_project_status afterward.",
+    schema: schemas.createProjectTableSchema,
     annotations: {
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        moduleName: string;
-        sheetName?: string;
-        table: Types.EditableTableView;
-        response_format?: "json" | "markdown";
-      };
+      const typedArgs = args;
 
-      if (!typedArgs || !typedArgs.projectId || !typedArgs.moduleName || !typedArgs.table) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          "Missing required arguments: projectId, moduleName, table"
-        );
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
-
-      // Normalize the case-sensitive tableType discriminator up front: a wrong
-      // case (e.g. "datatype") otherwise reaches the backend as an opaque
-      // 400 "Failed to read request" (Jackson can't resolve the subtype).
-      const table = normalizeEditableTableType(typedArgs.table, "table");
+      const format = typedArgs.response_format;
 
       const createdTable = await client.createProjectTable(typedArgs.projectId, {
         moduleName: typedArgs.moduleName,
+        modulePath: typedArgs.modulePath,
         sheetName: typedArgs.sheetName,
-        table,
+        table: typedArgs.table,
       });
 
       const result = {

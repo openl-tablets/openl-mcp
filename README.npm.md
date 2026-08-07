@@ -16,7 +16,7 @@ package for you via `npx`. The sections below are for manual and advanced use.
 - **Tools** covering OpenL Studio repositories, projects, files, rules tables,
   tests, an interactive rule debugger (tracing), and deployments (all prefixed `openl_`)
 - **14 expert-guidance prompts** (`create_rule`, `deploy_project`, `run_test`, …) for complex OpenL Studio workflows
-- **Multiple response formats** — `json`, `markdown`, `markdown_concise`, `markdown_detailed`
+- **Multiple response formats** — round-trippable `json` by default, plus `markdown`, `markdown_concise`, and `markdown_detailed` for human-readable output
 
 Details and tool reference: [Usage Examples](https://github.com/openl-tablets/openl-mcp/blob/main/docs/guides/examples.md).
 

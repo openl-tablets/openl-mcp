@@ -187,13 +187,17 @@ describe("OpenLClient", () => {
           modifiedBy: "admin",
           modifiedAt: "2024-01-01T00:00:00Z",
         }));
-        mockAxios.onGet("/projects", { params: { page: 1, size: 50 } }).reply(200, {
+        mockAxios.onGet("/projects", { params: { offset: 50, size: 50 } }).reply(200, {
           content,
           pageNumber: 1,
           pageSize: 50,
           numberOfElements: 50,
-          totalElements: 120,
-          totalPages: 3,
+          total: 120,
+          projectIndexHealth: { healthy: true },
+          repositoryCounts: [{ repository: "design", count: 120 }],
+          statusCounts: { CLOSED: 120 },
+          statuses: ["CLOSED"],
+          tagCounts: [{ tag: "release", count: 3 }],
         });
 
         const result = await client.listProjectsPage({ offset: 50, limit: 50 });
@@ -203,7 +207,13 @@ describe("OpenLClient", () => {
           pageNumber: 1,
           pageSize: 50,
           total: 120,
-          totalPages: 3,
+          metadata: {
+            projectIndexHealth: { healthy: true },
+            repositoryCounts: [{ repository: "design", count: 120 }],
+            statusCounts: { CLOSED: 120 },
+            statuses: ["CLOSED"],
+            tagCounts: [{ tag: "release", count: 3 }],
+          },
         });
         expect(result.items).toHaveLength(50);
         expect(result.items[0].name).toBe("p50");
@@ -242,6 +252,33 @@ describe("OpenLClient", () => {
 
         expect(mockAxios.history.get.length).toBe(1);
       });
+
+      it("forwards the current project filters and exact item offset", async () => {
+        const params = {
+          dependsOn: "design:base",
+          name: "rate",
+          author: "admin",
+          branch: "feature",
+          sort: "updated" as const,
+          include: ["status", "descriptor"] as const,
+          offset: 25,
+          size: 50,
+        };
+        mockAxios.onGet("/projects").reply((config) => {
+          expect(config.params).toEqual(params);
+          expect(config.paramsSerializer).toEqual({ indexes: null });
+          // @ts-expect-error Test-only access verifies the final wire representation.
+          expect(client.axiosInstance.getUri(config)).toContain("include=status&include=descriptor");
+          return [200, { content: [], pageNumber: 0, pageSize: 50, numberOfElements: 0 }];
+        });
+
+        await client.listProjectsPage({
+          ...params,
+          include: [...params.include],
+          limit: params.size,
+          size: undefined,
+        });
+      });
     });
 
     describe("getProject", () => {
@@ -264,6 +301,19 @@ describe("OpenLClient", () => {
 
         const result = await client.getProject("design-project1");
         expect(result.name).toBe("project1");
+      });
+
+      it("forwards current include expansions", async () => {
+        mockAxios.onGet("/projects/design-project1").reply((config) => {
+          expect(config.params).toEqual({ include: ["status", "descriptor"] });
+          expect(config.paramsSerializer).toEqual({ indexes: null });
+          // @ts-expect-error Test-only access verifies the final wire representation.
+          expect(client.axiosInstance.getUri(config)).toContain("include=status&include=descriptor");
+          return [200, { id: "design-project1", name: "project1" }];
+        });
+
+        await client.getProject("design-project1", ["status", "descriptor"]);
+        expect(mockAxios.history.get).toHaveLength(1);
       });
 
       it("should parse projectId with hyphen separator", async () => {
@@ -397,6 +447,26 @@ describe("OpenLClient", () => {
         });
 
         await expect(client.getProjectStatus(projectId, "develop")).rejects.toThrow();
+      });
+
+      it("should trigger lazy compilation by listing a single table", async () => {
+        const controller = new AbortController();
+        mockAxios.onGet(`/projects/${encodedProjectId}/tables`).reply(200, {
+          content: [],
+          pageNumber: 0,
+          pageSize: 1,
+          numberOfElements: 0,
+          total: 0,
+        });
+
+        await client.triggerProjectCompilation(projectId, {
+          signal: controller.signal,
+          timeoutMs: 120_000,
+        });
+
+        expect(mockAxios.history.get[0].params).toEqual({ offset: 0, size: 1 });
+        expect(mockAxios.history.get[0].signal).toBe(controller.signal);
+        expect(mockAxios.history.get[0].timeout).toBe(120_000);
       });
     });
 
@@ -701,9 +771,11 @@ describe("OpenLClient", () => {
         const projectIdForPath = "design-project1";
         const encodedProjectId = encodeURIComponent(projectIdForPath);
         
-        mockAxios.onGet(`/projects/${encodedProjectId}/tables`, {
-          params: { kind: ["Rules"] }
-        }).reply(200, []);
+        mockAxios.onGet(`/projects/${encodedProjectId}/tables`).reply((config) => {
+          expect(config.params).toEqual({ kind: ["Rules"] });
+          expect(config.paramsSerializer).toEqual({ indexes: null });
+          return [200, []];
+        });
 
         await client.listTables("design-project1", { kind: ["Rules"] });
         expect(mockAxios.history.get.length).toBe(1);
@@ -767,7 +839,7 @@ describe("OpenLClient", () => {
         ).rejects.toThrow();
       });
 
-      it("should pass raw=true query param when raw is true", async () => {
+      it("should always request the authoritative raw source", async () => {
         const projectIdForPath = "design-project1";
         const encodedProjectId = encodeURIComponent(projectIdForPath);
         const encodedTableId = encodeURIComponent("calculatePremium_1234");
@@ -777,7 +849,7 @@ describe("OpenLClient", () => {
           return [200, { id: "calculatePremium_1234" }];
         });
 
-        await client.getTable("design-project1", "calculatePremium_1234", true);
+        await client.getTable("design-project1", "calculatePremium_1234");
       });
 
       it("should pass startRow/maxRows/styles query params for a raw slice with styles", async () => {
@@ -790,7 +862,7 @@ describe("OpenLClient", () => {
           return [200, { id: "calculatePremium_1234", source: [], totalRows: 200 }];
         });
 
-        const result = await client.getTable("design-project1", "calculatePremium_1234", true, {
+        const result = await client.getTable("design-project1", "calculatePremium_1234", {
           startRow: 10,
           maxRows: 50,
           styles: true,
@@ -808,21 +880,7 @@ describe("OpenLClient", () => {
           return [200, { id: "calculatePremium_1234", source: [] }];
         });
 
-        await client.getTable("design-project1", "calculatePremium_1234", true, { maxRows: 25, styles: false });
-      });
-
-      it("should not pass raw param when raw is false or undefined", async () => {
-        const projectIdForPath = "design-project1";
-        const encodedProjectId = encodeURIComponent(projectIdForPath);
-        const encodedTableId = encodeURIComponent("calculatePremium_1234");
-
-        mockAxios.onGet(`/projects/${encodedProjectId}/tables/${encodedTableId}`).reply((config) => {
-          expect(config.params).toBeUndefined();
-          return [200, { id: "calculatePremium_1234" }];
-        });
-
-        await client.getTable("design-project1", "calculatePremium_1234");
-        await client.getTable("design-project1", "calculatePremium_1234", false);
+        await client.getTable("design-project1", "calculatePremium_1234", { maxRows: 25, styles: false });
       });
     });
 
@@ -832,15 +890,12 @@ describe("OpenLClient", () => {
         const encodedProjectId = encodeURIComponent(projectIdForPath);
         const encodedTableId = encodeURIComponent("calculatePremium_1234");
         
-        // updateTable requires full table structure with all required fields
         const tableView = {
           id: "calculatePremium_1234",
           name: "calculatePremium",
-          tableType: "SimpleRules",
-          kind: "Rules",
-          rules: [
-            { driverType: "SAFE", premium: 1000 },
-          ],
+          tableType: "RawSource" as const,
+          kind: "Rules" as const,
+          source: [[{ value: "Rules void calculatePremium()" }]],
         };
 
         // updateTable returns void (204 No Content)
@@ -848,84 +903,6 @@ describe("OpenLClient", () => {
 
         await client.updateTable("design-project1", "calculatePremium_1234", tableView);
         expect(mockAxios.history.put.length).toBe(1);
-      });
-
-      it("should send comment when provided", async () => {
-        const projectIdForPath = "design-project1";
-        const encodedProjectId = encodeURIComponent(projectIdForPath);
-        const encodedTableId = encodeURIComponent("table1");
-        
-        // Note: comment parameter is not supported by OpenAPI schema, will be ignored
-        // The view is sent directly as request body
-        const tableView = { id: "table1", name: "table1", tableType: "SimpleRules", kind: "Rules" };
-        
-        mockAxios.onPut(`/projects/${encodedProjectId}/tables/${encodedTableId}`).reply((config) => {
-          const data = JSON.parse(config.data);
-          expect(data.id).toBe("table1");
-          return [204];
-        });
-
-        await client.updateTable("design-project1", "table1", tableView, "Updated rates");
-      });
-    });
-
-    describe("createRule", () => {
-      it("should create new rule table", async () => {
-        const projectIdForPath = "design-project1";
-        const encodedProjectId = encodeURIComponent(projectIdForPath);
-        
-        const ruleSpec = {
-          name: "calculatePremium",
-          tableType: "SimpleRules" as const,
-          returnType: "double",
-          parameters: [
-            { type: "String", name: "driverType" },
-            { type: "int", name: "age" },
-          ],
-        };
-
-        mockAxios.onPost(`/projects/${encodedProjectId}/tables`).reply(201, {
-          id: "calculatePremium_1234",
-          ...ruleSpec,
-        });
-
-        const result = await client.createRule("design-project1", ruleSpec);
-        expect(result.success).toBe(true);
-        expect(result.tableId).toBe("calculatePremium_1234");
-      });
-
-      it("should include file path when provided", async () => {
-        const projectIdForPath = "design-project1";
-        const encodedProjectId = encodeURIComponent(projectIdForPath);
-        
-        mockAxios.onPost(`/projects/${encodedProjectId}/tables`).reply((config) => {
-          const data = JSON.parse(config.data);
-          expect(data.file).toBe("rules/Insurance.xlsx");
-          return [201, {}];
-        });
-
-        await client.createRule("design-project1", {
-          name: "test",
-          tableType: "SimpleRules",
-          file: "rules/Insurance.xlsx",
-        });
-      });
-
-      it("should include dimension properties", async () => {
-        const projectIdForPath = "design-project1";
-        const encodedProjectId = encodeURIComponent(projectIdForPath);
-        
-        mockAxios.onPost(`/projects/${encodedProjectId}/tables`).reply((config) => {
-          const data = JSON.parse(config.data);
-          expect(data.properties).toEqual({ state: "CA", lob: "Auto" });
-          return [201, {}];
-        });
-
-        await client.createRule("design-project1", {
-          name: "test",
-          tableType: "SimpleRules",
-          properties: { state: "CA", lob: "Auto" },
-        });
       });
     });
   });
@@ -1024,54 +1001,14 @@ describe("OpenLClient", () => {
         const result = await client.listDeployments();
         expect(result.length).toBe(2);
       });
-    });
-  });
 
-  describe("Version History", () => {
+      it("forwards repository and project filters", async () => {
+        mockAxios.onGet("/deployments", {
+          params: { repository: "production", project: "InsuranceRules" },
+        }).reply(200, []);
 
-    describe("getProjectHistory", () => {
-      it("should fetch project commit history", async () => {
-        // getProjectHistory uses /projects/{projectId}/history
-        const mockHistory: Types.PageResponseProjectRevision_Short = {
-          content: [
-            { commitHash: "abc123", author: { name: "user1", email: "user1@test.com" }, modifiedAt: "2024-01-01T00:00:00Z", comment: "test" },
-            { commitHash: "def456", author: { name: "user2", email: "user2@test.com" }, modifiedAt: "2024-01-02T00:00:00Z", comment: "test" },
-          ],
-          numberOfElements: 2,
-          pageNumber: 0,
-          pageSize: 50,
-          totalElements: 2,
-          totalPages: 1,
-        };
-
-        mockAxios.onGet("/projects/design-project1/history", {
-          params: { page: 0, size: 50 }
-        }).reply(200, mockHistory);
-
-        const result = await client.getProjectHistory({
-          projectId: "design-project1",
-        });
-
-        expect(result.commits.length).toBe(2);
-      });
-
-      it("should filter by branch", async () => {
-        // When branch is specified, branch is passed as query parameter.
-        mockAxios.onGet("/projects/design-project1/history", {
-          params: { page: 0, size: 50, branch: "development" }
-        }).reply(200, {
-          content: [],
-          numberOfElements: 0,
-          pageNumber: 0,
-          pageSize: 50,
-        });
-
-        await client.getProjectHistory({
-          projectId: "design-project1",
-          branch: "development",
-        });
-
-        expect(mockAxios.history.get.length).toBe(1);
+        await client.listDeployments({ repository: "production", project: "InsuranceRules" });
+        expect(mockAxios.history.get).toHaveLength(1);
       });
     });
   });
@@ -1152,7 +1089,6 @@ describe("OpenLClient", () => {
       pageNumber: 0,
       pageSize: 50,
       numberOfElements: 2,
-      totalPages: 1,
     };
 
     /**
@@ -1185,6 +1121,19 @@ describe("OpenLClient", () => {
       const result = await client.startProjectTests("design-project1", { tableId: "my_table_42" });
       expect(result.status).toBe("started");
       expect(result.tableId).toBe("my_table_42");
+    });
+
+    it("passes fromModule to the current tests API", async () => {
+      mockAxios.onGet(projectPath).reply(200, mockOpenProject);
+      mockAxios.onPost(`${projectPath}/tests/run`).reply((config) => {
+        expect(config.params).toEqual({ tableId: "my_table_42", fromModule: "Rules" });
+        return [200, { status: "ok" }, { "Set-Cookie": "JSESSIONID=sess2; Path=/" }];
+      });
+
+      await client.startProjectTests("design-project1", {
+        tableId: "my_table_42",
+        fromModule: "Rules",
+      });
     });
 
     it("should reuse stored headers in getTestResultsSummary after starting with tableId", async () => {
@@ -1239,6 +1188,7 @@ describe("OpenLClient", () => {
       // getTestResultsByTable iterates pages via getTestResults
       mockAxios.onGet(`${projectPath}/tests/summary`).reply((config) => {
         expect(config.headers?.["Cookie"]).toBe("JSESSIONID=test-session-123");
+        expect(config.params).toEqual({ page: 0, size: 50 });
         return [200, mockSummary];
       });
 
@@ -1400,11 +1350,14 @@ describe("OpenLClient", () => {
         "design",
         "Offer-CW",
         Buffer.from("PK-zip-bytes"),
-        { comment: "Initial commit" }
+        { comment: "Initial commit", branch: "feature/rates" }
       );
 
       expect(result).toEqual({ revision: "abc123", branch: "main" });
       expect(capturedContentType).toMatch(/^multipart\/form-data; boundary=/);
+      const body = (mockAxios.history.put[0].data as { getBuffer: () => Buffer }).getBuffer().toString("utf-8");
+      expect(body).toContain('name="branch"');
+      expect(body).toContain("feature/rates");
     });
 
     it("createProjectFromZip includes the comment field in the multipart body", async () => {
@@ -1420,41 +1373,26 @@ describe("OpenLClient", () => {
       expect(body).toContain("Hello audit");
     });
 
-    it("copyRepositoryFile POSTs the path pair to /file-copy with the branch param", async () => {
-      let capturedBody: unknown;
-      let capturedParams: unknown;
-      mockAxios.onPost("/repos/design/file-copy").reply((config) => {
-        capturedBody = JSON.parse(config.data);
-        capturedParams = config.params;
-        return [201];
+    it("copyProject uses Studio's server-side project-copy endpoint", async () => {
+      mockAxios.onPost("/repos/design/projects/Offer-CW/from-project").reply((config) => {
+        expect(JSON.parse(config.data)).toEqual({
+          sourceRepositoryId: "design",
+          sourceProjectName: "Offer-US",
+          comment: "Copy rates",
+          branch: "feature/rates",
+        });
+        return [200, { revision: "copy123", branch: "feature/rates" }];
       });
 
-      await client.copyRepositoryFile("design", "Offer-US", "Offer-CW", "main");
-
-      expect(capturedBody).toEqual({ sourcePath: "Offer-US", destinationPath: "Offer-CW" });
-      expect(capturedParams).toEqual({ branch: "main" });
+      await expect(client.copyProject(
+        "design",
+        "Offer-CW",
+        "design",
+        "Offer-US",
+        { comment: "Copy rates", branch: "feature/rates" },
+      )).resolves.toEqual({ revision: "copy123", branch: "feature/rates" });
     });
 
-    it("getRepositoryFileContent returns the file as a string and null on 404", async () => {
-      mockAxios.onGet("/repos/design/files/Offer-CW/rules.xml").reply(200, "<project><name>X</name></project>");
-      const xml = await client.getRepositoryFileContent("design", "Offer-CW/rules.xml");
-      expect(xml).toContain("<name>X</name>");
-
-      mockAxios.onGet("/repos/design/files/Missing/rules.xml").reply(404);
-      const missing = await client.getRepositoryFileContent("design", "Missing/rules.xml");
-      expect(missing).toBeNull();
-    });
-
-    it("updateRepositoryFileRaw PUTs the raw body with a non-JSON content type", async () => {
-      let capturedContentType: string | undefined;
-      mockAxios.onPut("/repos/design/files/Offer-CW/rules.xml").reply((config) => {
-        capturedContentType = (config.headers?.["Content-Type"] ?? config.headers?.["content-type"]) as string;
-        return [200];
-      });
-
-      await client.updateRepositoryFileRaw("design", "Offer-CW/rules.xml", "<project/>");
-      expect(capturedContentType).toBe("application/xml");
-    });
   });
 
   describe("Session continuity (firstRequestGate)", () => {
@@ -1825,23 +1763,22 @@ describe("OpenLClient — additional method coverage", () => {
 
   describe("Repository Management (gap)", () => {
     describe("getRepositoryFeatures", () => {
-      it("GETs /repos/{repo}/features and returns the parsed feature flags", async () => {
-        const features: Types.RepositoryFeatures = { branches: true, searchable: false };
-        mockAxios.onGet("/repos/design/features").reply(200, features);
+      it("reads the feature flags embedded in the current /repos response", async () => {
+        mockAxios.onGet("/repos").reply(200, [{
+          aclId: "design",
+          id: "design",
+          name: "Design",
+          features: { branches: true, mappedFolders: true, searchable: false },
+        }]);
 
         const result = await client.getRepositoryFeatures("design");
-        expect(result).toEqual({ branches: true, searchable: false });
+        expect(result).toEqual({ branches: true, mappedFolders: true, searchable: false });
       });
 
-      it("URL-encodes the repository id in the features path", async () => {
-        let seenUrl = "";
-        mockAxios.onGet(/\/repos\/.*\/features/).reply((config) => {
-          seenUrl = config.url || "";
-          return [200, { branches: false, searchable: true }];
-        });
+      it("fails when /repos does not contain the requested id", async () => {
+        mockAxios.onGet("/repos").reply(200, []);
 
-        await client.getRepositoryFeatures("My Repo");
-        expect(seenUrl).toBe("/repos/My%20Repo/features");
+        await expect(client.getRepositoryFeatures("missing")).rejects.toThrow(/not found/);
       });
     });
 
@@ -1904,8 +1841,7 @@ describe("OpenLClient — additional method coverage", () => {
         pageNumber: 0,
         pageSize: 50,
         numberOfElements: 1,
-        totalElements: 1,
-        totalPages: 1,
+        total: 1,
       };
 
       it("uses the non-branch history URL and forwards filter params when no branch is given", async () => {
@@ -1941,30 +1877,34 @@ describe("OpenLClient — additional method coverage", () => {
         await client.getProjectRevisions("design", "InsuranceRules", { branch: "develop" });
 
         expect(seenUrl).toBe("/repos/design/branches/develop/projects/InsuranceRules/history");
-        // branch lives in the path, AND is echoed as a query param by the client.
-        expect(seenParams).toEqual({ branch: "develop" });
+        expect(seenParams).toEqual({});
       });
-    });
 
-    describe("downloadRepositoryFolderZip", () => {
-      it("GETs the folder path with a trailing slash and download=true, returning a Buffer", async () => {
-        let seenUrl = "";
+      it("forwards a non-page-aligned revision offset without converting it to a page", async () => {
         let seenParams: Record<string, unknown> | undefined;
-        mockAxios.onGet(/\/repos\/design\/files\//).reply((config) => {
-          seenUrl = config.url || "";
+        mockAxios.onGet(/\/repos\/design\/projects\/InsuranceRules\/history/).reply((config) => {
           seenParams = config.params;
-          return [200, Buffer.from("PK-zip-bytes")];
+          return [200, page];
         });
 
-        const buf = await client.downloadRepositoryFolderZip("design", "Offer CW", "main");
+        await client.getProjectRevisions("design", "InsuranceRules", { offset: 25, size: 50 });
 
-        // Segment encoded, trailing slash marks it as a folder.
-        expect(seenUrl).toBe("/repos/design/files/Offer%20CW/");
-        expect(seenParams).toEqual({ download: "true", branch: "main" });
-        expect(Buffer.isBuffer(buf)).toBe(true);
-        expect(buf.toString()).toBe("PK-zip-bytes");
+        expect(seenParams).toEqual({ offset: 25, size: 50 });
+      });
+
+      it("prefers an explicit page when called directly with both pagination forms", async () => {
+        let seenParams: Record<string, unknown> | undefined;
+        mockAxios.onGet(/\/repos\/design\/projects\/InsuranceRules\/history/).reply((config) => {
+          seenParams = config.params;
+          return [200, page];
+        });
+
+        await client.getProjectRevisions("design", "InsuranceRules", { page: 2, offset: 25, size: 50 });
+
+        expect(seenParams).toEqual({ page: 2, size: 50 });
       });
     });
+
   });
 
   describe("Project lifecycle (gap)", () => {
@@ -1990,6 +1930,15 @@ describe("OpenLClient — additional method coverage", () => {
       });
     });
 
+    describe("deleteProjectBranch", () => {
+      it("rejects traversal segments before issuing a request", async () => {
+        await expect(client.deleteProjectBranch(projectId, "feature/../../main")).rejects.toThrow(
+          /project-relative|not allowed/,
+        );
+        expect(mockAxios.history.delete).toHaveLength(0);
+      });
+    });
+
     describe("closeProject", () => {
       it("PATCHes status CLOSED with the comment after confirming the repo is not local", async () => {
         mockAxios.onGet(projectPath).reply(200, designProject("OPENED"));
@@ -1999,7 +1948,7 @@ describe("OpenLClient — additional method coverage", () => {
           return [204];
         });
 
-        const ok = await client.closeProject(projectId, "Done for now");
+        const ok = await client.closeProject(projectId, { comment: "Done for now" });
         expect(ok).toBe(true);
         expect(body).toMatchObject({ status: "CLOSED", comment: "Done for now" });
       });
@@ -2038,10 +1987,8 @@ describe("OpenLClient — additional method coverage", () => {
         expect(mockAxios.history.patch).toHaveLength(0);
       });
 
-      it("PATCHes the trimmed comment when EDITING and validation is unavailable (404)", async () => {
+      it("PATCHes the trimmed comment when EDITING without calling the removed validation endpoint", async () => {
         mockAxios.onGet(projectPath).reply(200, designProject("EDITING"));
-        // Validation endpoint missing -> save proceeds.
-        mockAxios.onGet(`${projectPath}/validation`).reply(404);
         let body: Record<string, unknown> = {};
         mockAxios.onPatch(projectPath).reply((config) => {
           body = JSON.parse(config.data);
@@ -2053,11 +2000,11 @@ describe("OpenLClient — additional method coverage", () => {
         expect(body).toEqual({ comment: "Add premium rule" });
         // closeAfterSave was not requested -> no status field.
         expect(body.status).toBeUndefined();
+        expect(mockAxios.history.get.map((request) => request.url)).toEqual([projectPath]);
       });
 
       it("adds status CLOSED to the PATCH body when closeAfterSave is set", async () => {
         mockAxios.onGet(projectPath).reply(200, designProject("EDITING"));
-        mockAxios.onGet(`${projectPath}/validation`).reply(404);
         let body: Record<string, unknown> = {};
         mockAxios.onPatch(projectPath).reply((config) => {
           body = JSON.parse(config.data);
@@ -2068,21 +2015,6 @@ describe("OpenLClient — additional method coverage", () => {
         expect(body).toEqual({ comment: "Commit and close", status: "CLOSED" });
       });
 
-      it("returns validation errors WITHOUT saving when the project fails validation", async () => {
-        mockAxios.onGet(projectPath).reply(200, designProject("EDITING"));
-        const validation: Types.ValidationResult = {
-          valid: false,
-          errors: [{ severity: "ERROR", message: "Datatype 'Driver' not found" }],
-          warnings: [],
-        };
-        mockAxios.onGet(`${projectPath}/validation`).reply(200, validation);
-
-        const result = await client.saveProject(projectId, "Try to save");
-        expect(result.success).toBe(false);
-        expect(result.message).toMatch(/1 validation error/);
-        expect(result.validationErrors?.[0].message).toBe("Datatype 'Driver' not found");
-        expect(mockAxios.history.patch).toHaveLength(0);
-      });
     });
 
     describe("createBranch", () => {
@@ -2104,7 +2036,7 @@ describe("OpenLClient — additional method coverage", () => {
     describe("getProjectLocalChanges", () => {
       it("GETs /history/project and returns the change items", async () => {
         const items: Types.ProjectHistoryItem[] = [
-          { name: "Rules.xlsx", version: "v1", author: "admin", modifiedAt: "2026-01-01T00:00:00Z", comment: "edit" },
+          { id: "history-1", current: true, modifiedOn: "2026-01-01T00:00:00Z" },
         ];
         mockAxios.onGet("/history/project").reply(200, items);
 
@@ -2135,7 +2067,7 @@ describe("OpenLClient — additional method coverage", () => {
     const projectPath = `/projects/${encodeURIComponent(projectId)}`;
 
     describe("createProjectTable (BETA contract)", () => {
-      it("POSTs {moduleName, sheetName, table} to /tables and returns the created metadata", async () => {
+      it("POSTs the current create-table fields and returns the created metadata", async () => {
         let body: Record<string, unknown> = {};
         const created: Partial<Types.TableMetadata> = { id: "newTable_999", name: "newTable" };
         mockAxios.onPost(`${projectPath}/tables`).reply((config) => {
@@ -2145,15 +2077,17 @@ describe("OpenLClient — additional method coverage", () => {
 
         const request: Types.CreateNewTableRequest = {
           moduleName: "Rules",
+          modulePath: "rules/Rules.xlsx",
           sheetName: "Sheet1",
-          table: { id: "", name: "newTable", tableType: "SimpleRules", kind: "Rules" },
+          table: { id: "", name: "newTable", tableType: "RawSource", kind: "Rules", source: [[{ value: "Rules void newTable()" }]] },
         };
         const result = await client.createProjectTable(projectId, request);
 
         expect(body).toEqual({
           moduleName: "Rules",
+          modulePath: "rules/Rules.xlsx",
           sheetName: "Sheet1",
-          table: { id: "", name: "newTable", tableType: "SimpleRules", kind: "Rules" },
+          table: { id: "", name: "newTable", tableType: "RawSource", kind: "Rules", source: [[{ value: "Rules void newTable()" }]] },
         });
         expect(result.id).toBe("newTable_999");
       });
@@ -2168,9 +2102,9 @@ describe("OpenLClient — additional method coverage", () => {
           return [204];
         });
 
-        const appendData: Types.AppendTableView = {
-          tableType: "Datatype",
-          fields: [{ name: "email", type: "String", required: true }],
+        const appendData: Types.RawTableAppend = {
+          tableType: "RawSource",
+          rows: [[{ value: "email" }, { value: "String" }]],
         };
         const newId = await client.appendProjectTable(projectId, tableId, appendData);
 
@@ -2184,9 +2118,9 @@ describe("OpenLClient — additional method coverage", () => {
           .onPost(`${projectPath}/tables/${encodeURIComponent(tableId)}/lines`)
           .reply(200, { id: "Customer_5678" });
 
-        const appendData: Types.AppendTableView = {
-          tableType: "SimpleRules",
-          rules: [{ driverType: "SAFE", premium: 1000 }],
+        const appendData: Types.RawTableAppend = {
+          tableType: "RawSource",
+          rows: [[{ value: "SAFE" }, { value: 1000 }]],
         };
         const newId = await client.appendProjectTable(projectId, tableId, appendData);
         expect(newId).toBe("Customer_5678");
@@ -2199,8 +2133,8 @@ describe("OpenLClient — additional method coverage", () => {
           .reply(200, {}, { location: "/projects/design-project1/tables/Customer_relocated%20id" });
 
         const newId = await client.appendProjectTable(projectId, tableId, {
-          tableType: "SimpleRules",
-          rules: [{ x: 1 }],
+          tableType: "RawSource",
+          rows: [[{ value: 1 }]],
         });
         // Location segment is URL-decoded.
         expect(newId).toBe("Customer_relocated id");
@@ -2311,26 +2245,7 @@ describe("OpenLClient — additional method coverage", () => {
     });
   });
 
-  describe("Validation & health (gap)", () => {
-    describe("validateProject", () => {
-      it("GETs /projects/{id}/validation and returns the parsed result", async () => {
-        const projectId = "design-project1";
-        const projectPath = `/projects/${encodeURIComponent(projectId)}`;
-        const result: Types.ValidationResult = { valid: true, errors: [], warnings: [] };
-        mockAxios.onGet(`${projectPath}/validation`).reply(200, result);
-
-        const out = await client.validateProject(projectId);
-        expect(out).toEqual(result);
-      });
-
-      it("propagates a 404 from the (often-absent) validation endpoint", async () => {
-        const projectId = "design-project1";
-        mockAxios.onGet(`/projects/${encodeURIComponent(projectId)}/validation`).reply(404);
-
-        await expect(client.validateProject(projectId)).rejects.toThrow();
-      });
-    });
-
+  describe("Health (gap)", () => {
     describe("healthCheck", () => {
       it("reports healthy + serverReachable when /repos responds", async () => {
         mockAxios.onGet("/repos").reply(200, [{ id: "design", name: "Design" }]);
@@ -2429,7 +2344,7 @@ describe("OpenLClient — additional method coverage", () => {
         expect(stack.frames[0].tableId).toBe("calc_42");
       });
 
-      it("threads testRanges, stopAtEntry, profiling, includeTree and profileTop into the query string and sends no body when inputJson is omitted", async () => {
+      it("threads current trace controls into the query string and sends no body when inputJson is omitted", async () => {
         let seenUrl = "";
         let body: unknown;
         mockAxios.onPost(/\/projects\/p1\/trace\?/).reply((config) => {
@@ -2444,6 +2359,8 @@ describe("OpenLClient — additional method coverage", () => {
           testRanges: "1-3,5",
           stopAtEntry: false,
           profiling: true,
+          detailedTitles: true,
+          breakOnErrors: false,
           includeTree: false,
           profileTop: 30,
         });
@@ -2453,6 +2370,8 @@ describe("OpenLClient — additional method coverage", () => {
         expect(seenUrl).toContain("testRanges=1-3%2C5");
         expect(seenUrl).toContain("stopAtEntry=false");
         expect(seenUrl).toContain("profiling=true");
+        expect(seenUrl).toContain("detailedTitles=true");
+        expect(seenUrl).toContain("breakOnErrors=false");
         expect(seenUrl).toContain("includeTree=false");
         expect(seenUrl).toContain("profileTop=30");
         expect(body).toBeUndefined();
@@ -2547,8 +2466,12 @@ describe("OpenLClient — additional method coverage", () => {
           return [200, suspendedStack];
         });
 
-        const stack = await client.traceStep(projectId, "into", { view: "compact" });
-        expect(params).toEqual({ type: "into", view: "compact" });
+        const stack = await client.traceStep(projectId, "into", {
+          view: "compact",
+          includeTree: false,
+          profileTop: 10,
+        });
+        expect(params).toEqual({ type: "into", view: "compact", includeTree: "false", profileTop: "10" });
         expect(stack.status).toBe("suspended");
       });
     });
@@ -2589,6 +2512,17 @@ describe("OpenLClient — additional method coverage", () => {
 
         await client.getTraceFrameVariables(projectId, 0);
         expect(params).toBeUndefined();
+      });
+
+      it("maps includeSchema on the frame-variables query", async () => {
+        let params: Record<string, unknown> | undefined;
+        mockAxios.onGet(`${projectPath}/trace/frames/0/variables`).reply((config) => {
+          params = config.params;
+          return [200, { parameters: [], steps: [], errors: [] }];
+        });
+
+        await client.getTraceFrameVariables(projectId, 0, undefined, true);
+        expect(params).toEqual({ includeSchema: true });
       });
     });
 
@@ -2650,6 +2584,17 @@ describe("OpenLClient — additional method coverage", () => {
         await client.getTraceParameter(projectId, 5);
         expect(fieldsSeen[1]).toBeUndefined();
       });
+
+      it("maps includeSchema on the trace-parameter query", async () => {
+        let params: Record<string, unknown> | undefined;
+        mockAxios.onGet(`${projectPath}/trace/parameters/5`).reply((config) => {
+          params = config.params;
+          return [200, { name: "premium", description: "computed premium", schema: {} }];
+        });
+
+        await client.getTraceParameter(projectId, 5, undefined, true);
+        expect(params).toEqual({ includeSchema: true });
+      });
     });
 
     describe("watches", () => {
@@ -2689,6 +2634,17 @@ describe("OpenLClient — additional method coverage", () => {
 
         await client.getTraceWatch(projectId);
         expect(fields).toBeUndefined();
+      });
+
+      it("maps includeSchema on the trace-watch query", async () => {
+        let params: Record<string, unknown> | undefined;
+        mockAxios.onGet(`${projectPath}/trace/watch`).reply((config) => {
+          params = config.params;
+          return [200, { series: [] }];
+        });
+
+        await client.getTraceWatch(projectId, undefined, true);
+        expect(params).toEqual({ includeSchema: true });
       });
     });
 

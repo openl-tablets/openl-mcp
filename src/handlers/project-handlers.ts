@@ -5,11 +5,11 @@
 
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 
+import type { OpenLClient } from "../client.js";
 import * as schemas from "../schemas.js";
 import type * as Types from "../types.js";
 import { formatResponse, paginateCollection } from "../formatters.js";
-import { validateResponseFormat, validatePagePagination } from "../validators.js";
-import { isNotFoundError, setRulesXmlProjectName } from "../utils.js";
+import { isNotFoundError } from "../utils.js";
 import { waitForCompilation } from "../stomp-waits.js";
 import { getProjectTemplateZip } from "../project-templates.js";
 import { registerTool, rethrowConflictAsActionable, type ToolResponse } from "./common.js";
@@ -98,11 +98,78 @@ function progressMessage(status: Types.ProjectStatusView): string {
     return "Compiling…";
   }
   if (status.compileState === "idle") {
-    return "Waiting for compilation to start";
+    return "Starting lazy compilation";
   }
   // Terminal states aren't normally emitted via onProgress (the wait resolves first),
   // but include sensible labels just in case.
   return `Compile state: ${status.compileState}`;
+}
+
+/**
+ * Resolve Studio's opaque id for an exact project name. Create/copy endpoints
+ * return only branch/revision, so project IDs must come from /projects rather
+ * than being reconstructed from request values.
+ */
+async function findProjectId(
+  client: OpenLClient,
+  repositoryId: string,
+  projectName: string,
+  branch?: string,
+): Promise<string | undefined> {
+  const limit = 200;
+  let offset = 0;
+  const seenPages = new Set<string>();
+
+  // This is best-effort discovery after the create/copy already succeeded.
+  // Stop on a repeated page (an older Studio ignoring offset) and keep a hard
+  // cap so missing pagination metadata can never hang the mutation response.
+  for (let pageCount = 0; pageCount < 100; pageCount += 1) {
+    const page = await client.listProjectsPage({
+      repository: repositoryId,
+      name: projectName,
+      branch,
+      offset,
+      limit,
+    });
+    const project = page.items.find((candidate) => candidate.name === projectName);
+    if (project) {
+      return typeof project.id === "string" && project.id.length > 0 ? project.id : undefined;
+    }
+
+    if (!page.serverPaginated) return undefined;
+
+    const pageSignature = JSON.stringify(page.items.map((candidate) => [
+      candidate.id,
+      candidate.name,
+      candidate.repository,
+      candidate.branch,
+    ]));
+    if (seenPages.has(pageSignature)) return undefined;
+    seenPages.add(pageSignature);
+
+    const pageSize = page.pageSize ?? limit;
+    const nextOffset = offset + pageSize;
+    if (page.items.length === 0 || (page.total !== undefined && nextOffset >= page.total)) {
+      return undefined;
+    }
+    offset = nextOffset;
+  }
+  return undefined;
+}
+
+async function tryFindCreatedProjectId(
+  client: OpenLClient,
+  repositoryId: string,
+  projectName: string,
+  branch?: string,
+): Promise<string | undefined> {
+  try {
+    return await findProjectId(client, repositoryId, projectName, branch);
+  } catch {
+    // Creation has already committed successfully. Do not report the mutation
+    // as failed merely because the follow-up discovery request was unavailable.
+    return undefined;
+  }
 }
 
 export function registerProjectHandlers(): void {
@@ -111,25 +178,18 @@ export function registerProjectHandlers(): void {
     category: "Project",
     title: "List Projects",
     description:
-      "List projects with optional filters (repository, status, tags). Results are paginated (default 50, maximum 200): when a complete inventory is required, follow pagination.has_more and call again with pagination.next_offset until has_more is false. Returns project names, status (OPENED/CLOSED), metadata, and a convenient 'projectId' field from API to use with other tools. For local-only projects, do not pass repository filter 'local' (it may fail); list every page without that filter and filter results by repository === 'local' client-side. For such projects, open/save/close do not work; table/rule/test tools work without opening. IMPORTANT: The 'projectId' is returned exactly as provided by the API and should be used without modification. Pass either the id or name from openl_list_repositories() — both are accepted (case-insensitive). Do not invent example values; call openl_list_repositories() first if not in context. Use this to discover and filter projects.",
-    inputSchema: schemas.z.toJSONSchema(schemas.listProjectsSchema) as Record<string, unknown>,
+      "List projects with the Studio filters for repository, status, dependency, name, author, branch, tags, sorting, and response expansions. Results are paginated (default 50, maximum 200): when a complete inventory is required, follow pagination.has_more and call again with pagination.next_offset until has_more is false. Returns project names, status (OPENED/CLOSED), metadata, and a convenient 'projectId' field from API to use with other tools. For local-only projects, do not pass repository filter 'local' (it may fail); list every page without that filter and filter results by repository === 'local' client-side. For such projects, open/save/close do not work; table/rule/test tools work without opening. IMPORTANT: The 'projectId' is returned exactly as provided by the API and should be used without modification. Pass either the id or name from openl_list_repositories() — both are accepted (case-insensitive). Do not invent example values; call openl_list_repositories() first if not in context. Use this to discover and filter projects.",
+    schema: schemas.listProjectsSchema,
     annotations: {
       readOnlyHint: true,
       openWorldHint: true,
       idempotentHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = (args as {
-        repository?: string;
-        status?: "LOCAL" | "ARCHIVED" | "OPENED" | "VIEWING_VERSION" | "EDITING" | "CLOSED";
-        tags?: Record<string, string>;
-        response_format?: "json" | "markdown";
-        limit?: number;
-        offset?: number;
-      }) || {};
+      const typedArgs = args;
 
-      const format = validateResponseFormat(typedArgs.response_format);
-      const { limit, offset } = validatePagePagination(typedArgs.limit, typedArgs.offset);
+      const format = typedArgs.response_format;
+      const { limit = 50, offset = 0 } = typedArgs;
 
       // Extract filters (only those supported by ProjectFilters type)
       const filters: Types.ProjectFilters = {};
@@ -138,13 +198,16 @@ export function registerProjectHandlers(): void {
         filters.repository = await client.getRepositoryIdByName(typedArgs.repository);
       }
       if (typedArgs.status) filters.status = typedArgs.status;
+      if (typedArgs.dependsOn) filters.dependsOn = typedArgs.dependsOn;
+      if (typedArgs.name) filters.name = typedArgs.name;
+      if (typedArgs.author) filters.author = typedArgs.author;
+      if (typedArgs.branch) filters.branch = typedArgs.branch;
+      if (typedArgs.sort) filters.sort = typedArgs.sort;
+      if (typedArgs.include) filters.include = typedArgs.include;
       if (typedArgs.tags) filters.tags = typedArgs.tags;
       
-      // Add pagination parameters (convert offset/limit to page/size for API)
-      if (offset !== undefined && limit !== undefined) {
-        filters.offset = offset;
-        filters.limit = limit;
-      }
+      filters.offset = offset;
+      filters.limit = limit;
 
       const projectsPage = await client.listProjectsPage(filters);
       const projects = projectsPage.items;
@@ -175,6 +238,7 @@ export function registerProjectHandlers(): void {
 
       const formattedResult = formatResponse(paginated.data, format, {
         pagination: paginated.pagination,
+        responseMetadata: projectsPage.metadata,
         dataType: "projects",
       });
 
@@ -190,25 +254,18 @@ export function registerProjectHandlers(): void {
     title: "Get Project Details",
     description:
       "Get comprehensive project information including details, modules, dependencies, and metadata. Returns full project structure, configuration, and status.",
-    inputSchema: schemas.z.toJSONSchema(schemas.getProjectSchema) as Record<string, unknown>,
+    schema: schemas.getProjectSchema,
     annotations: {
       readOnlyHint: true,
       openWorldHint: true,
       idempotentHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        response_format?: "json" | "markdown";
-      };
+      const typedArgs = args;
 
-      if (!typedArgs || !typedArgs.projectId) {
-        throw new McpError(ErrorCode.InvalidParams, "Missing required argument: projectId. To find valid project IDs, use: openl_list_projects()");
-      }
+      const format = typedArgs.response_format;
 
-      const format = validateResponseFormat(typedArgs.response_format);
-
-      const project = await client.getProject(typedArgs.projectId);
+      const project = await client.getProject(typedArgs.projectId, typedArgs.include);
 
       const formattedResult = formatResponse(project, format);
 
@@ -223,32 +280,17 @@ export function registerProjectHandlers(): void {
     category: "Project",
     title: "Get Project Status",
     description:
-      "Get the post-compilation status of a project: compile state, diagnostics, pending changes, and module/test summary. Read-only — does not trigger compilation. When wait=true, blocks until compileState is terminal (ok/warnings/errors) and emits MCP progress notifications. Note: compileState reflects the last compilation. The studio does not auto-compile on edit (it resets the status), but openl_update_table / openl_append_table / openl_create_project_table all trigger a recompile of the affected table, so this status reflects changes made through those tools. (Edits made by bypassing those tools — e.g. raw REST — won't refresh it until the table is read.)",
-    inputSchema: schemas.z.toJSONSchema(schemas.projectStatusSchema) as Record<string, unknown>,
+      "Get the project's compile state, diagnostics, pending changes, and module/test summary. By default wait=true: a supplied branch switches the opened design project to that branch before validation; if Studio reports idle, the tool lazily starts compilation through the tables API; if compilation is already running, it waits for a terminal state (ok/warnings/errors) and emits progress notifications when available. Set wait=false only for a fast read-only snapshot, which may legitimately return idle or compiling and never switches branches. Edits made through the MCP table tools already trigger recompilation.",
+    schema: schemas.projectStatusSchema,
     annotations: {
-      readOnlyHint: true,
+      readOnlyHint: false,
       openWorldHint: true,
       idempotentHint: true,
     },
     handler: async (args, client, extra): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        branch?: string;
-        wait?: boolean;
-        timeoutMs?: number;
-        severity?: ("ERROR" | "WARN" | "INFO")[];
-        maxMessages?: number;
-        response_format?: "json" | "markdown" | "markdown_concise" | "markdown_detailed";
-      };
+      const typedArgs = args;
 
-      if (!typedArgs || !typedArgs.projectId) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          "Missing required argument: projectId. To find valid project IDs, use: openl_list_projects()"
-        );
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
+      const format = typedArgs.response_format;
 
       let status: Types.ProjectStatusView;
       if (typedArgs.wait) {
@@ -284,12 +326,21 @@ export function registerProjectHandlers(): void {
           onProgress,
           signal: extra?.signal,
           timeoutMs: typedArgs.timeoutMs,
+          compileOnIdle: true,
         });
       } else {
         status = await client.getProjectStatus(typedArgs.projectId, typedArgs.branch);
       }
 
-      const payload = shapeStatusResponse(status, typedArgs.severity, typedArgs.maxMessages);
+      const shaped = shapeStatusResponse(status, typedArgs.severity, typedArgs.maxMessages);
+      const payload = status.compileState === "idle"
+        ? {
+            ...shaped,
+            note: typedArgs.wait
+              ? "Studio has no compilable module registered for this project; compileState remains idle."
+              : "No compilation is registered in this Studio session. Call openl_project_status with wait=true to start lazy compilation and obtain a conclusive result.",
+          }
+        : shaped;
 
       return {
         content: [{ type: "text", text: formatResponse(payload, format) }],
@@ -303,23 +354,14 @@ export function registerProjectHandlers(): void {
     title: "Open Project for Editing",
     description:
       "Open a project for editing. Supports opening on specific branches or viewing specific Git revisions. Use this before making changes to project tables or rules.",
-    inputSchema: schemas.z.toJSONSchema(schemas.openProjectSchema) as Record<string, unknown>,
+    schema: schemas.openProjectSchema,
     annotations: {
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        branch?: string;
-        revision?: string;
-        response_format?: "json" | "markdown";
-      };
+      const typedArgs = args;
 
-      if (!typedArgs || !typedArgs.projectId) {
-        throw new McpError(ErrorCode.InvalidParams, "Missing required argument: projectId. To find valid project IDs, use: openl_list_projects()");
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
+      const format = typedArgs.response_format;
 
       let action: "opened" | "switched_branch" = "opened";
 
@@ -335,6 +377,7 @@ export function registerProjectHandlers(): void {
             await client.openProject(typedArgs.projectId, {
               branch: typedArgs.branch,
               revision: typedArgs.revision,
+              openDependencies: typedArgs.openDependencies,
             });
           }
         } catch {
@@ -342,11 +385,13 @@ export function registerProjectHandlers(): void {
           await client.openProject(typedArgs.projectId, {
             branch: typedArgs.branch,
             revision: typedArgs.revision,
+            openDependencies: typedArgs.openDependencies,
           });
         }
       } else {
         await client.openProject(typedArgs.projectId, {
           revision: typedArgs.revision,
+          openDependencies: typedArgs.openDependencies,
         });
       }
 
@@ -372,27 +417,15 @@ export function registerProjectHandlers(): void {
     category: "Project",
     title: "Save Project to Git",
     description:
-      "Save project changes to Git. Works only when project status is EDITING (after opening and making changes). Requires comment (used as revision/commit message). Creates a new revision and transitions project to OPENED. Optional closeAfterSave: true saves and closes in one request. Use after update_table, append_table, or other edits. Does not work for repository 'local'. Validates project before saving if validation endpoint is available.",
-    inputSchema: schemas.z.toJSONSchema(schemas.saveProjectSchema) as Record<string, unknown>,
+      "Save project changes to Git. Works only when project status is EDITING (after opening and making changes). Requires comment (used as revision/commit message). Creates a new revision and transitions project to OPENED. Optional closeAfterSave: true saves and closes in one request. Use after update_table, append_table, or other edits. Does not work for repository 'local'.",
+    schema: schemas.saveProjectSchema,
     annotations: {
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        comment: string;
-        closeAfterSave?: boolean;
-        response_format?: "json" | "markdown";
-      };
+      const typedArgs = args;
 
-      if (!typedArgs || !typedArgs.projectId) {
-        throw new McpError(ErrorCode.InvalidParams, "Missing required argument: projectId. To find valid project IDs, use: openl_list_projects()");
-      }
-      if (!typedArgs.comment?.trim()) {
-        throw new McpError(ErrorCode.InvalidParams, "comment is required for save; it is used as the revision (commit) message.");
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
+      const format = typedArgs.response_format;
 
       const result = await client.saveProject(typedArgs.projectId, typedArgs.comment, {
         closeAfterSave: typedArgs.closeAfterSave,
@@ -412,26 +445,15 @@ export function registerProjectHandlers(): void {
     title: "Close Project",
     description:
       "Close a project. If the project has unsaved changes (status EDITING), you must either save (saveChanges: true with comment) or discard (discardChanges: true). When discarding, ask the user for confirmation and then call again with confirmDiscard: true. Prevents accidental data loss.",
-    inputSchema: schemas.z.toJSONSchema(schemas.closeProjectSchema) as Record<string, unknown>,
+    schema: schemas.closeProjectSchema,
     annotations: {
       destructiveHint: true, // Can discard changes if requested
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        saveChanges?: boolean;
-        comment?: string;
-        discardChanges?: boolean;
-        confirmDiscard?: boolean;
-        response_format?: "json" | "markdown";
-      };
+      const typedArgs = args;
 
-      if (!typedArgs || !typedArgs.projectId) {
-        throw new McpError(ErrorCode.InvalidParams, "Missing required argument: projectId. To find valid project IDs, use: openl_list_projects()");
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
+      const format = typedArgs.response_format;
 
       // Check current project status to see if there are unsaved changes
       const currentProject = await client.getProject(typedArgs.projectId);
@@ -475,7 +497,7 @@ export function registerProjectHandlers(): void {
         } else if (typedArgs.discardChanges === true) {
           // Only proceed when confirmDiscard is explicitly true (false or undefined require confirmation)
           if (typedArgs.confirmDiscard === true) {
-            await client.closeProject(typedArgs.projectId);
+            await client.closeProject(typedArgs.projectId, { discardChanges: true });
             const result = {
               success: true,
               message: "Project closed (unsaved changes discarded)",
@@ -525,26 +547,14 @@ export function registerProjectHandlers(): void {
     title: "Create Project Branch",
     description:
       "Create a new branch in a project's repository from a specified revision. Allows branching from specific revisions, tags, or other branches. If no revision is specified, the HEAD revision will be used.",
-    inputSchema: schemas.z.toJSONSchema(schemas.createBranchSchema) as Record<string, unknown>,
+    schema: schemas.createBranchSchema,
     annotations: {
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        branchName: string;
-        revision?: string;
-        response_format?: "json" | "markdown";
-      };
+      const typedArgs = args;
 
-      if (!typedArgs || !typedArgs.projectId || !typedArgs.branchName) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          "Missing required arguments: projectId, branchName"
-        );
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
+      const format = typedArgs.response_format;
 
       await client.createBranch(typedArgs.projectId, typedArgs.branchName, typedArgs.revision);
 
@@ -566,13 +576,13 @@ export function registerProjectHandlers(): void {
   registerTool({
     name: "create_project",
     category: "Project",
-    title: "Create or Clone Project",
+    title: "Create or Copy Project",
     description:
       "Create a new OpenL project in a design repository and commit it. Two modes, selected by the `template` argument:\n" +
-      "• CREATE (omit `template`): create a BLANK project from the default empty skeleton. Committed atomically on the repository's default branch; returns the commit revision.\n" +
-      "• CLONE (pass `template` = an existing project name): copy the source project's FULL structure (rules, tests, settings, request/response examples) into the new project and rename it — the project name in rules.xml is updated to projectName, matching OpenL Studio's Copy Project. The clone is committed atomically through the create-from-zip endpoint, so it is indexed and appears in openl_list_projects immediately.\n" +
-      "Call openl_list_repositories() / openl_list_projects() first. Returns the new project name and commit revision (hash). A name collision is rejected with 409; a missing clone source returns 404; missing permission returns 403. Note: `branch` is honored for clones but that path writes directly to Git via the files API (one commit per file, not atomic), so a BRANCH clone may not appear in openl_list_projects until OpenL re-indexes the repository — omit `branch` for the default, immediately-visible clone. Local repositories are not supported.",
-    inputSchema: schemas.z.toJSONSchema(schemas.createProjectSchema) as Record<string, unknown>,
+      "• CREATE (omit `template`): create a BLANK project from the default empty skeleton.\n" +
+      "• COPY (pass `template` = an existing project name): use Studio's server-side project-copy API to copy the source project's FULL structure and rename its descriptor to projectName.\n" +
+      "Both modes are committed and indexed atomically. Omit `branch` for the repository's configured/default branch, or pass a target branch from openl_list_branches(); Studio also supports creating a missing branch from the base branch. Returns the new project name, commit revision, and Studio's opaque projectId. A name collision, missing copy source, or missing permission is rejected with an actionable error. Local repositories are not supported.",
+    schema: schemas.createProjectSchema,
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
@@ -580,175 +590,36 @@ export function registerProjectHandlers(): void {
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        repository?: string;
-        projectName?: string;
-        template?: string;
-        branch?: string;
-        comment?: string;
-        response_format?: "json" | "markdown";
-      };
+      const typedArgs = args;
 
-      if (!typedArgs || !typedArgs.repository || !typedArgs.projectName) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          "Missing required arguments: repository, projectName"
-        );
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
+      const format = typedArgs.response_format;
       const repositoryId = await client.getRepositoryIdByName(typedArgs.repository);
 
-      // -----------------------------------------------------------------------
-      // CLONE mode: `template` is the source project to copy from.
-      // -----------------------------------------------------------------------
-      if (typedArgs.template && !typedArgs.branch) {
-        // EPBDS-16088: default (branch-less) clone goes through the same
-        // create-from-zip endpoint as blank create: download the source project
-        // folder as a ZIP (entries are project-root-relative) and re-upload it
-        // under the new name. The endpoint validates the archive, renames the
-        // project in rules.xml server-side (ProjectDescriptorNameAdaptor),
-        // commits ONE atomic revision, and — unlike the raw git file-copy used
-        // before — registers the project in OpenL's workspace index, so the
-        // clone appears in openl_list_projects immediately.
-        const source = typedArgs.template;
-
-        let sourceZip: Buffer;
-        try {
-          sourceZip = await client.downloadRepositoryFolderZip(repositoryId, source);
-        } catch (error) {
-          if (isNotFoundError(error)) {
-            throw new McpError(
-              ErrorCode.InvalidParams,
-              `Cannot clone: source project '${source}' was not found in repository '${typedArgs.repository}'. ` +
-                `Use openl_list_projects() to see existing project names.`
-            );
-          }
-          throw error;
-        }
-
-        let created: Types.CreateProjectResult;
-        try {
-          created = await client.createProjectFromZip(repositoryId, typedArgs.projectName, sourceZip, {
-            comment: typedArgs.comment,
-          });
-        } catch (error) {
-          rethrowConflictAsActionable(
-            error,
-            `Cannot create project: a project named '${typedArgs.projectName}' already exists in repository '${typedArgs.repository}'. ` +
-              `Choose a different projectName.`
-          );
-        }
-
-        const result = {
-          success: true,
-          mode: "clone",
-          projectId: typedArgs.projectName,
-          projectName: typedArgs.projectName,
-          source,
-          repository: typedArgs.repository,
-          branch: created.branch,
-          revision: created.revision,
-          message:
-            `Cloned '${source}' to '${typedArgs.projectName}' in repository '${typedArgs.repository}'` +
-            `${created.revision ? ` at revision ${created.revision}` : ""}. ` +
-            `The project is indexed and visible in openl_list_projects immediately; ` +
-            `the project name in rules.xml (if present) was updated by the server.`,
-        };
-
-        return {
-          content: [{ type: "text", text: formatResponse(result, format) }],
-        };
-      }
-
-      if (typedArgs.template) {
-        // BRANCH clone: the create-from-zip endpoint cannot target a branch, so
-        // this path still copies through the raw git files API. The clone lands
-        // on the requested branch but bypasses OpenL's workspace indexing.
-        const source = typedArgs.template;
-        const branch = typedArgs.branch;
-
-        // 1. Recursively copy the source project folder to the new project folder.
-        try {
-          await client.copyRepositoryFile(repositoryId, source, typedArgs.projectName, branch);
-        } catch (error) {
-          rethrowConflictAsActionable(
-            error,
-            `Cannot create project: a project or folder named '${typedArgs.projectName}' already exists in repository '${typedArgs.repository}'` +
-              `${branch ? ` (branch '${branch}')` : ""}. Choose a different projectName.`
-          );
-        }
-
-        // 2. Rename the project in rules.xml (best-effort; mirrors CopyProjectTransformer).
-        //    A descriptor-less project (no rules.xml) keeps its folder name as its name.
-        let renamedDescriptor = false;
-        const rulesXmlPath = `${typedArgs.projectName}/rules.xml`;
-        const rulesXml = await client.getRepositoryFileContent(repositoryId, rulesXmlPath, branch);
-        if (rulesXml !== null) {
-          const updated = setRulesXmlProjectName(rulesXml, typedArgs.projectName);
-          if (updated !== rulesXml) {
-            await client.updateRepositoryFileRaw(repositoryId, rulesXmlPath, updated, branch);
-            renamedDescriptor = true;
-          }
-        }
-
-        // 3. Read back the commit revision (best-effort — file-copy returns no hash).
-        let revision: string | undefined;
-        try {
-          const history = await client.getProjectRevisions(repositoryId, typedArgs.projectName, {
-            branch,
-            size: 1,
-          });
-          revision = history.content?.[0]?.revisionNo;
-        } catch {
-          // Read-back is best-effort; the clone itself already succeeded.
-        }
-
-        const result = {
-          success: true,
-          mode: "clone",
-          projectId: typedArgs.projectName,
-          projectName: typedArgs.projectName,
-          source,
-          repository: typedArgs.repository,
-          branch,
-          revision,
-          renamedDescriptor,
-          message:
-            `Cloned '${source}' to '${typedArgs.projectName}' in repository '${typedArgs.repository}'` +
-            `${branch ? ` (branch '${branch}')` : ""}` +
-            `${revision ? ` at revision ${revision}` : ""}.`,
-          note:
-            "Branch clone goes through the raw git files API (one commit per file, not atomic): the new project " +
-            "may not appear in openl_list_projects (and its history/revision may be unavailable) until OpenL " +
-            "re-indexes the repository. Commit messages are system-generated. To get an immediately-visible, " +
-            "atomically-committed clone on the default branch, omit `branch`." +
-            (revision ? "" : " No commit revision could be read back yet (project not indexed)."),
-        };
-
-        return {
-          content: [{ type: "text", text: formatResponse(result, format) }],
-        };
-      }
-
-      // -----------------------------------------------------------------------
-      // CREATE mode: blank project from the bundled empty skeleton.
-      // -----------------------------------------------------------------------
-      if (typedArgs.branch) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          "branch is only supported when cloning (with `template`). A blank project is created on the " +
-            "repository's default branch — omit `branch`, or clone an existing project to target a specific branch."
-        );
-      }
-
-      const templateZip = getProjectTemplateZip("empty");
+      const source = typedArgs.template;
       let created: Types.CreateProjectResult;
       try {
-        created = await client.createProjectFromZip(repositoryId, typedArgs.projectName, templateZip, {
-          comment: typedArgs.comment,
-        });
+        created = source
+          ? await client.copyProject(
+              repositoryId,
+              typedArgs.projectName,
+              repositoryId,
+              source,
+              { comment: typedArgs.comment, branch: typedArgs.branch },
+            )
+          : await client.createProjectFromZip(
+              repositoryId,
+              typedArgs.projectName,
+              getProjectTemplateZip("empty"),
+              { comment: typedArgs.comment, branch: typedArgs.branch },
+            );
       } catch (error) {
+        if (source && isNotFoundError(error)) {
+          throw new McpError(
+            ErrorCode.InvalidParams,
+            `Cannot copy: source project '${source}' was not found in repository '${typedArgs.repository}'. ` +
+              "Use openl_list_projects() to find an existing source project.",
+          );
+        }
         rethrowConflictAsActionable(
           error,
           `Cannot create project: a project named '${typedArgs.projectName}' already exists in repository '${typedArgs.repository}'. ` +
@@ -756,18 +627,31 @@ export function registerProjectHandlers(): void {
         );
       }
 
+      const projectId = await tryFindCreatedProjectId(
+        client,
+        repositoryId,
+        typedArgs.projectName,
+        typedArgs.branch,
+      );
+
       const result = {
         success: true,
-        mode: "create",
-        projectId: typedArgs.projectName,
+        mode: source ? "copy" : "create",
+        ...(projectId ? { projectId } : {}),
         projectName: typedArgs.projectName,
+        ...(source ? { source } : {}),
         repository: typedArgs.repository,
         branch: created.branch,
         revision: created.revision,
         message:
-          `Created project '${typedArgs.projectName}' in repository '${typedArgs.repository}'` +
+          `${source ? `Copied '${source}' to` : "Created project"} '${typedArgs.projectName}' in repository '${typedArgs.repository}'` +
           `${created.branch ? ` (branch '${created.branch}')` : ""}` +
           `${created.revision ? ` at revision ${created.revision}` : ""}.`,
+        ...(!projectId ? {
+          note:
+            "The created or copied project could not be read back to resolve its canonical projectId. " +
+            "Call openl_list_projects with this repository and project name before using project tools.",
+        } : {}),
       };
 
       return {

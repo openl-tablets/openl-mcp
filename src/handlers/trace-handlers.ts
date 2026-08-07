@@ -16,7 +16,6 @@ import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 
 import * as schemas from "../schemas.js";
 import { formatResponse } from "../formatters.js";
-import { validateResponseFormat } from "../validators.js";
 import { isAxiosError, isNotFoundError } from "../utils.js";
 import { registerTool, type ToolResponse, type ToolHandlerExtra } from "./common.js";
 import type { OpenLClient } from "../client.js";
@@ -276,30 +275,14 @@ export function registerTraceHandlers(): void {
       "For a profiling overview pass inputJson (or testRanges) together with profiling: true and stopAtEntry: false EXPLICITLY every time — do not rely on replay (omitting the input): a replay only reproduces the compact profile if the remembered run was itself a profiling run, otherwise it can return a much larger stack that overflows the response limit. " +
       "Find the hot or unexpected table in profile.hotspots, then replay into it with a breakpoint to inspect live values. The executed 'tree' is omitted by default; set includeTree: true to get its ROOT node (one level — each step carries a childrenTotal count) and browse a branch level by level with openl_expand_trace_tree. " +
       "One active session per user — starting a new one terminates the previous. Idle sessions are reaped after ~10 minutes.",
-    inputSchema: schemas.z.toJSONSchema(schemas.startTraceSchema) as Record<string, unknown>,
+    schema: schemas.startTraceSchema,
     annotations: {
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        tableId: string;
-        testRanges?: string;
-        inputJson?: string | Record<string, unknown>;
-        fromModule?: string;
-        stopAtEntry?: boolean;
-        profiling?: boolean;
-        breakpoints?: string[];
-        includeTree?: boolean;
-        profileTop?: number;
-        response_format?: string;
-      };
+      const typedArgs = args;
 
-      if (!typedArgs?.projectId || !typedArgs?.tableId) {
-        throw new McpError(ErrorCode.InvalidParams, "Missing required arguments: projectId, tableId");
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
+      const format = typedArgs.response_format;
 
       if (typedArgs.breakpoints) {
         await client.setTraceBreakpoints(typedArgs.projectId, typedArgs.breakpoints);
@@ -313,6 +296,8 @@ export function registerTraceHandlers(): void {
         inputJson: typedArgs.inputJson,
         stopAtEntry: typedArgs.stopAtEntry,
         profiling: typedArgs.profiling,
+        detailedTitles: typedArgs.detailedTitles,
+        breakOnErrors: typedArgs.breakOnErrors,
         // Never pull the >1 MB full tree unless explicitly asked; the bounded
         // `profile` overview covers the "understand the whole run" case.
         includeTree: typedArgs.profiling ? (typedArgs.includeTree ?? false) : undefined,
@@ -333,27 +318,22 @@ export function registerTraceHandlers(): void {
       "with completed: true and its result readable via openl_inspect_trace_frame (or pass withValues: true to bundle those variables into this response); the next step continues in the caller. " +
       "An exception suspends at the throwing frame before it propagates. The stack is returned compact — steps only for the active frame; use openl_inspect_trace_frame for another frame's detail. Valid only while suspended. " +
       "(openl_resume_trace differs: it runs to the next breakpoint or completion, not just to this frame's exit.)",
-    inputSchema: schemas.z.toJSONSchema(schemas.stepTraceSchema) as Record<string, unknown>,
+    schema: schemas.stepTraceSchema,
     annotations: {
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        type: "into" | "over" | "out";
-        withValues?: boolean;
-        response_format?: string;
-      };
+      const typedArgs = args;
 
-      if (!typedArgs?.projectId || !typedArgs?.type) {
-        throw new McpError(ErrorCode.InvalidParams, "Missing required arguments: projectId, type");
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
+      const format = typedArgs.response_format;
 
       let stack: Types.DebugStackView;
       try {
-        stack = await client.traceStep(typedArgs.projectId, typedArgs.type, { view: "compact" });
+        stack = await client.traceStep(typedArgs.projectId, typedArgs.type, {
+          view: "compact",
+          includeTree: typedArgs.includeTree ?? false,
+          profileTop: typedArgs.profileTop,
+        });
       } catch (error) {
         rethrowTraceStateError(error, "step");
       }
@@ -379,24 +359,14 @@ export function registerTraceHandlers(): void {
       "Resume the suspended debug session and wait (inside this call — no agent-side polling) until it stops again: at the next breakpoint, at an exception, or at completion. Unlike openl_step_trace(out), which only runs the current frame to its exit, resume runs to the NEXT breakpoint or the end. " +
       "Returns the stack (compact — steps for the active frame only) at the stop; on a terminal 'error' status it carries the structured 'error', and on 'completed' of a profiling run the constant-size 'profile' overview (set includeTree: true for the one-level 'tree' root, then drill in with openl_expand_trace_tree). " +
       "On timeout (default 30s) the still-running status is returned — call openl_resume_trace again to keep waiting (it re-attaches without re-resuming), or openl_stop_trace to give up.",
-    inputSchema: schemas.z.toJSONSchema(schemas.resumeTraceSchema) as Record<string, unknown>,
+    schema: schemas.resumeTraceSchema,
     annotations: {
       openWorldHint: true,
     },
     handler: async (args, client, extra): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        timeoutMs?: number;
-        includeTree?: boolean;
-        profileTop?: number;
-        response_format?: string;
-      };
+      const typedArgs = args;
 
-      if (!typedArgs?.projectId) {
-        throw new McpError(ErrorCode.InvalidParams, "Missing required argument: projectId");
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
+      const format = typedArgs.response_format;
       const timeoutMs = typedArgs.timeoutMs ?? DEFAULT_RESUME_TIMEOUT_MS;
 
       try {
@@ -458,27 +428,15 @@ export function registerTraceHandlers(): void {
       "Values may come lazy (lazy: true + parameterId) — expand with openl_get_trace_value. By default the response is trimmed (no value JSON schemas); full: true lifts the trim. " +
       "To surface an anomaly among many neutral factors, filter the steps: onlyExecutedSteps drops not-yet-computed ones, and excludeStepValues drops steps whose value is a neutral constant (e.g. [1] in rating) — lazy step values are resolved before the comparison, so a neutral factor that came lazy is dropped too. " +
       "withHighlights: true additionally returns the A1-keyed cell highlight overlay and the raw table grid to merge it with. Valid only while suspended (a terminal session answers 409 — read its final state from the last returned stack).",
-    inputSchema: schemas.z.toJSONSchema(schemas.inspectTraceFrameSchema) as Record<string, unknown>,
+    schema: schemas.inspectTraceFrameSchema,
     annotations: {
       readOnlyHint: true,
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        frameIndex: number;
-        withHighlights?: boolean;
-        full?: boolean;
-        onlyExecutedSteps?: boolean;
-        excludeStepValues?: Array<number | string | boolean>;
-        response_format?: string;
-      };
+      const typedArgs = args;
 
-      if (!typedArgs?.projectId || typedArgs?.frameIndex == null) {
-        throw new McpError(ErrorCode.InvalidParams, "Missing required arguments: projectId, frameIndex");
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
+      const format = typedArgs.response_format;
 
       // The highlight overlay and the stack only need projectId/frameIndex, so
       // fire them alongside the variables fetch (which may itself do lazy-value
@@ -497,6 +455,7 @@ export function registerTraceHandlers(): void {
           typedArgs.projectId,
           typedArgs.frameIndex,
           typedArgs.full ? undefined : INSPECT_FIELDS,
+          typedArgs.full ?? false,
         );
       } catch (error) {
         // Don't leak the in-flight parallel fetches as unhandled rejections.
@@ -518,7 +477,7 @@ export function registerTraceHandlers(): void {
         // from the shared Tables API raw view, resolved via the frame's tableId.
         const frame = stack.frames.find((f) => f.index === typedArgs.frameIndex);
         const grid = frame
-          ? await client.getTable(typedArgs.projectId, frame.tableId, true)
+          ? await client.getTable(typedArgs.projectId, frame.tableId)
           : undefined;
         result = { ...variables, highlights, grid };
       }
@@ -539,22 +498,14 @@ export function registerTraceHandlers(): void {
       "(uri from frames[].uri); '<uri>#R{r}C{c}' at a spreadsheet cell; '<uri>#rule' when ANY rule of that decision table fires; '<uri>#<ruleName>' when a specific rule fires " +
       "(rule names from openl_inspect_trace_frame ruleNames/decision). Append '@N' to any key to break only on the table's N-th execution (0-based) — e.g. '<uri>#R48C0@3'; without it a cell breakpoint hits every pass of a table that runs many times (one per coverage/iteration). N matches frames[].instance and the 'instance' of an openl_watch_trace_cells series, so a watch outlier at instance 3 is reached with '@3'. " +
       "Works without a session — set breakpoints before openl_start_trace; changes during a session apply at the next frame enter or line change.",
-    inputSchema: schemas.z.toJSONSchema(schemas.setTraceBreakpointsSchema) as Record<string, unknown>,
+    schema: schemas.setTraceBreakpointsSchema,
     annotations: {
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        set?: string[];
-        response_format?: string;
-      };
+      const typedArgs = args;
 
-      if (!typedArgs?.projectId) {
-        throw new McpError(ErrorCode.InvalidParams, "Missing required argument: projectId");
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
+      const format = typedArgs.response_format;
 
       if (typedArgs.set) {
         await client.setTraceBreakpoints(typedArgs.projectId, typedArgs.set);
@@ -578,25 +529,16 @@ export function registerTraceHandlers(): void {
     description:
       "Fetch the full value of a parameter that openl_inspect_trace_frame returned lazily (lazy: true with a parameterId). Valid while the debug session is alive. " +
       "By default only name, description, and value are returned; withSchema: true adds the value's JSON Schema (large — request it only when the type structure itself matters).",
-    inputSchema: schemas.z.toJSONSchema(schemas.getTraceValueSchema) as Record<string, unknown>,
+    schema: schemas.getTraceValueSchema,
     annotations: {
       readOnlyHint: true,
       idempotentHint: true,
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        parameterId: number;
-        withSchema?: boolean;
-        response_format?: string;
-      };
+      const typedArgs = args;
 
-      if (!typedArgs?.projectId || typedArgs?.parameterId == null) {
-        throw new McpError(ErrorCode.InvalidParams, "Missing required arguments: projectId, parameterId");
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
+      const format = typedArgs.response_format;
 
       let param: Types.TraceParameterValue;
       try {
@@ -604,6 +546,7 @@ export function registerTraceHandlers(): void {
           typedArgs.projectId,
           typedArgs.parameterId,
           typedArgs.withSchema ? undefined : "name,description,value",
+          typedArgs.withSchema ?? false,
         );
       } catch (error) {
         rethrowTraceStateError(error, "lazy value fetch");
@@ -624,28 +567,16 @@ export function registerTraceHandlers(): void {
       "Expand a step whose childrenTotal > 0 by naming its node (uri + instance) and the step's ref; the reply is a TreeChildrenView { children, total } where each child is itself shallow (its own steps' childrenTotal), expanded by calling this tool again. " +
       "Page a loop's many sub-calls with offset/limit (default 100): when total > offset + children.length the reply sets hasMore: true and nextOffset — call again with that offset to get the next page. A returned node may also carry `notRetained` — sub-calls that ran but were dropped once the retained tree hit its size limit (report as '+N not retained'). " +
       "Requires a profiling run (profiling: true retains the tree). To find what's slow use the constant-size `profile` overview instead; use this to walk one branch's call structure. Valid while the debug session is alive (including after the run completes).",
-    inputSchema: schemas.z.toJSONSchema(schemas.expandTraceTreeSchema) as Record<string, unknown>,
+    schema: schemas.expandTraceTreeSchema,
     annotations: {
       readOnlyHint: true,
       idempotentHint: true,
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        uri: string;
-        instance: number;
-        step: string;
-        offset?: number;
-        limit?: number;
-        response_format?: string;
-      };
+      const typedArgs = args;
 
-      if (!typedArgs?.projectId || !typedArgs?.uri || typedArgs?.instance == null || !typedArgs?.step) {
-        throw new McpError(ErrorCode.InvalidParams, "Missing required arguments: projectId, uri, instance, step");
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
+      const format = typedArgs.response_format;
 
       let view: Types.TreeChildrenView;
       try {
@@ -687,17 +618,13 @@ export function registerTraceHandlers(): void {
     title: "Terminate Debug Session",
     description:
       "Terminate the debug session and free its worker and lazy-value registry. Idempotent — succeeds even when no session is active. Breakpoints survive (they are session-scoped, not run-scoped).",
-    inputSchema: schemas.z.toJSONSchema(schemas.stopTraceSchema) as Record<string, unknown>,
+    schema: schemas.stopTraceSchema,
     annotations: {
       idempotentHint: true,
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as { projectId: string; response_format?: string };
-
-      if (!typedArgs?.projectId) {
-        throw new McpError(ErrorCode.InvalidParams, "Missing required argument: projectId");
-      }
+      const typedArgs = args;
 
       await client.stopTrace(typedArgs.projectId);
 
@@ -716,27 +643,14 @@ export function registerTraceHandlers(): void {
       "Runs the table to completion and returns a WatchView: one 'series' per cell with a 'points' array holding the cell's value at each execution of its table (each point carries instance/label/ref/path; value is serialized like any traced value and may come lazy — expand a large one with openl_get_trace_value using its parameterId). " +
       "Read the series, spot the outlier (e.g. 83.372 among 1.0s), then jump straight to that pass: set a breakpoint '<point.ref>@<point.instance>' (the '@N' suffix targets the N-th execution — same 0-based numbering as the series' 'instance') and replay + openl_inspect_trace_frame to see why. Value JSON Schemas are omitted by default (withSchema: true restores them). " +
       "Captures cells inside lazy result branches too (nested SpreadsheetResult[]) — the run materializes the whole result. The server caps points per series for a cell deep in a combinatorial branch (benefit × gender × age-band …); each series reports 'total' (the full execution count) and WatchView.truncated flags that some late executions were dropped — inspect a specific one with a '<ref>@N' breakpoint. Pass testRanges for a test table or inputJson for a regular rule (omit both to replay the remembered input). This starts a fresh session (terminates any previous one) and clears breakpoints so the run reaches completion.",
-    inputSchema: schemas.z.toJSONSchema(schemas.watchTraceCellsSchema) as Record<string, unknown>,
+    schema: schemas.watchTraceCellsSchema,
     annotations: {
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
-      const typedArgs = args as {
-        projectId: string;
-        tableId: string;
-        cells: string[];
-        testRanges?: string;
-        inputJson?: string | Record<string, unknown>;
-        fromModule?: string;
-        withSchema?: boolean;
-        response_format?: string;
-      };
+      const typedArgs = args;
 
-      if (!typedArgs?.projectId || !typedArgs?.tableId || !typedArgs?.cells?.length) {
-        throw new McpError(ErrorCode.InvalidParams, "Missing required arguments: projectId, tableId, cells");
-      }
-
-      const format = validateResponseFormat(typedArgs.response_format);
+      const format = typedArgs.response_format;
 
       // Clear any breakpoints left set earlier in this session — they are
       // session-scoped and would suspend the run mid-way, so the watch would
@@ -761,7 +675,11 @@ export function registerTraceHandlers(): void {
 
       let watch: Types.WatchView;
       try {
-        watch = await client.getTraceWatch(typedArgs.projectId, typedArgs.withSchema ? undefined : WATCH_FIELDS);
+        watch = await client.getTraceWatch(
+          typedArgs.projectId,
+          typedArgs.withSchema ? undefined : WATCH_FIELDS,
+          typedArgs.withSchema ?? false,
+        );
       } catch (error) {
         rethrowTraceStateError(error, "watch read");
       }
@@ -772,10 +690,10 @@ export function registerTraceHandlers(): void {
       let payload: unknown = watch;
       if (watch.truncated) {
         payload = {
-          ...watch,
           note:
             "Some series were truncated by the server (their 'total' exceeds the returned points, so late executions are missing). " +
             "Inspect a specific execution with a '<ref>@N' breakpoint, or watch a higher-level cell.",
+          ...watch,
         };
       }
 

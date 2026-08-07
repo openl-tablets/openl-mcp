@@ -1,169 +1,167 @@
-/**
- * Unit tests for input schemas — focused on the EditableTableView discriminated
- * union published by openl_create_project_table. This guards the "structural
- * prevention" fix: an LLM must see the correct REQUIRED/forbidden fields per
- * tableType (so it can't reuse, e.g., the SimpleRules shape for a Test table).
- */
+/** Unit tests for MCP input contracts. */
 
-import { describe, it, expect } from "@jest/globals";
-import { z, createProjectTableSchema, appendTableSchema, APPEND_TABLE_TYPES, EDITABLE_TABLE_TYPES } from "../src/schemas.js";
+import { describe, expect, it } from "@jest/globals";
+import {
+  appendTableSchema,
+  copyTableSchema,
+  createProjectTableSchema,
+  deleteProjectBranchSchema,
+  deleteProjectSchema,
+  getProjectRevisionsSchema,
+  getTableDependenciesSchema,
+  listProjectsSchema,
+  mergeProjectBranchesSchema,
+  runTableSchema,
+  updateTableSchema,
+  z,
+} from "../src/schemas.js";
 
-type JsonSchemaObject = {
-  properties: Record<string, { oneOf?: BranchSchema[] }>;
+const rawTable = {
+  tableType: "RawSource" as const,
+  name: "Rate",
+  source: [[{
+    value: "Rules void Rate()",
+    cell: "A1",
+    colspan: 2,
+    rowspan: 2,
+    covered: false,
+    style: {
+      bold: true,
+      background: "#ffffff",
+      border: { bottom: { style: "solid" as const, width: 1 } },
+    },
+  }]],
 };
-type BranchSchema = {
-  properties: Record<string, { const?: string; enum?: string[] }>;
-  required?: string[];
-  additionalProperties?: boolean;
-};
 
-function tableBranches(): BranchSchema[] {
-  const json = z.toJSONSchema(createProjectTableSchema) as unknown as JsonSchemaObject;
-  return json.properties.table.oneOf ?? [];
-}
-function branchFor(tableType: string): BranchSchema | undefined {
-  return tableBranches().find((b) => {
-    const tt = b.properties?.tableType;
-    return tt?.const === tableType || (tt?.enum ?? []).includes(tableType);
-  });
-}
+describe("RawSource-only table contracts", () => {
+  it("publishes only RawSource for create, update, and append", () => {
+    const createJson = z.toJSONSchema(createProjectTableSchema) as Record<string, any>;
+    const updateJson = z.toJSONSchema(updateTableSchema) as Record<string, any>;
+    const appendJson = z.toJSONSchema(appendTableSchema) as Record<string, any>;
 
-describe("createProjectTableSchema.table (EditableTableView union)", () => {
-  it("is a discriminated union covering all 11 table types", () => {
-    const branches = tableBranches();
-    expect(branches.length).toBe(11);
-    const types = branches.map((b) => b.properties.tableType.const ?? b.properties.tableType.enum?.[0]);
-    expect(types).toEqual(
-      expect.arrayContaining([
-        "Datatype", "Vocabulary", "Spreadsheet", "SimpleSpreadsheet", "SimpleRules",
-        "SmartRules", "SimpleLookup", "SmartLookup", "Data", "Test", "RawSource",
-      ])
+    expect(createJson.properties.table.properties.tableType.const).toBe("RawSource");
+    expect(updateJson.properties.view.properties.tableType.const).toBe("RawSource");
+    expect(appendJson.properties.appendData.properties.tableType.const).toBe("RawSource");
+    expect(JSON.stringify({ createJson, updateJson, appendJson })).not.toMatch(
+      /SimpleRules|SmartRules|SpreadsheetAppend|DatatypeAppend|EditableTableView/,
     );
   });
 
-  it("Test branch requires testedTableName and forbids the rules-table fields", () => {
-    const test = branchFor("Test");
-    expect(test).toBeDefined();
-    expect(test!.required).toEqual(expect.arrayContaining(["tableType", "name", "testedTableName"]));
-    expect(test!.additionalProperties).toBe(false); // forbids extras up front
-    // The data-table shape — NOT the rules-table shape:
-    expect(test!.properties).toHaveProperty("headers");
-    expect(test!.properties).toHaveProperty("rows");
-    expect(test!.properties).not.toHaveProperty("rules");
-    expect(test!.properties).not.toHaveProperty("testedMethodName");
-    expect(test!.properties).not.toHaveProperty("signature");
-  });
-
-  it("SimpleRules branch exposes args/returnType/rules and forbids the data-table fields", () => {
-    const rules = branchFor("SimpleRules");
-    expect(rules).toBeDefined();
-    expect(rules!.additionalProperties).toBe(false);
-    expect(rules!.properties).toHaveProperty("args");
-    expect(rules!.properties).toHaveProperty("returnType");
-    expect(rules!.properties).toHaveProperty("rules");
-    expect(rules!.properties).not.toHaveProperty("testedTableName");
-    expect(rules!.properties).not.toHaveProperty("signature");
-  });
-
-  it("SimpleSpreadsheet branch models steps as {name,type,value} and forbids 'formula'", () => {
-    const ss = branchFor("SimpleSpreadsheet");
-    expect(ss).toBeDefined();
-    expect(ss!.properties).toHaveProperty("steps");
-    const stepItems = (ss!.properties as Record<string, { items?: BranchSchema }>).steps.items!;
-    expect(Object.keys(stepItems.properties)).toEqual(expect.arrayContaining(["name", "type", "value"]));
-    expect(stepItems.properties).not.toHaveProperty("formula"); // the field the agent wrongly used
-    expect(stepItems.additionalProperties).toBe(false);
-  });
-
-  it("Datatype branch exposes fields incl. 'required' (parity with append)", () => {
-    const dt = branchFor("Datatype");
-    expect(dt).toBeDefined();
-    expect(dt!.properties).toHaveProperty("fields");
-    const fieldItem = (dt!.properties as Record<string, { items?: BranchSchema }>).fields.items!;
-    expect(Object.keys(fieldItem.properties)).toEqual(expect.arrayContaining(["name", "type", "required", "defaultValue"]));
-    expect(dt!.required).toEqual(expect.arrayContaining(["tableType", "name"]));
-  });
-
-  it("runtime-parses a Datatype payload and preserves boolean 'required' (create + append)", () => {
-    const created = createProjectTableSchema.parse({
+  it("round-trips the complete raw cell representation", () => {
+    expect(createProjectTableSchema.parse({
       projectId: "p1",
       moduleName: "Main",
-      table: {
-        tableType: "Datatype",
-        name: "LoanApplication",
-        fields: [{ name: "age", type: "Integer", required: true }],
-      },
-    });
-    const createdTable = created.table as { fields: Array<{ required: unknown }> };
-    expect(createdTable.fields[0].required).toBe(true);
+      table: rawTable,
+    }).table).toEqual(rawTable);
 
-    const appended = appendTableSchema.parse({
+    expect(updateTableSchema.parse({
       projectId: "p1",
       tableId: "t1",
-      appendData: {
-        tableType: "Datatype",
-        fields: [{ name: "score", type: "Integer", required: false }],
-      },
-    });
-    const appendData = appended.appendData as { fields: Array<{ required: unknown }> };
-    expect(appendData.fields[0].required).toBe(false);
+      view: rawTable,
+    }).view.source[0][0]).toEqual(rawTable.source[0][0]);
+  });
+
+  it("requires a nonblank name and complete source when creating", () => {
+    expect(createProjectTableSchema.safeParse({
+      projectId: "p1", moduleName: "Main", table: { tableType: "RawSource", source: [] },
+    }).success).toBe(false);
+    expect(createProjectTableSchema.safeParse({
+      projectId: "p1", moduleName: "Main", table: { ...rawTable, name: "  " },
+    }).success).toBe(false);
+    expect(createProjectTableSchema.safeParse({
+      projectId: "p1", moduleName: "Main", table: { tableType: "RawSource", name: "Rate" },
+    }).success).toBe(false);
+  });
+
+  it("requires at least one raw append row", () => {
+    expect(appendTableSchema.safeParse({
+      projectId: "p1", tableId: "t1", appendData: { tableType: "RawSource", rows: [] },
+    }).success).toBe(false);
+    expect(appendTableSchema.safeParse({
+      projectId: "p1", tableId: "t1", appendData: { tableType: "RawSource", rows: [[{ value: null }]] },
+    }).success).toBe(true);
+    expect(appendTableSchema.safeParse({
+      projectId: "p1", tableId: "t1", appendData: { tableType: "RawSource", rows: [[]] },
+    }).success).toBe(false);
+    expect(appendTableSchema.safeParse({
+      projectId: "p1", tableId: "t1", appendData: { tableType: "RawSource", rows: [[{ value: "x", colspan: 0 }]] },
+    }).success).toBe(false);
+  });
+
+  it.each(["Datatype", "SimpleRules", "Spreadsheet", "Test"])(
+    "rejects the lossy typed %s table contract",
+    (tableType) => {
+      expect(createProjectTableSchema.safeParse({
+        projectId: "p1", moduleName: "Main", table: { ...rawTable, tableType },
+      }).success).toBe(false);
+      expect(updateTableSchema.safeParse({
+        projectId: "p1", tableId: "t1", view: { ...rawTable, tableType },
+      }).success).toBe(false);
+      expect(appendTableSchema.safeParse({
+        projectId: "p1", tableId: "t1", appendData: {
+          tableType,
+          rows: [[{ value: "x" }]],
+        },
+      }).success).toBe(false);
+    },
+  );
+
+  it("accepts only an xlsx modulePath", () => {
+    const base = { projectId: "p1", moduleName: "Rules", table: rawTable };
+    expect(createProjectTableSchema.safeParse({ ...base, modulePath: "rules/Rules.xlsx" }).success).toBe(true);
+    expect(createProjectTableSchema.safeParse({ ...base, modulePath: "rules/Rules.xls" }).success).toBe(false);
   });
 });
 
-describe("appendTableSchema.appendData union", () => {
-  function appendBranches(): BranchSchema[] {
-    const json = z.toJSONSchema(appendTableSchema) as unknown as JsonSchemaObject;
-    return json.properties.appendData.oneOf ?? [];
-  }
-
-  it("covers all 11 appendable table types (incl. full Spreadsheet/Data/Test/SimpleLookup/SmartLookup)", () => {
-    const types = appendBranches().map((b) => b.properties.tableType.const ?? b.properties.tableType.enum?.[0]);
-    expect(types).toEqual(
-      expect.arrayContaining([
-        "Datatype", "SimpleRules", "SmartRules", "SimpleSpreadsheet", "Spreadsheet", "Vocabulary",
-        "SimpleLookup", "SmartLookup", "Data", "Test", "RawSource",
-      ])
-    );
-    expect(appendBranches().length).toBe(11);
+describe("table workflow schemas", () => {
+  it("accepts both backend-supported run input forms and rejects scalar JSON", () => {
+    expect(runTableSchema.safeParse({ projectId: "p1", tableId: "t1", inputJson: [42] }).success).toBe(true);
+    expect(runTableSchema.safeParse({ projectId: "p1", tableId: "t1", inputJson: { params: { age: 25 } } }).success).toBe(true);
+    expect(runTableSchema.safeParse({ projectId: "p1", tableId: "t1", inputJson: "invalid" }).success).toBe(false);
   });
 
-  it("Test/Data append branches use rows:[{values}]", () => {
-    for (const tt of ["Test", "Data"]) {
-      const b = appendBranches().find((x) => x.properties.tableType.const === tt);
-      expect(b).toBeDefined();
-      const rowsItem = (b!.properties as Record<string, { items?: BranchSchema }>).rows.items!;
-      expect(rowsItem.properties).toHaveProperty("values");
-    }
+  it("enforces distinct project-graph and table-neighborhood options", () => {
+    expect(getTableDependenciesSchema.safeParse({ projectId: "p1", module: "Main" }).success).toBe(true);
+    expect(getTableDependenciesSchema.safeParse({ projectId: "p1", tableId: "t1", direction: "DEPENDENCIES", depth: 2 }).success).toBe(true);
+    expect(getTableDependenciesSchema.safeParse({ projectId: "p1", direction: "DEPENDENCIES" }).success).toBe(false);
+    expect(getTableDependenciesSchema.safeParse({ projectId: "p1", tableId: "t1", module: "Main" }).success).toBe(false);
   });
 
-  it("Spreadsheet append branch requires cells (rows stays optional)", () => {
-    const b = appendBranches().find((x) => x.properties.tableType.const === "Spreadsheet");
-    expect(b).toBeDefined();
-    expect(b!.required).toEqual(expect.arrayContaining(["tableType", "cells"]));
-    expect(b!.required).not.toContain("rows");
+  it("requires copy destinations and validates new module paths", () => {
+    const valid = { projectId: "p1", tableId: "t1", moduleName: "Main", name: "CopiedRate" };
+    expect(copyTableSchema.safeParse(valid).success).toBe(true);
+    expect(copyTableSchema.safeParse({ ...valid, modulePath: "rules/Copy.xlsx" }).success).toBe(true);
+    expect(copyTableSchema.safeParse({ ...valid, modulePath: "rules/Copy.xls" }).success).toBe(false);
+    expect(copyTableSchema.safeParse({ ...valid, name: " " }).success).toBe(false);
   });
 });
 
-// Pins the lists derived from the unions by discriminatorValues() (schemas.ts):
-// if a future Zod-internal change makes the derivation degrade to [] / [undefined],
-// the load-time guard throws and these tests fail loudly instead of the lists
-// silently going stale (which would break tableType case-normalization + hints).
-describe("derived tableType constants", () => {
-  it("APPEND_TABLE_TYPES matches the appendData union discriminators (incl. full Spreadsheet)", () => {
-    expect([...APPEND_TABLE_TYPES].sort()).toEqual(
-      [
-        "Data", "Datatype", "RawSource", "SimpleLookup", "SimpleRules",
-        "SimpleSpreadsheet", "SmartLookup", "SmartRules", "Spreadsheet", "Test", "Vocabulary",
-      ].sort()
-    );
+describe("project branch and merge schemas", () => {
+  it("requires explicit confirmation for protected-branch force", () => {
+    const merge = { projectId: "p1", otherBranch: "release", mode: "send", force: true } as const;
+    expect(mergeProjectBranchesSchema.safeParse(merge).success).toBe(false);
+    expect(mergeProjectBranchesSchema.safeParse({ ...merge, confirmForce: true }).success).toBe(true);
   });
 
-  it("EDITABLE_TABLE_TYPES matches the editable-view union discriminators (incl. Spreadsheet)", () => {
-    expect([...EDITABLE_TABLE_TYPES].sort()).toEqual(
-      [
-        "Data", "Datatype", "RawSource", "SimpleLookup", "SimpleRules",
-        "SimpleSpreadsheet", "SmartLookup", "SmartRules", "Spreadsheet", "Test", "Vocabulary",
-      ].sort()
-    );
+  it("requires exact deletion confirmations and force acknowledgement", () => {
+    expect(deleteProjectSchema.safeParse({ projectId: "p1" }).success).toBe(false);
+    expect(deleteProjectSchema.safeParse({ projectId: "p1", confirmProjectName: "Rating" }).success).toBe(true);
+    const branch = { projectId: "p1", branch: "feature/rate", confirmBranchName: "feature/rate" };
+    expect(deleteProjectBranchSchema.safeParse(branch).success).toBe(true);
+    expect(deleteProjectBranchSchema.safeParse({ ...branch, confirmBranchName: "feature/other" }).success).toBe(false);
+    expect(deleteProjectBranchSchema.safeParse({ ...branch, force: true }).success).toBe(false);
+    expect(deleteProjectBranchSchema.safeParse({ ...branch, force: true, confirmForce: true }).success).toBe(true);
+  });
+});
+
+describe("current project filters", () => {
+  it("accepts DELETED and rejects removed ARCHIVED status", () => {
+    expect(listProjectsSchema.safeParse({ status: "DELETED" }).success).toBe(true);
+    expect(listProjectsSchema.safeParse({ status: "ARCHIVED" }).success).toBe(false);
+  });
+
+  it("accepts an exact revision offset and rejects combining it with page", () => {
+    expect(getProjectRevisionsSchema.safeParse({ repository: "design", projectName: "Rules", offset: 25 }).success).toBe(true);
+    expect(getProjectRevisionsSchema.safeParse({ repository: "design", projectName: "Rules", offset: 25, page: 0 }).success).toBe(false);
   });
 });

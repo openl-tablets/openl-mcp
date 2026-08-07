@@ -16,14 +16,13 @@ export interface ProjectId {
 }
 
 export interface LockInfo {
-  locked: boolean;
-  lockedBy?: string;
-  lockedAt?: string;
+  lockedBy: string;
+  lockedAt: string;
 }
 
 export type ProjectStatus =
   | "LOCAL"
-  | "ARCHIVED"
+  | "DELETED"
   | "OPENED"
   | "VIEWING_VERSION"
   | "EDITING"
@@ -33,23 +32,77 @@ export interface ProjectViewModel {
   name: string;
   modifiedBy: string;
   modifiedAt: string;
+  revision: string;
   lockInfo?: LockInfo;
   branch?: string;
-  revision?: string;
-  path: string;
-  // OpenL returns a string project ID (legacy servers may return object format)
-  id: ProjectId | string;
-  status: ProjectStatus;
+  branchDefault?: boolean;
+  branchProtected?: boolean;
+  capabilities?: ProjectCapabilities;
+  compileStatus?: ProjectStatusView;
+  dependencies?: ProjectDependencyViewModel[];
+  descriptor?: DescriptorViewModel;
+  path?: string;
+  id: string;
+  status?: ProjectStatus;
   tags?: Record<string, string>;
   comment?: string;
-  repository: string;
-  selectedBranches?: string[];
+  repository?: string;
+  repositoryInfo?: ProjectRepositoryModel;
+  usedBy?: ProjectDependencyViewModel[];
+}
+
+export interface ProjectCapabilities {
+  canClose?: boolean;
+  canCompare?: boolean;
+  canCopy?: boolean;
+  canDelete?: boolean;
+  canDeleteBranch?: boolean;
+  canDeploy?: boolean;
+  canExport?: boolean;
+  canManage?: boolean;
+  canManageBranches?: boolean;
+  canOpen?: boolean;
+  canSave?: boolean;
+  canUnlock?: boolean;
+  canViewHistory?: boolean;
+  canWrite?: boolean;
+}
+
+export interface ProjectDependencyViewModel {
+  id: string;
+  name: string;
+  branch?: string;
+  branchDefault?: boolean;
+  branchProtected?: boolean;
+  missing?: boolean;
+  repository?: string;
+  status?: ProjectStatus;
+  transitive?: boolean;
+}
+
+export interface ModuleViewModel {
+  modules?: ModuleViewModel[];
+  name?: string;
+  path?: string;
+}
+
+export interface DescriptorViewModel {
+  modules?: ModuleViewModel[];
+  modulesDefault?: boolean;
+  sources?: string[];
+  sourcesDefault?: boolean;
+}
+
+export interface ProjectRepositoryModel {
+  features?: RepositoryFeatures;
+  id?: string;
+  name?: string;
+  type?: string;
 }
 
 /**
- * Response of the create-from-zip endpoint (PUT /repos/{repo}/projects/{name}).
- * The revision is the git commit SHA of the single FULL-changeset commit that
- * created the project.
+ * Compact create/copy response from the repository project endpoints. The
+ * revision is the Git commit SHA of the atomic project changeset.
  */
 export interface CreateProjectResult {
   revision: string;
@@ -161,28 +214,6 @@ export interface ProjectFileResponse {
   contentDisposition: string;
 }
 
-export type TableType =
-  // Decision Tables (most common - 5 variants)
-  | "Rules"           // Standard decision table with explicit C/A/RET columns
-  | "SimpleRules"     // Simplified decision table with positional matching
-  | "SmartRules"      // Flexible decision table with smart parameter matching
-  | "SimpleLookup"    // Two-dimensional lookup table
-  | "SmartLookup"     // Two-dimensional lookup with smart matching
-  // Spreadsheet (most common - calculations)
-  | "Spreadsheet"     // Multi-step calculations with formulas
-  | "SimpleSpreadsheet" // Simplified spreadsheet format
-  // Other types (rarely used)
-  | "Method"          // Custom Java-like methods
-  | "TBasic"          // Complex flow control algorithms
-  | "Data"            // Relational data tables
-  | "Datatype"        // Custom data structure definitions
-  | "Vocabulary"      // Datatype vocabulary table
-  | "Test"            // Unit test tables
-  | "RawSource"       // Raw table source format
-  | "Run"             // Test suite execution
-  | "Properties"      // Dimension properties configuration
-  | "Configuration";  // Environment settings
-
 export type TableKind =
   | "Rules"
   | "Spreadsheet"
@@ -203,117 +234,129 @@ export type TableKind =
 
 export interface SummaryTableView {
   id: string;
-  tableType: TableType;
-  kind: TableKind;
-  name: string;
+  /** Backend summary contract leaves this open for non-editable/custom table types. */
+  tableType?: string;
+  kind?: TableKind;
+  name?: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   properties?: Record<string, any>;
   returnType?: string;
   signature?: string;
-  file: string;
-  pos: string;
-}
-
-/**
- * Common fields shared by every concrete table view returned from
- * `GET /projects/{id}/tables/{tableId}` (parsed) or sent on
- * create/update. Mirrors the fields that appear on every subtype in the
- * studio OpenAPI under `EditableTableView` discriminator (Datatype,
- * SimpleRules, Spreadsheet, RawTableView, …): `id`, `tableType`, `kind`,
- * `name`, `properties`, `pos`, `messages`. `file` and `signature`/`returnType`
- * are present on the `SummaryTableView` side too — included here for
- * convenience since the same TypeScript type is reused for list and detail.
- *
- * `id` is optional because create-table requests are allowed to omit it
- * (the server assigns one).
- */
-export interface EditableTableView {
-  id?: string;
-  tableType: TableType;
-  kind: TableKind;
-  name: string;
-  /** Custom dimension/business properties (state, lob, effectiveDate, …). */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  properties?: Record<string, any>;
-  /** Position of the table within the source file (e.g. cell address). */
-  pos?: string;
-  /** File the table is defined in. Populated on read; ignored on create. */
   file?: string;
-  /**
-   * Compilation messages attached to this table (errors / warnings / info).
-   * Read-only — server-populated; ignored on update/create.
-   */
-  messages?: DetailedMessageDescription[];
+  pos?: string;
 }
 
-/** Append data to project table (OpenAPI 3.0.1) - polymorphic type based on tableType */
-export type AppendTableView =
-  | {
-      /** Table type: Datatype */
-      tableType: "Datatype";
-      /** Table fields */
-      fields: Array<{
-        /** Field name (required) */
-        name: string;
-        /** Field type (required) */
-        type: string;
-        /** Required flag */
-        required?: boolean;
-        /** Default value */
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        defaultValue?: any;
-      }>;
-    }
-  | {
-      /** Table type: SimpleRules */
-      tableType: "SimpleRules";
-      /** Array of rule objects to append */
-      rules: Array<Record<string, any>>;
-    }
-  | {
-      /** Table type: SimpleSpreadsheet */
-      tableType: "SimpleSpreadsheet";
-      /** Array of spreadsheet step objects to append */
-      steps: Array<any>;
-    }
-  | {
-      /** Table type: SmartRules */
-      tableType: "SmartRules";
-      /** Array of rule objects to append */
-      rules: Array<Record<string, any>>;
-    }
-  | {
-      /** Table type: Vocabulary */
-      tableType: "Vocabulary";
-      /** Array of vocabulary value objects to append */
-      values: Array<any>;
-    }
-  | {
-      /** Table type: RawSource */
-      tableType: "RawSource";
-      /** Array of rows to append; each row is an array of cell objects (e.g. { value: string, colspan?: number } or { covered?: boolean }) */
-      rows: Array<Array<Record<string, unknown>>>;
-    };
-
-export interface DatatypeView extends EditableTableView {
-  fields?: Array<{
-    name: string;
-    type: string;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    defaultValue?: any;
-  }>;
-  parentType?: string;
+/** One node in the Studio table dependency graph. */
+export interface TableNodeView {
+  dependencies?: string[];
+  dependents?: string[];
+  dimensionProperties?: Record<string, string>;
+  file?: string;
+  id?: string;
+  kind?: TableKind | "Dispatcher";
+  name?: string;
+  pos?: string;
+  project?: string;
+  properties?: Record<string, unknown>;
+  returnType?: string;
+  signature?: string;
+  tableType?: string;
 }
 
-export interface SimpleRulesView extends EditableTableView {
-  rules?: Array<{
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    conditions?: Record<string, any>;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    actions?: Record<string, any>;
-  }>;
-  conditionColumns?: string[];
-  actionColumns?: string[];
+/** One allowed value of an enum-backed table property. */
+export interface PropertyValueView {
+  code?: string;
+  value?: string;
+}
+
+/** A property that a table (or a Properties table entry) may declare. */
+export interface PropertyDefinitionView {
+  multiple?: boolean;
+  name?: string;
+  type?: "text" | "date" | "boolean" | "enum";
+  values?: PropertyValueView[];
+}
+
+/** Replacement property sent when copying a table. */
+export interface TableProperty {
+  name: string;
+  value?: string;
+}
+
+/** Request body for POST /projects/{projectId}/tables/{tableId}/copy. */
+export interface CopyTableRequest {
+  moduleName: string;
+  modulePath?: string;
+  name: string;
+  properties?: TableProperty[];
+  sheetName?: string;
+}
+
+/** Result of a regular table execution through the Studio Run API. */
+export interface RunExecutionResult {
+  contextParameters?: TraceParameterValue[];
+  errors?: MessageDescription[];
+  executionTimeMs?: number;
+  parameters?: TraceParameterValue[];
+  result?: unknown;
+  resultSchema?: Record<string, unknown>;
+  tableId?: string;
+  tableName?: string;
+}
+
+/** Project-scoped branch metadata returned by Studio. */
+export interface ProjectBranchInfo {
+  base?: boolean;
+  name?: string;
+  protected?: boolean;
+}
+
+export type MergeMode = "receive" | "send";
+
+export interface MergeRequest {
+  mode: MergeMode;
+  otherBranch: string;
+}
+
+export interface CheckMergeResult {
+  blockedBy?: "bypass-required" | "protected-branch" | "locked";
+  canMerge?: boolean;
+  sourceBranch: string;
+  status: "mergeable" | "up-to-date";
+  targetBranch: string;
+}
+
+export interface ConflictGroup {
+  files?: string[];
+  projectName?: string;
+  projectPath?: string;
+}
+
+export interface MergeResultResponse {
+  conflictGroups?: ConflictGroup[];
+  status?: "success" | "conflicts";
+}
+
+export interface RevisionDetails {
+  author?: string;
+  branch?: string;
+  commit?: string;
+  exists?: boolean;
+  modifiedAt?: string;
+}
+
+export interface ConflictDetailsResponse {
+  baseRevision?: RevisionDetails;
+  conflictGroups?: ConflictGroup[];
+  defaultMessage?: string;
+  oursRevision?: RevisionDetails;
+  theirsRevision?: RevisionDetails;
+}
+
+export interface MergeConflictFileResponse {
+  data: Buffer;
+  contentType: string;
+  contentDisposition: string;
 }
 
 export interface RepositoryInfo {
@@ -322,12 +365,23 @@ export interface RepositoryInfo {
   id: string;
   /** Repository name */
   name: string;
+  capabilities?: RepositoryCapabilities;
+  features?: RepositoryFeatures;
+  mainBranchOnly?: boolean;
+  type?: string;
 }
 
 /** Repository features (from OpenAPI) */
 export interface RepositoryFeatures {
-  branches: boolean;
-  searchable: boolean;
+  branches?: boolean;
+  mappedFolders?: boolean;
+  searchable?: boolean;
+}
+
+/** Repository capabilities (from OpenAPI) */
+export interface RepositoryCapabilities {
+  canCreateProject?: boolean;
+  canManage?: boolean;
 }
 
 /** Project revision from repository history (from OpenAPI) */
@@ -337,7 +391,7 @@ export interface ProjectRevision {
   createdAt: string;
   fullComment: string;
   author?: {
-    name: string;
+    displayName?: string;
     email?: string;
   };
   deleted: boolean;
@@ -345,44 +399,26 @@ export interface ProjectRevision {
   commentParts?: string[];
 }
 
-export interface FileData {
-  name: string;
-  version?: string;
-  author?: string;
-  modifiedAt?: string;
-  comment?: string;
-  size?: number;
-  branch?: string;
-  deleted?: boolean;
-}
-
-export interface ProjectHistoryItem extends FileData {
-  version: string;
-  author: string;
-  modifiedAt: string;
-  comment: string;
-}
-
-export interface DeploymentInfo {
-  id: string;
-  name: string;
-  projectName: string;
-  projectVersion?: string;
-  repository: string;
-  status: string;
-  deployedAt?: string;
-  deployedBy?: string;
+/** One project working-copy snapshot from GET /history/project. */
+export interface ProjectHistoryItem {
+  current?: boolean;
+  id?: string;
+  modifiedOn?: string;
 }
 
 /** Deployment view model (short version from OpenAPI 3.0.1) */
 export interface DeploymentViewModel_Short {
   id: string;
   name: string;
-  projectId: string;
-  productionRepositoryId: string;
-  deployedAt?: string;
-  deployedBy?: string;
-  status?: string;
+  repository: string;
+  items?: DeploymentItemViewModel_Short[];
+}
+
+export interface DeploymentItemViewModel_Short {
+  modifiedAt: string;
+  modifiedBy: string;
+  name: string;
+  revision: string;
 }
 
 /** Deploy project request (OpenAPI 3.0.1) */
@@ -424,12 +460,14 @@ export interface BranchCreateRequest {
 
 /** Project status update model (request body for PATCH /projects/{id}) */
 export interface ProjectStatusUpdateModel {
-  /** Only OPENED and CLOSED can be set by the client; LOCAL, ARCHIVED, VIEWING_VERSION, EDITING are set automatically by the backend */
+  /** Only OPENED and CLOSED can be set by the client; other states are backend-managed. */
   status?: "OPENED" | "CLOSED";
-  /** Additional fields may be supported by the API */
   branch?: string;
   revision?: string;
   comment?: string;
+  discardChanges?: boolean;
+  openDependencies?: boolean;
+  save?: boolean;
 }
 
 // =============================================================================
@@ -447,9 +485,6 @@ export type Project = ProjectViewModel;
 
 /** Table metadata for list operations */
 export type TableMetadata = SummaryTableView;
-
-/** Full table view with data (parsed form) */
-export type TableView = EditableTableView;
 
 /**
  * One side of a cell border: line style and width. Mirrors
@@ -517,7 +552,7 @@ export interface RawTableCell {
 }
 
 /**
- * Options for the raw table view (`raw=true` on `openl_get_table`): read the
+ * Options for the table's raw source view: read the
  * source matrix in row slices and/or with per-cell Excel styles. Mirrors the
  * `startRow`/`maxRows`/`styles` query parameters of `GET .../tables/{tableId}`.
  */
@@ -531,12 +566,18 @@ export interface RawTableViewOptions {
 }
 
 /**
- * Raw 2D view of a table — the un-parsed cell matrix used when `raw=true` on
- * `openl_get_table`. Inherits the common `EditableTableView` fields (id, kind,
- * name, properties, pos, messages) and adds the `source` matrix. Mirrors
+ * Raw 2D view of a table — the only table-content representation exposed by
+ * the MCP server. Mirrors
  * `RawTableView` in the studio OpenAPI (`tableType: "RawSource"`).
  */
-export interface RawTableView extends EditableTableView {
+export interface RawTableView {
+  id?: string;
+  tableType: "RawSource";
+  kind?: TableKind;
+  name?: string;
+  messages?: DetailedMessageDescription[];
+  /** Position of the table within the source file (read-only). */
+  pos?: string;
   /** Empty only for a slice whose `startRow` is past the last row. */
   source: RawTableCell[][];
   /**
@@ -544,6 +585,12 @@ export interface RawTableView extends EditableTableView {
    * offset or a `maxRows` cap); absent when the whole table is returned.
    */
   totalRows?: number;
+}
+
+/** Raw source rows accepted by POST .../tables/{tableId}/lines. */
+export interface RawTableAppend {
+  tableType: "RawSource";
+  rows: RawTableCell[][];
 }
 
 /**
@@ -598,16 +645,22 @@ export interface ProjectFilters {
   /** Repository ID */
   repository?: string;
   /** Project status */
-  status?: string;
+  status?: ProjectStatus;
+  dependsOn?: string;
+  name?: string;
+  author?: string;
+  branch?: string;
+  sort?: "name" | "status" | "updated";
+  include?: Array<"summary" | "status" | "deleted" | "descriptor">;
   /** Project tags - must start with `tags.` prefix, e.g., { "tags.insurance.home": "value" } */
   tags?: Record<string, string>;
   /** Pagination: page number (0-based, default: 0) */
   page?: number;
   /** Pagination: page size (default: 50) */
   size?: number;
-  /** Pagination: offset (alternative to page, for backward compatibility) */
+  /** Pagination: item offset (0-based) */
   offset?: number;
-  /** Pagination: limit (alternative to size, for backward compatibility) */
+  /** MCP page size, mapped to the backend's size parameter */
   limit?: number;
 }
 
@@ -617,11 +670,21 @@ export interface ProjectFilters {
 
 /** Test unit execution result (from OpenAPI) */
 export interface TestUnitExecutionResult {
-  name: string;
-  status: "PASSED" | "FAILED" | "ERROR";
-  executionTimeMs: number;
-  message?: string;
-  failureDetails?: string;
+  id?: string;
+  description?: string;
+  status?: "TR_EXCEPTION" | "TR_NEQ" | "TR_OK";
+  executionTimeMs?: number;
+  contextParameters?: TraceParameterValue[];
+  parameters?: TraceParameterValue[];
+  errors?: MessageDescription[];
+  testAssertions?: TestAssertionExecutionResult[];
+}
+
+export interface TestAssertionExecutionResult {
+  actualValue?: unknown;
+  description?: string;
+  expectedValue?: unknown;
+  status?: "TR_EXCEPTION" | "TR_NEQ" | "TR_OK";
 }
 
 /** Test case execution result (from OpenAPI) */
@@ -641,11 +704,9 @@ export interface TestsExecutionSummary {
   executionTimeMs: number;
   numberOfTests: number; // Total number of tests (all tests)
   numberOfFailures: number; // Number of failed tests
-  pageNumber?: number;
-  pageSize?: number;
-  numberOfElements?: number; // Page size (elements per page for pagination)
-  totalElements?: number;
-  totalPages?: number;
+  pageNumber: number;
+  pageSize: number;
+  numberOfElements: number;
 }
 
 /** Test execution start response */
@@ -666,49 +727,8 @@ export interface TestResultsSummary {
   numberOfPassed: number;
 }
 
-/** Project validation result */
-export interface ValidationResult {
-  valid: boolean;
-  errors: ValidationError[];
-  warnings: ValidationWarning[];
-}
-
-/** Validation error */
-export interface ValidationError {
-  severity: "ERROR";
-  message: string;
-  location?: string;
-  table?: string;
-  line?: number;
-}
-
-/** Validation warning */
-export interface ValidationWarning {
-  severity: "WARNING";
-  message: string;
-  location?: string;
-  table?: string;
-}
-
-// =============================================================================
-// Phase 1: New Types for Extended Functionality
-// =============================================================================
-
-/** Comprehensive project details combining Project and ProjectInfo */
-export interface ComprehensiveProject extends ProjectViewModel {
-  /** Modules in the project */
-  modules?: Array<{
-    name: string;
-    rulesRootPath?: string;
-  }>;
-  /** Project dependencies */
-  dependencies?: Array<{
-    name: string;
-    autoIncluded?: boolean;
-  }>;
-  /** Classpath entries */
-  classpath?: string[];
-}
+/** Single-project response from the current Studio API. */
+export type ComprehensiveProject = ProjectViewModel;
 
 /** Filters for listing tables */
 export interface TableFilters {
@@ -732,83 +752,18 @@ export interface TableFilters {
 export interface SaveProjectResult {
   success: boolean;
   message: string;
-  /** Present when success is false and validation failed before save */
-  validationErrors?: ValidationError[];
-}
-
-/** Rule creation request */
-export interface CreateRuleRequest {
-  name: string;
-  tableType: TableType;           // Type of table to create
-  returnType?: string;            // Return type (e.g., 'int', 'String', 'SpreadsheetResult')
-  parameters?: Array<{            // Method parameters
-    type: string;                 // Parameter type (e.g., 'String', 'int', 'Policy')
-    name: string;                 // Parameter name (e.g., 'driverType', 'age')
-  }>;
-  file?: string;                  // Target Excel file (optional, uses default if not specified)
-  properties?: Record<string, unknown>;  // Dimension properties (state, lob, effectiveDate, etc.)
-  comment?: string;               // Commit comment
-}
-
-/** Rule creation result */
-export interface CreateRuleResult {
-  success: boolean;
-  tableId?: string;
-  tableName?: string;
-  tableType?: TableType;
-  file?: string;
-  message?: string;
 }
 
 /** Create new project table request (BETA API) */
 export interface CreateNewTableRequest {
   /** Name of the module where the table will be created (required) */
   moduleName: string;
+  /** Project-relative path for a new module. Must end in .xlsx. */
+  modulePath?: string;
   /** Name of the sheet where the table will be created (optional, uses table name if not provided) */
   sheetName?: string;
-  /** Complete table structure (EditableTableView) */
-  table: EditableTableView;
-}
-
-// =============================================================================
-// Phase 2: Testing & Validation Types
-// =============================================================================
-
-// =============================================================================
-// Phase 3: Versioning & Execution Types
-// =============================================================================
-
-// =============================================================================
-// Phase 4: Advanced Features
-// =============================================================================
-
-// =============================================================================
-// Phase 2: Git Version History Types
-// =============================================================================
-
-/** Commit type from OpenL operations */
-export type CommitType = "SAVE" | "ARCHIVE" | "RESTORE" | "ERASE" | "MERGE";
-
-/** Get project history request */
-export interface GetProjectHistoryRequest {
-  projectId: string;
-  page?: number;        // Page number (default: 0, min: 0)
-  size?: number;        // Page size (default: 50, min: 1)
-  search?: string;      // Regex search term
-  techRevs?: boolean;   // Include non-project revisions (default: false)
-  branch?: string;      // Optional: specific branch (default: current branch)
-}
-
-/** Project revision (short version from OpenAPI 3.0.1) */
-export interface ProjectRevision_Short {
-  commitHash: string;
-  version?: string;     // Alias for commitHash
-  author: { name: string; email: string };
-  modifiedAt: string;   // ISO timestamp
-  comment: string;
-  commitType?: CommitType;
-  filesChanged?: number;
-  tablesChanged?: number;
+  /** Complete raw source structure; Studio requires a nonblank name on creation. */
+  table: RawTableView & { name: string };
 }
 
 /** Generic paginated response */
@@ -818,8 +773,6 @@ export interface PageResponse<T> {
   pageNumber: number;
   pageSize: number;
   total?: number; // Total number of items (can be null if unknown)
-  totalElements?: number; // Alias for total (for consistency with Spring)
-  totalPages?: number; // Calculated as Math.ceil(total / pageSize)
 }
 
 /**
@@ -837,36 +790,8 @@ export interface CollectionPage<T> {
   pageSize?: number;
   total?: number;
   totalPages?: number;
-}
-
-/** Paginated response for project history (OpenAPI 3.0.1) */
-export interface PageResponseProjectRevision_Short {
-  content: ProjectRevision_Short[];
-  numberOfElements: number;
-  pageNumber: number;
-  pageSize: number;
-  totalElements?: number;
-  totalPages?: number;
-}
-
-/** Project history commit entry */
-export interface ProjectHistoryCommit {
-  commitHash: string;
-  author: { name: string; email: string };
-  timestamp: string;
-  comment: string;
-  commitType: CommitType;
-  filesChanged: number;
-  tablesChanged?: number;
-}
-
-/** Get project history result */
-export interface GetProjectHistoryResult {
-  projectId: string;
-  branch: string;
-  commits: ProjectHistoryCommit[];
-  total: number;
-  hasMore: boolean;
+  /** Non-pagination fields returned alongside a backend page. */
+  metadata?: Record<string, unknown>;
 }
 
 // =============================================================================
@@ -955,7 +880,7 @@ export interface PendingChanges {
  * (OPENED / CLOSED / EDITING / …).
  */
 export interface ProjectStatusView {
-  projectId: ProjectId | string;
+  projectId: string;
   /** Present only for repositories that support branches. */
   branch?: string;
   revision?: string;
@@ -1027,8 +952,14 @@ export interface DebugLocationView {
 /** A sub-step of a frame (only executable cells are steps). */
 export interface StepValueView {
   ref: string;
+  /** A1 source-cell address for spreadsheet steps. */
+  cell?: string;
   label?: string;
   status: "executed" | "current" | "pending";
+  /** True when this is static table content rather than an executable step. */
+  constant?: boolean;
+  /** Decision-table evaluation outcome for a breakdown row. */
+  decision?: "matched" | "unmatched" | "returned";
   /** Frozen computed value (variables endpoint only). */
   value?: TraceParameterValue;
   /**
@@ -1151,6 +1082,8 @@ export interface ProfileSummaryView {
 
 /** The live execution stack — returned by start / step / stack reads. */
 export interface DebugStackView {
+  /** Debug-session identity, also carried by WebSocket status events. */
+  sessionId?: string;
   status: DebugStatus;
   /** Frames ordered root (index 0) → current; empty after completion. */
   frames: DebugFrameView[];
@@ -1243,6 +1176,10 @@ export interface StartTraceRequest {
   stopAtEntry?: boolean;
   /** Retain the executed call tree — structure and timings, no values (default false). */
   profiling?: boolean;
+  /** Build value-rich business-view titles in the retained tree (default false). */
+  detailedTitles?: boolean;
+  /** Suspend on uncaught rule errors (backend default true). */
+  breakOnErrors?: boolean;
   /** Include the `tree` root node (one level — steps carry `childrenTotal`) in the response; false returns only the bounded `profile`. Drill down with getTraceTreeChildren. */
   includeTree?: boolean;
   /** Number of hotspots in the profile overview (backend default 20). */
