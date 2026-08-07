@@ -30,7 +30,7 @@ For projects with **repository: 'local'** (local-only, stored as files on disk, 
    - `openl_list_project_local_changes`, `openl_restore_project_local_change` (session history requires an opened project; local cannot be opened)
 3. **Use directly** for local (no open first):
    - `openl_list_projects` (list all pages of projects, then filter by `repository === "local"` in the response—the repository filter may fail because "local" is often not returned by openl_list_repositories), `openl_get_project`
-   - `openl_list_tables`, `openl_get_table`, `openl_update_table`, `openl_append_table`, `openl_create_project_table`
+   - `openl_list_tables` (follow pagination to completion when a complete table inventory is required), `openl_get_table`, `openl_update_table`, `openl_append_table`, `openl_create_project_table`
    - `openl_start_project_tests`, `openl_get_test_results_summary`, `openl_get_test_results`, `openl_get_test_results_by_table`
 
 ## Short rule

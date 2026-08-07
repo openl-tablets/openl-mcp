@@ -53,7 +53,8 @@ pagination helper never re-slices a server-paged collection. A mocked 120-item
 project verifies all three pages and the correct
 `total_count`/`has_more`/`next_offset`. When an older backend omits the total, a
 full page is treated as potentially incomplete instead of being reported as the
-whole collection.
+whole collection. Non-page-aligned offsets are rejected before the request
+instead of silently returning a different range.
 
 ### A2. `list_tables` `kind` filter is silently ignored [P0, S]
 

@@ -199,7 +199,7 @@ export function registerRepositoryHandlers(): void {
         pagination: {
           limit: revisions.pageSize,
           offset: revisions.pageNumber * revisions.pageSize,
-          total: revisions.totalElements || revisions.numberOfElements,
+          total: revisions.totalElements ?? revisions.numberOfElements,
         },
         dataType: "revisions",
       });

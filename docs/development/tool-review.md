@@ -537,7 +537,7 @@ The server registers **58 tools**. All are listed below.
 | 20 | `openl_copy_project_file` | Files | ✅ Complete | project file copy | Copy a project file |
 | 21 | `openl_move_project_file` | Files | ✅ Complete | project file move | Move/rename a project file |
 | 22 | `openl_delete_project_file` | Files | ✅ Complete | project file delete | Delete a project file |
-| 23 | `openl_list_tables` | Rules | ✅ Complete | `GET /projects/{projectId}/tables?kind={kind[]}&name={name}` | List all tables/rules in project |
+| 23 | `openl_list_tables` | Rules | ✅ Complete | `GET /projects/{projectId}/tables?kind={kind[]}&name={name}` | List project tables/rules with pagination |
 | 24 | `openl_get_table` | Rules | ✅ Complete | `GET /projects/{projectId}/tables/{tableId}` | Get detailed table structure and data |
 | 25 | `openl_update_table` | Rules | ✅ Complete | `PUT /projects/{projectId}/tables/{tableId}` | Replace entire table structure |
 | 26 | `openl_append_table` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/lines` | Append rows/fields to table |

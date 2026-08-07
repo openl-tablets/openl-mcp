@@ -48,6 +48,23 @@ interface FormatOptions {
   skipTruncation?: boolean;
 }
 
+/** Return the number of elements represented by one formatted page. */
+function pageItemCount(data: unknown): number {
+  if (Array.isArray(data)) {
+    return data.length;
+  }
+  if (data && typeof data === "object") {
+    const envelope = data as Record<string, unknown>;
+    if (typeof envelope.numberOfElements === "number" && Number.isFinite(envelope.numberOfElements)) {
+      return Math.max(0, envelope.numberOfElements);
+    }
+    if (Array.isArray(envelope.content)) {
+      return envelope.content.length;
+    }
+  }
+  return 1;
+}
+
 /**
  * Format response data as JSON or Markdown (standard, concise, or detailed)
  *
@@ -70,7 +87,7 @@ export function formatResponse<T>(
   // Add pagination metadata if provided
   if (options && options.pagination) {
     const { limit, offset, total } = options.pagination;
-    const count = Array.isArray(data) ? data.length : 1;
+    const count = pageItemCount(data);
     const has_more = options.pagination.hasMore ?? (total !== undefined && offset + count < total);
     response.pagination = {
       limit,
@@ -209,7 +226,7 @@ export function toMarkdown<T>(
 
   // Add pagination info if present
   if (response.pagination) {
-    parts.push(formatPagination(response.pagination, Array.isArray(data) ? data.length : 1));
+    parts.push(formatPagination(response.pagination, pageItemCount(data)));
   }
 
   return parts.join("\n\n");
@@ -750,6 +767,11 @@ export function paginateCollection<T>(
   const pageOffset = page.pageNumber !== undefined
     ? page.pageNumber * pageLimit
     : offset;
+  if (pageOffset !== offset) {
+    throw new RangeError(
+      `Requested offset ${offset} does not align with backend page offset ${pageOffset}; offset must be a multiple of limit ${pageLimit}.`,
+    );
+  }
   const hasMore = page.total !== undefined
     ? pageOffset + page.items.length < page.total
     : page.totalPages !== undefined && page.pageNumber !== undefined

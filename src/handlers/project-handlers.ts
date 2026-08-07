@@ -8,7 +8,7 @@ import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import * as schemas from "../schemas.js";
 import type * as Types from "../types.js";
 import { formatResponse, paginateCollection } from "../formatters.js";
-import { validateResponseFormat, validatePagination } from "../validators.js";
+import { validateResponseFormat, validatePagePagination } from "../validators.js";
 import { isNotFoundError, setRulesXmlProjectName } from "../utils.js";
 import { waitForCompilation } from "../stomp-waits.js";
 import { getProjectTemplateZip } from "../project-templates.js";
@@ -129,7 +129,7 @@ export function registerProjectHandlers(): void {
       }) || {};
 
       const format = validateResponseFormat(typedArgs.response_format);
-      const { limit, offset } = validatePagination(typedArgs.limit, typedArgs.offset);
+      const { limit, offset } = validatePagePagination(typedArgs.limit, typedArgs.offset);
 
       // Extract filters (only those supported by ProjectFilters type)
       const filters: Types.ProjectFilters = {};

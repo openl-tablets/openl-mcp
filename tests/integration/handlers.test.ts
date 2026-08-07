@@ -1406,6 +1406,21 @@ describe("Tool Handler Integration Tests", () => {
   });
 
   describe("Pagination", () => {
+    it("should reject non-page-aligned project and table offsets before calling Studio", async () => {
+      await expect(executeTool("list_projects", {
+        limit: 50,
+        offset: 25,
+      }, client)).rejects.toThrow(/offset must be a multiple of limit/);
+
+      await expect(executeTool("list_tables", {
+        projectId: "design-project1",
+        limit: 50,
+        offset: 25,
+      }, client)).rejects.toThrow(/offset must be a multiple of limit/);
+
+      expect(mockAxios.history.get).toHaveLength(0);
+    });
+
     it("should support pagination parameters", async () => {
       // Mock repositories list for getRepositoryIdByName
       const mockRepos: RepositoryInfo[] = [
@@ -1875,7 +1890,7 @@ describe("Tool Handler Integration Tests", () => {
         ).rejects.toThrow();
       });
 
-      it("should support pagination parameters", async () => {
+      it("should report the final page without a next offset", async () => {
         // Start test execution
         mockAxios.onPost(`/projects/${encodedProjectId}/tests/run`).reply(202, {
           status: "accepted",
@@ -1889,11 +1904,11 @@ describe("Tool Handler Integration Tests", () => {
         const mockResults: Types.TestsExecutionSummary = {
           testCases: [],
           executionTimeMs: 100,
-          numberOfTests: 100,
+          numberOfTests: 75,
           numberOfFailures: 5,
           pageNumber: 1,
           pageSize: 50,
-          numberOfElements: 50,
+          numberOfElements: 25,
         };
 
         mockAxios.onGet(`/projects/${encodedProjectId}/tests/summary`, {
@@ -1904,14 +1919,18 @@ describe("Tool Handler Integration Tests", () => {
           projectId: "design-project1",
           page: 1,
           size: 50,
+          response_format: "json",
         }, client);
 
         expect(result.content[0].type).toBe("text");
-        const text = result.content[0].text;
-        // Verify pagination metadata is included
-        // Pagination shows "Showing items 51-100" (offset 50 + 1 to offset 50 + limit 50)
-        expect(text).toContain("51"); // First item (offset 50 + 1)
-        expect(text).toContain("Pagination"); // Pagination section exists
+        const response = JSON.parse(result.content[0].text);
+        expect(response.pagination).toMatchObject({
+          limit: 50,
+          offset: 50,
+          total_count: 75,
+          has_more: false,
+        });
+        expect(response.pagination).not.toHaveProperty("next_offset");
       });
 
       it("should calculate offset correctly from pageNumber and pageSize", async () => {

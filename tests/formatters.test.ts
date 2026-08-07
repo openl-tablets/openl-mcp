@@ -120,6 +120,16 @@ describe("formatters", () => {
       expect(markdown).not.toContain("Total: 50");
       expect(markdown).toContain("More results available (next offset: 50)");
     });
+
+    it("rejects a requested offset that does not match the backend page", () => {
+      expect(() => paginateCollection({
+        items: Array.from({ length: 50 }, (_, i) => ({ id: i })),
+        serverPaginated: true,
+        pageNumber: 0,
+        pageSize: 50,
+        total: 100,
+      }, 50, 25)).toThrow(/offset 25 does not align.*offset 0/);
+    });
   });
 
   describe("toMarkdown", () => {
@@ -268,6 +278,33 @@ describe("formatters", () => {
 
       const parsed = JSON.parse(result);
       expect(parsed.pagination).toBeDefined();
+    });
+
+    it("uses an envelope's element count to detect the final page", () => {
+      const page = {
+        content: Array.from({ length: 25 }, (_, i) => ({ id: i + 50 })),
+        pageNumber: 1,
+        pageSize: 50,
+        numberOfElements: 25,
+        totalElements: 75,
+      };
+
+      const json = JSON.parse(formatResponse(page, "json", {
+        pagination: { limit: 50, offset: 50, total: 75 },
+      }));
+      const markdown = formatResponse(page, "markdown", {
+        pagination: { limit: 50, offset: 50, total: 75 },
+      });
+
+      expect(json.pagination).toMatchObject({
+        limit: 50,
+        offset: 50,
+        total_count: 75,
+        has_more: false,
+      });
+      expect(json.pagination).not.toHaveProperty("next_offset");
+      expect(markdown).toContain("Showing items 51-75");
+      expect(markdown).not.toContain("More results available");
     });
 
     it("should truncate very long responses", () => {

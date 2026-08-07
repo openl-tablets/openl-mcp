@@ -66,7 +66,7 @@ fetched by id on demand.
 - `openl_get_test_results_by_table` - Get test results filtered by table ID
 
 ### Rules/Tables Tools (6)
-- `openl_list_tables` - List all tables in project
+- `openl_list_tables` - List project tables with pagination; follow `has_more` / `next_offset` until `has_more` is false when a complete inventory is required
 - `openl_get_table` - Get table structure and data (use `raw=true` for raw 2D cell matrix view; raw-only options: `startRow`/`maxRows` read a large table in row slices — a windowed response carries `totalRows` — and `styles=true` adds each cell's Excel style: background/font colour, bold/italic/underline, alignment, indent, borders)
 - `openl_update_table` - Replace entire table
 - `openl_append_table` - Add rows/fields to table

@@ -10,7 +10,7 @@ import type { ZodError, ZodType } from "zod";
 import * as schemas from "../schemas.js";
 import type * as Types from "../types.js";
 import { formatResponse, paginateCollection } from "../formatters.js";
-import { validateResponseFormat, validatePagination } from "../validators.js";
+import { validateResponseFormat, validatePagePagination } from "../validators.js";
 import { isNotFoundError, isPlainObject } from "../utils.js";
 import { registerTool, STALE_TABLE_ID_HINT, type ToolResponse } from "./common.js";
 import {
@@ -215,7 +215,7 @@ export function registerTableHandlers(): void {
     name: "list_tables",
     category: "Rules & Tables",
     title: "List Project Tables",
-    description: "List all tables/rules in a project with optional filters for type, name, and file. Returns table metadata including 'tableId' (the 'id' field) which is required for calling get_table(), update_table(), append_table(), or run_project_tests(). Use the 'tableId' field from the response to reference specific tables in other API calls. IMPORTANT: a table id is derived from its location and changes when an edit relocates the table (it had no room to grow in place). After openl_update_table/openl_append_table, use the 'tableId' those tools return (or re-run openl_list_tables); an id from a listing taken before such an edit is stale.",
+    description: "List tables/rules in a project with optional filters for type, name, and file. Results are paginated (default 50, maximum 200): when a complete inventory is required, follow pagination.has_more and call again with pagination.next_offset until has_more is false. Returns table metadata including 'tableId' (the 'id' field) which is required for calling get_table(), update_table(), append_table(), or run_project_tests(). Use the 'tableId' field from the response to reference specific tables in other API calls. IMPORTANT: a table id is derived from its location and changes when an edit relocates the table (it had no room to grow in place). After openl_update_table/openl_append_table, use the 'tableId' those tools return (or re-run openl_list_tables); an id from a listing taken before such an edit is stale.",
     inputSchema: schemas.z.toJSONSchema(schemas.listTablesSchema) as Record<string, unknown>,
     annotations: {
       readOnlyHint: true,
@@ -238,7 +238,7 @@ export function registerTableHandlers(): void {
       }
 
       const format = validateResponseFormat(typedArgs.response_format);
-      const { limit, offset } = validatePagination(typedArgs.limit, typedArgs.offset);
+      const { limit, offset } = validatePagePagination(typedArgs.limit, typedArgs.offset);
 
       const filters: Types.TableFilters = {};
       if (typedArgs.kind && typedArgs.kind.length > 0) {
