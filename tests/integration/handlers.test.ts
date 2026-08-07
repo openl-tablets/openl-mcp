@@ -83,6 +83,54 @@ describe("Tool Handler Integration Tests", () => {
       expect(text).toContain("main");
       expect(text).toContain("development");
     });
+
+    it("keeps revision totals unknown and derives more pages from totalPages", async () => {
+      const mockRepos: RepositoryInfo[] = [
+        { id: "design", name: "Design Repository", aclId: "acl-design" },
+      ];
+      mockAxios.onGet("/repos").reply(200, mockRepos);
+      mockAxios.onGet("/repos/design/projects/InsuranceRules/history", {
+        params: { page: 0, size: 2 },
+      }).reply(200, {
+        content: [
+          {
+            revisionNo: "abc123",
+            createdAt: "2026-01-01T00:00:00Z",
+            fullComment: "First",
+            deleted: false,
+            technicalRevision: false,
+          },
+          {
+            revisionNo: "def456",
+            createdAt: "2026-01-02T00:00:00Z",
+            fullComment: "Second",
+            deleted: false,
+            technicalRevision: false,
+          },
+        ],
+        pageNumber: 0,
+        pageSize: 2,
+        numberOfElements: 2,
+        totalPages: 2,
+      });
+
+      const result = await executeTool("repository_project_revisions", {
+        repository: "Design Repository",
+        projectName: "InsuranceRules",
+        page: 0,
+        size: 2,
+        response_format: "json",
+      }, client);
+
+      const response = JSON.parse(result.content[0].text);
+      expect(response.pagination).toMatchObject({
+        limit: 2,
+        offset: 0,
+        has_more: true,
+        next_offset: 2,
+      });
+      expect(response.pagination).not.toHaveProperty("total_count");
+    });
   });
 
   describe("Project Tools", () => {

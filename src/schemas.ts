@@ -41,7 +41,7 @@ export const PagePaginationParams = z.object({
   limit: z.number().int().positive().max(200).default(50).optional()
     .describe("Number of results per page (default 50, maximum 200)."),
   offset: z.number().int().nonnegative().default(0).optional()
-    .describe("Zero-based page offset. Must be a multiple of limit because the Studio endpoint uses page/size pagination."),
+    .describe("Zero-based item offset. Must be a multiple of limit so it maps exactly to the Studio endpoint's page/size pagination."),
 });
 
 // Project ID: opaque backend identifier from openl_list_projects() response
@@ -1086,4 +1086,3 @@ export const redeployProjectSchema = z.object({
   comment: commentSchema,
   response_format: ResponseFormat.optional(),
 }).strict();
-
