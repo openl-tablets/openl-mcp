@@ -3,12 +3,13 @@
  * Merge conflict state belongs to the Studio HTTP session, so every step must
  * use the same OpenLClient (the MCP server already preserves its JSESSIONID).
  */
-
-import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
-
+import { ProtocolError, ProtocolErrorCode } from "@modelcontextprotocol/server";
 import * as schemas from "../schemas.js";
 import type * as Types from "../types.js";
-import { looksBinary } from "../content-utils.js";
+import {
+  looksBinary,
+  normalizeMimeType,
+} from "../content-utils.js";
 import { formatResponse } from "../formatters.js";
 import { registerTool, type ToolResponse } from "./common.js";
 
@@ -99,14 +100,14 @@ export function registerProjectMergeHandlers(): void {
       }
       const forceBypassAllowed = args.force === true && check.blockedBy === "bypass-required";
       if (args.force === true && !forceBypassAllowed) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
           "force=true is allowed only when Studio reports blockedBy='bypass-required'. Run openl_check_project_merge again without force.",
         );
       }
       if ((check.canMerge === false || check.blockedBy != null) && !forceBypassAllowed) {
-        throw new McpError(
-          ErrorCode.InvalidRequest,
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidRequest,
           `Merge is blocked${check.blockedBy ? ` by '${check.blockedBy}'` : ""}. ` +
             "Resolve the blocker and run openl_check_project_merge again.",
         );
@@ -152,7 +153,7 @@ export function registerProjectMergeHandlers(): void {
     category: "Project",
     title: "Read Merge Conflict File Version",
     description:
-      "Read one BASE, OURS, or THEIRS version of a conflicted file from the current session as read-only evidence for manual user resolution in Studio. Never infer or apply a winning side automatically. Returns a bounded JSON envelope with UTF-8 or base64 content, with nextOffset while more data remains. length targets at most 16000 bytes; a UTF-8 chunk may include up to 3 extra bytes to finish its last character. The backend still downloads the whole file before this client-side slice. Use the exact file path from openl_get_merge_conflicts.",
+      "Read one BASE, OURS, or THEIRS version of a conflicted file from the current session as read-only evidence for manual user resolution in Studio. Never infer or apply a winning side automatically. UTF-8 and base64 binary chunks are returned in a JSON text envelope with MIME and byte-range metadata. Both forms include nextOffset while more data remains. length targets at most 16000 bytes; a UTF-8 chunk may include up to 3 extra bytes to finish its last character. The backend still downloads the whole file before this client-side slice. Use the exact file path from openl_get_merge_conflicts.",
     schema: schemas.readMergeConflictFileSchema,
     annotations: {
       readOnlyHint: true,
@@ -171,10 +172,11 @@ export function registerProjectMergeHandlers(): void {
         ? [requestedStart, requestedEnd]
         : alignUtf8Chunk(response.data, requestedStart, requestedEnd);
       const slice = response.data.subarray(start, end);
-      const envelope = {
+      const metadata = {
         file: args.file,
         side: args.side,
         ...(response.contentType ? { contentType: response.contentType } : {}),
+        mimeType: normalizeMimeType(response.contentType),
         ...(response.contentDisposition ? { contentDisposition: response.contentDisposition } : {}),
         encoding: asBase64 ? "base64" : "utf-8",
         byteLength: total,
@@ -182,13 +184,21 @@ export function registerProjectMergeHandlers(): void {
         returnedBytes: slice.length,
         hasMore: end < total,
         ...(end < total ? { nextOffset: end } : {}),
-        content: slice.toString(asBase64 ? "base64" : "utf-8"),
       };
+
+      if (!asBase64) {
+        const envelope = { ...metadata, content: slice.toString("utf-8") };
+        return {
+          content: [{ type: "text", text: formatResponse(envelope, "json", { skipTruncation: true }) }],
+        };
+      }
+
+      // Use TextContent for arbitrary binary data. Some MCP clients send every
+      // embedded blob to an image decoder and reject valid XLSX/ZIP bytes.
+      const envelope = { ...metadata, content: slice.toString("base64") };
       return {
         content: [{
           type: "text",
-          // Content envelopes must stay machine-readable: concise Markdown
-          // drops the payload and ordinary Markdown can corrupt base64.
           text: formatResponse(envelope, "json", { skipTruncation: true }),
         }],
       };
@@ -233,8 +243,8 @@ export function registerProjectMergeHandlers(): void {
       const format = args.response_format;
       const project = await client.getProject(args.projectId);
       if (args.confirmProjectName !== project.name) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
           `Deletion confirmation does not match. Expected confirmProjectName='${project.name}'. ` +
             "No project was deleted.",
         );
@@ -270,20 +280,20 @@ export function registerProjectMergeHandlers(): void {
       const branches = await client.listProjectBranches(args.projectId);
       const branch = branches.find((candidate) => candidate.name === args.branch);
       if (!branch) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
           `Branch '${args.branch}' is not available to this project. Call openl_list_project_branches again.`,
         );
       }
       if (branch.base) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
           `Branch '${args.branch}' is the repository base branch and cannot be deleted.`,
         );
       }
       if (branch.protected && args.force !== true) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
           `Branch '${args.branch}' is protected. If an eligible manager explicitly approves the bypass, call again with force=true and confirmForce=true.`,
         );
       }

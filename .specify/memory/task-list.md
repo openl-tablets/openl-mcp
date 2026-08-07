@@ -2,9 +2,9 @@
 
 ## Status Overview
 
-**Current State**: v1.0.0 - Production Ready (Refactored)
-**Test Coverage**: 5.49% overall (critical gaps identified)
-**Last Updated**: 2025-11-16
+**Current State**: v1.1.0 - 73 tools
+**Test Coverage**: Maintained by the current Jest suite
+**Last Updated**: 2026-08-07
 **Major Milestone**: MCP Refactoring Complete ✅
 
 ## Priority Legend
@@ -22,23 +22,13 @@
 **Estimated Effort**: 40-50 hours
 
 #### T-001: Implement auth.ts Test Coverage (>90%)
-- [ ] Test Basic Authentication
-  - [ ] Valid credentials
-  - [ ] Invalid credentials
-  - [ ] Missing credentials
-  - [ ] Interceptor setup
-- [ ] Test API Key Authentication
-  - [ ] Valid API key
-  - [ ] Invalid API key
-  - [ ] Header injection
-- [ ] Test OAuth 2.1 Authentication
-  - [ ] Token acquisition
-  - [ ] Token caching
-  - [ ] Token refresh
-  - [ ] Concurrent request deduplication
-  - [ ] Token expiration handling
+- [x] Test Personal Access Token authentication
+  - [x] `Token` header injection
+  - [x] Empty-token handling
+- [x] Test anonymous access without an Authorization header
+- [x] Test interceptor setup
 - [ ] Test Error Scenarios
-  - [ ] Network errors during auth
+  - [x] Network errors during auth
   - [ ] 401/403 responses
   - [ ] Timeout handling
 
@@ -102,7 +92,7 @@
 
 #### T-004: Implement index.ts Test Coverage (>80%)
 - [ ] Test MCP server initialization
-- [ ] Test tool routing for all 40 openl_* tools
+- [ ] Test tool routing for all 73 openl_* tools
 - [ ] Test prompt integration (14 prompts)
 - [ ] Test error handling at server level
 - [ ] Test configuration validation
@@ -127,7 +117,7 @@
 **Acceptance Criteria**: >95% coverage, 100% branches
 
 #### T-006: Verify Tool Registry Coverage (>90%)
-- [ ] Verify all 40 openl_* tool definitions are properly structured in tool-handlers.ts
+- [ ] Verify all 73 openl_* tool definitions are properly structured in tool-handlers.ts
 - [ ] Test registration of every tool by name
 - [ ] Validate input schemas are valid JSON Schema
 - [ ] Validate metadata completeness
@@ -153,7 +143,7 @@
 - [ ] Test parameter validation
 - [ ] Test response formatting integration
 - [ ] Test pagination integration
-- [ ] Verify all 40 openl_* tools are registered
+- [ ] Verify all 73 openl_* tools are registered
 
 **Acceptance Criteria**: >85% coverage on tool-handlers.ts
 
@@ -191,7 +181,7 @@
 #### T-012: Test Response Formatting Features
 - [ ] Test markdown formatting end-to-end
 - [ ] Test JSON formatting end-to-end
-- [ ] Test format parameter in all 40 tools
+- [ ] Test format parameter in all 73 tools
 - [ ] Test format fallback behavior
 - [ ] Test character limit enforcement across formats
 
@@ -448,15 +438,14 @@
 **Completed**: 2024-Q4
 
 #### T-102: Implement Authentication
-- [x] Basic Authentication
-- [x] API Key Authentication
-- [x] OAuth 2.1 with token caching
+- [x] Optional Personal Access Token authentication
+- [x] Anonymous single-user Studio access
 - [x] Request interceptors
 
 **Completed**: 2024-Q4
 
 #### T-103: Implement Tool Definitions
-- [x] 40 openl_* tools
+- [x] 73 openl_* tools
 - [x] Tool metadata and categorization
 - [x] Helper functions
 - [x] MCP compliance and annotations

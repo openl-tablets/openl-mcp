@@ -142,13 +142,6 @@ silently discarded and `openProject` is invoked *again* (blind duplicate PATCH;
 the second error masks the real cause, e.g. "branch not found" surfaces as 409).
 Fix: wrap only `client.getProject` in the try; let the mutations propagate.
 
-### A7. Wrong tool annotations: `append_table` is not idempotent [P0, S]
-
-`append_table` carries `idempotentHint: true`; retrying an append duplicates rows —
-an MCP client that auto-retries timeouts can silently duplicate rules. Remove it;
-also review `deploy_project`/`redeploy_project` (each call creates a new deployment
-version) and `start_project_tests`.
-
 ### A8. Table-id alias key contradicts its own collision-safety comment [P0, S]
 
 `table-id-tracking.ts` documents the alias key as `projectId + NUL + tableId`
@@ -186,29 +179,6 @@ methods or fix it to `listRepositories(false)` if it is about to gain a caller.
 The HTTP transport is the only network-exposed component and the least tested
 (24% coverage; the session/auth/lifecycle code has no in-process tests at all).
 These items should land together with the test suite in E4.
-
-### B1. No Origin validation + wildcard CORS: drive-by websites can execute tools [P0, M]
-
-`app.use(cors())` defaults to `Access-Control-Allow-Origin: *` and `/mcp` never
-validates `Origin`/`Host` — the MCP spec requires Origin validation precisely to
-prevent DNS-rebinding/drive-by access. With the documented compose setup (loopback
-port, studio in single-user mode, unauthenticated sessions falling back to the
-default client), any web page in the operator's browser can POST `initialize` +
-`tools/call` and read the responses — i.e. read, modify, and deploy business rules.
-**Fix:** allowlist localhost origins by default (configurable), reject unknown
-`Origin`, and replace bare `cors()` with an explicit config including
-`exposedHeaders: ['Mcp-Session-Id']` (without which a legitimate browser client
-cannot read the session id at all).
-
-### B2. All unauthenticated sessions share one client — and one studio JSESSIONID [P0, S]
-
-`getClientForSession` returns the shared `defaultClient` whenever no token is
-supplied; its captured `JSESSIONID`, repository cache, and test-execution headers
-are shared mutable state. Trace debugging is server-side state keyed by that
-session ("one active session per user"): two token-less MCP clients on one `--http`
-server terminate each other's debug sessions and interleave step/inspect state.
-**Fix:** construct a fresh `OpenLClient` per MCP session (base URL is the only
-config needed).
 
 ### B3. `express.json()` default 100 kb body limit caps tool payloads on HTTP only [P0, S]
 

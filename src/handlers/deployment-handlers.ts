@@ -48,7 +48,6 @@ export function registerDeploymentHandlers(): void {
       "Deploy a project to production environment. Publishes rules to a deployment repository for runtime execution. Use production repository name (not ID) - e.g., 'Production Deployment' instead of 'production-deploy'.",
     schema: schemas.deployProjectSchema,
     annotations: {
-      idempotentHint: true,
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
@@ -87,7 +86,6 @@ export function registerDeploymentHandlers(): void {
       "Redeploy an existing deployment with a new project version. Use this to update a deployment with a newer version of the project or rollback to a previous version.",
     schema: schemas.redeployProjectSchema,
     annotations: {
-      idempotentHint: true,
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {

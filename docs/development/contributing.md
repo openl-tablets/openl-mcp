@@ -140,7 +140,7 @@ Add examples to `../guides/examples.md` and update `README.md` if needed.
 - Use descriptive error messages
 
 ### Error Handling
-- Use `McpError` with proper error codes
+- Use `ProtocolError` with the appropriate `ProtocolErrorCode`
 - Include context (endpoint, method, status)
 - Sanitize sensitive data in errors
 

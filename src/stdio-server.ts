@@ -11,13 +11,10 @@
  * (non-`--http`, non-CLI) launch, so an HTTP or CLI launch never constructs the
  * stdio server.
  */
-
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { OpenLClient } from "./client.js";
 import { createConfiguredServer } from "./mcp-core.js";
 import { normalizeToken, sanitizeError } from "./utils.js";
-import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { ParsedArgs } from "./cli.js";
 import type * as Types from "./types.js";
 
@@ -27,7 +24,7 @@ import type * as Types from "./types.js";
  * Handles MCP protocol communication and routes requests to the OpenL client.
  */
 class OpenLMCPServer {
-  private server: Server;
+  private readonly config: Types.OpenLConfig;
 
   /**
    * Create a new MCP server instance
@@ -35,16 +32,19 @@ class OpenLMCPServer {
    * @param config - OpenL Studio configuration
    */
   constructor(config: Types.OpenLConfig) {
-    // stdio is single-session, so one configured server is enough.
-    this.server = createConfiguredServer(new OpenLClient(config));
+    this.config = config;
   }
 
   /**
    * Start the MCP server
    */
   async start(): Promise<void> {
-    const transport = new StdioServerTransport();
-    await this.server.connect(transport);
+    // The v2 serving entry negotiates either the modern 2026-07-28 era or a
+    // legacy 2025-era connection, then pins one fresh server/client pair for
+    // the lifetime of that stdio connection.
+    serveStdio(() => createConfiguredServer(new OpenLClient(this.config)), {
+      onerror: (error) => console.error("MCP stdio transport error:", sanitizeError(error)),
+    });
   }
 }
 

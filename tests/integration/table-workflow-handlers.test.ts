@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "@jest/globals";
+import { ProtocolErrorCode } from "@modelcontextprotocol/server";
 import MockAdapter from "axios-mock-adapter";
 
 import { OpenLClient } from "../../src/client.js";
@@ -200,7 +201,10 @@ describe("table workflow handlers", () => {
       tableId: "t1",
       inputJson: [],
       timeoutMs: 1,
-    }, client)).rejects.toThrow(/did not finish/);
+    }, client)).rejects.toMatchObject({
+      code: ProtocolErrorCode.InvalidRequest,
+      message: expect.stringMatching(/did not finish/),
+    });
 
     expect(mockAxios.history.delete).toHaveLength(1);
   });

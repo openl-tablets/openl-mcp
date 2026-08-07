@@ -200,7 +200,8 @@ Tracks items identified in the `EPBDS-16027` CLI audit (May 2026) that were **no
 - [Commander vs Yargs vs Oclif startup-cost comparison](https://www.pkgpulse.com/blog/how-to-build-cli-nodejs-commander-yargs-oclif)
 
 **Sketch.**
-- Move `import { Server } from "@modelcontextprotocol/sdk/server/index.js"` to a dynamic `await import()` inside `ensureToolsRegistered` — only loaded when actually constructing a Server.
+- Move the `Server` import from `@modelcontextprotocol/server` to a dynamic `await import()` inside `ensureToolsRegistered` — only loaded when actually constructing a Server.
+- Make `ensureToolsRegistered()` asynchronous (or cache its initialization promise) and await it at both call sites before help rendering, tool listing, or tool-name resolution reads the registry.
 - For `--help` and `--list-tools` we currently pass a stub `OpenLClient` to `ensureToolsRegistered` purely to populate the registry. The registry only needs the **handlers**, not the client (passed at execute time). Refactor `registerAllTools` to skip needing a real `Server` instance.
 
 **Estimate.** ~30 lines + measurement script. **~2 hours.**

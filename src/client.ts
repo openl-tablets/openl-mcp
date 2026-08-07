@@ -1241,7 +1241,8 @@ export class OpenLClient {
 
   /**
    * Search a project's files/folders by glob pattern, extensions, type and a
-   * case-insensitive content substring.
+   * case-insensitive content substring. Studio applies content matching only
+   * to text files; binary formats such as XLSX and ZIP are not inspected.
    *
    * Maps to `POST /projects/{projectId}/file-search` (body = FileSearchQuery).
    * Returns the matching nodes. SUBTREE scope (default) may target a historical

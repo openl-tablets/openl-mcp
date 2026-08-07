@@ -28,6 +28,19 @@ studio's asynchronous work** (project compilation) inside a single
 tool call instead of polling — see [WebSockets (STOMP)](websockets.md) for what is
 subscribed, why, and how authentication works.
 
+The MCP boundary uses the TypeScript SDK v2. Stdio negotiates modern
+`2026-07-28` or legacy 2025 once per connection. Streamable HTTP serves modern
+requests statelessly and routes legacy clients to isolated session transports;
+each legacy MCP session owns its own OpenL client and Studio cookie jar. Browser
+origins are accepted only from the `MCP_ALLOWED_ORIGINS` allowlist.
+
+Tool arguments remain JSON. Binary write parameters therefore use a base64
+`blob` string advertised with JSON Schema 2020-12 `contentEncoding` and
+`contentMediaType`. Arbitrary binary reads use a lossless JSON TextContent
+envelope containing base64 `content` plus MIME and byte-range metadata. This
+avoids a client interoperability failure where non-image embedded blobs such as
+XLSX and ZIP are sent to an image decoder and rejected.
+
 ## Components
 
 ### 1. Claude Desktop
@@ -76,6 +89,11 @@ Those views cover only a subset of table features and can lose cells, layout,
 styles, merged regions, and uncommon table constructs during a read-modify-write
 cycle. Semantic table kinds remain visible in summary metadata and are encoded in
 the raw OpenL grid, while raw action tools provide safe narrow edits.
+
+Studio's raw table API exposes cell styles only on reads (`styles=true`). Its
+write endpoints ignore style fields, so MCP write schemas intentionally reject
+`style` instead of reporting a formatting change that did not happen. Full-table
+updates must start from a raw read without styles.
 
 ## Configuration Files
 

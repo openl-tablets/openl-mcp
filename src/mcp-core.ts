@@ -1,23 +1,5 @@
-/**
- * Shared MCP server core
- *
- * Both transports — stdio ({@link file://./stdio-server.ts}) and Streamable HTTP
- * ({@link file://./http-server.ts}) — expose the identical MCP surface (tools
- * and prompts). This module builds a fully-configured `Server` (capabilities
- * declared, tools registered, every request handler wired), so each entry point
- * only has to attach a transport.
- */
-
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  ListPromptsRequestSchema,
-  GetPromptRequestSchema,
-  ErrorCode,
-  McpError,
-} from "@modelcontextprotocol/sdk/types.js";
-
+import { Server, ProtocolError, ProtocolErrorCode } from "@modelcontextprotocol/server";
+import type { Tool } from "@modelcontextprotocol/server";
 import { SERVER_INFO, mcpToolName, stripToolPrefix } from "./constants.js";
 import { PROMPTS, loadPromptContent, getPromptDefinition } from "./prompts-registry.js";
 import { registerAllTools, getAllTools, executeTool, hasTool } from "./handlers/index.js";
@@ -30,39 +12,43 @@ import type { OpenLClient } from "./client.js";
 export function registerMcpHandlers(server: Server, client: OpenLClient): void {
   // List available tools. The registry holds bare names; the `openl_`
   // namespace prefix is a protocol concern applied only here, on the wire.
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  server.setRequestHandler('tools/list', async () => ({
     tools: getAllTools().map(({ name, title, description, inputSchema, annotations }) => ({
       name: mcpToolName(name),
       title,
       description,
-      inputSchema,
+      inputSchema: inputSchema as Tool["inputSchema"],
       ...(annotations && { annotations }),
     })),
   }));
 
-  // Handle tool execution. `extra` carries the SDK request context (progressToken,
-  // per-session sendNotification, AbortSignal) that long-running tools need.
+  // Handle tool execution. Adapt the SDK v2 context into the small stable shape
+  // the tool handlers need (progress token, notification sender, AbortSignal).
   // Strip the wire prefix back to the bare registry name before dispatching.
-  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+  server.setRequestHandler('tools/call', async (request, ctx) => {
     const toolName = stripToolPrefix(request.params.name);
     try {
-      const result = await executeTool(toolName, request.params.arguments, client, extra);
-      return result as any; // Type cast needed due to MCP SDK generic return type
+      const result = await executeTool(toolName, request.params.arguments, client, {
+        signal: ctx.mcpReq.signal,
+        _meta: ctx.mcpReq._meta,
+        sendNotification: (notification) => ctx.mcpReq.notify(notification),
+      });
+      return result;
     } catch (error) {
       // A tool's own failure (backend 4xx/5xx, argument validation) must reach the
       // calling agent as an `isError` RESULT, not a thrown JSON-RPC protocol error.
       // A throw is surfaced by clients as a generic "tool execution failed" with the
       // detail dropped; an isError result carries the message into the model's
       // context so it can self-correct (e.g. "column height 6 exceeds table height
-      // 5"). executeTool already wrapped the cause into an McpError with a detailed,
+      // 5"). executeTool already wrapped the cause into a ProtocolError with a detailed,
       // sanitized message. Only a genuinely unknown tool stays a protocol error —
       // distinguished by the registry, NOT by the error code: a backend HTTP 405
-      // also maps to ErrorCode.MethodNotFound, so a code check would wrongly re-throw
+      // also maps to ProtocolErrorCode.MethodNotFound, so a code check would wrongly re-throw
       // a real tool failure as a protocol error.
       if (!hasTool(toolName)) {
         throw error;
       }
-      const message = error instanceof McpError ? error.message : sanitizeError(error);
+      const message = error instanceof ProtocolError ? error.message : sanitizeError(error);
       return {
         content: [{ type: "text" as const, text: message }],
         isError: true,
@@ -71,18 +57,18 @@ export function registerMcpHandlers(server: Server, client: OpenLClient): void {
   });
 
   // List available prompts
-  server.setRequestHandler(ListPromptsRequestSchema, async () => ({
+  server.setRequestHandler('prompts/list', async () => ({
     prompts: PROMPTS,
   }));
 
   // Get specific prompt with optional arguments
-  server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+  server.setRequestHandler('prompts/get', async (request) => {
     const { name, arguments: args } = request.params;
 
     const prompt = getPromptDefinition(name);
     if (!prompt) {
-      throw new McpError(
-        ErrorCode.InvalidRequest,
+      throw new ProtocolError(
+        ProtocolErrorCode.InvalidRequest,
         `Prompt not found: ${name}`
       );
     }
@@ -103,8 +89,8 @@ export function registerMcpHandlers(server: Server, client: OpenLClient): void {
         ],
       };
     } catch (error) {
-      throw new McpError(
-        ErrorCode.InternalError,
+      throw new ProtocolError(
+        ProtocolErrorCode.InternalError,
         `Failed to load prompt: ${error instanceof Error ? error.message : String(error)}`
       );
     }

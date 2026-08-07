@@ -108,6 +108,13 @@ npx -y openl-mcp list_projects | jq '.data[].name'
 Formats: `json` (default), `markdown`, `markdown_concise`, `markdown_detailed`. Request a Markdown format when the
 output is intended for a human rather than another tool. (`--list-tools` is always JSON regardless.)
 
+For binary `read_project_file` results, the tool returns `content` containing a text
+item whose `text` is a JSON envelope with the base64 payload and byte/MIME metadata.
+CLI mode prints that text, so stdout is the JSON envelope itself. The envelope's
+base64 `content` field is the binary **read** contract; binary **writes** should pass
+the base64 string in `blob`. The legacy write form, `content` plus
+`encoding: "base64"`, is still accepted.
+
 ## Trace flows (cookie jar)
 
 The **trace debugger** tools keep the debug session on the server keyed by `JSESSIONID`: `start_trace` sets the

@@ -2,15 +2,17 @@
  * Project-file tool handlers (BETA) — read, write, delete, search, copy, and
  * move files inside an opened project.
  */
-
-import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
-
+import { ProtocolError, ProtocolErrorCode } from "@modelcontextprotocol/server";
 import * as schemas from "../schemas.js";
 import type * as Types from "../types.js";
 import { formatResponse, paginateResults } from "../formatters.js";
 import { isAxiosError, sanitizeError } from "../utils.js";
 import { RESPONSE_LIMITS } from "../constants.js";
-import { isValidBase64, looksBinary } from "../content-utils.js";
+import {
+  compactBase64,
+  looksBinary,
+  normalizeMimeType,
+} from "../content-utils.js";
 import { registerTool, rethrowConflictAsActionable, type ToolResponse } from "./common.js";
 
 export function registerFileHandlers(): void {
@@ -20,10 +22,10 @@ export function registerFileHandlers(): void {
     title: "Read Project File",
     description:
       "Read any file in a project by its project-relative path — text or binary, and folder listings too. Maps to GET /projects/{projectId}/files/{path}. Behavior by path/params: " +
-      "(1) a FILE path returns its content — UTF-8 text is returned verbatim, binary is returned base64-encoded with metadata (use encoding to force 'utf-8' or 'base64'; default 'auto' detects); " +
+      "(1) a FILE path returns its content — UTF-8 text is returned verbatim, while binary is returned as base64 'content' in a JSON text envelope with byte and MIME metadata (use encoding to force 'utf-8' or binary; default 'auto' detects); " +
       "(2) a FILE path with view='meta' returns JSON metadata (name, size, extension, lastModified); " +
       "(3) a FOLDER path (empty string for the root, or a path ending in '/') lists its entries (use recursive, viewMode FLAT/NESTED, extensions, namePattern, foldersOnly); " +
-      "(4) a FOLDER path with download=true returns a ZIP of the folder (base64). " +
+      "(4) a FOLDER path with download=true returns a ZIP as base64 in the same JSON text envelope. " +
       "Optional 'version' reads a historical revision; 'branch' pins the project branch. Optional byte range (offset/length) is applied client-side AFTER fetching the whole file (the backend does not support partial transfers), so the entire file is loaded into memory; for very large/binary files, bound the RETURNED size with offset/length and read in chunks (a full file's base64 can exceed MCP message limits). Use this to read AGENTS.md, README.md, schemas, manifests, or to inspect/export xlsx rule files.",
     schema: schemas.readProjectFileSchema,
     annotations: {
@@ -70,7 +72,7 @@ export function registerFileHandlers(): void {
       }
 
       // File (or folder-ZIP) content. Apply the optional client-side byte range,
-      // then encode for transport (MCP tool results are text).
+      // then choose text or a base64 JSON envelope.
       const total = data.length;
       const start = Math.min(typedArgs.offset ?? 0, total);
       const end =
@@ -97,23 +99,28 @@ export function registerFileHandlers(): void {
         return { content: [{ type: "text", text }] };
       }
 
-      const envelope = {
+      const metadata = {
         path: path === "" ? "/" : path,
         ...(typedArgs.version ? { version: typedArgs.version } : {}),
         ...(contentType ? { contentType } : {}),
+        mimeType: normalizeMimeType(contentType),
         encoding: "base64" as const,
         byteLength: total,
         returnedBytes: slice.length,
         ...(ranged ? { range: { offset: start, length: slice.length } } : {}),
-        content: slice.toString("base64"),
       };
-      // Binary content is ALWAYS returned as a JSON envelope with truncation
-      // disabled, regardless of response_format: the markdown formats would slice
-      // the base64 string at the character cap (corrupting the payload) and
-      // markdown_concise would drop it entirely. Callers wanting only part of a
-      // large file should page it with offset/length.
+
+      // Although MCP permits arbitrary binary BlobResourceContents, several
+      // clients route every embedded blob through their image renderer and
+      // reject XLSX/ZIP/octet-stream data as an unsupported image. TextContent
+      // is the interoperable lossless transport for non-display binary files.
+      // Keep it untruncated; callers can bound/page bytes with offset/length.
+      const envelope = { ...metadata, content: slice.toString("base64") };
       return {
-        content: [{ type: "text", text: formatResponse(envelope, "json", { skipTruncation: true }) }],
+        content: [{
+          type: "text",
+          text: formatResponse(envelope, "json", { skipTruncation: true }),
+        }],
       };
     },
   });
@@ -123,7 +130,7 @@ export function registerFileHandlers(): void {
     category: "Project Files",
     title: "Write Project File",
     description:
-      "Create or replace a file in a project by its project-relative path. Provide 'content' as UTF-8 text (default) or base64 (set encoding='base64' for binary files such as xlsx/images). " +
+      "Create or replace a file in a project by its project-relative path. Provide UTF-8 text in 'content'. For binary files such as xlsx/images/zip, provide base64 bytes in 'blob'; its advertised JSON Schema uses contentEncoding='base64'. The legacy content + encoding='base64' form remains accepted. " +
       "COMMIT: pass 'message' to commit the write to Git (a new revision is created); omit 'message' and the write stays in the project WORKING COPY (commit it later with openl_save_project). Committing saves ALL pending project changes and works only for design repositories (not 'local'). " +
       "By default missing parent folders are created (createFolders=true). If the target file already EXISTS, behavior follows conflictPolicy: FAIL (default) returns an error; OVERWRITE replaces the file in place; SKIP leaves the existing file unchanged (reported skipped). Use 'branch' to pin the project's branch (omit for local/non-branch repositories). Use this to add or update docs, schemas, or manifests. (For a NEW file the tool POSTs/creates; OVERWRITE is performed via PUT/update — overwriting a module .xlsx replaces its bytes but to change a module's TABLES use openl_update_table / openl_append_table / openl_create_project_table.)",
     schema: schemas.writeProjectFileSchema,
@@ -135,16 +142,16 @@ export function registerFileHandlers(): void {
 
       const format = typedArgs.response_format;
 
-      // Buffer.from(x, "base64") silently DROPS invalid characters and stops at
-      // the first unparseable run, so mislabeled/truncated base64 would write a
-      // corrupted or empty file with no error. Validate up front instead.
-      if (typedArgs.encoding === "base64" && !isValidBase64(typedArgs.content)) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          "content is not valid base64. Provide a clean base64 string, or set encoding to 'utf-8' for text content."
-        );
-      }
-      const buffer = Buffer.from(typedArgs.content, typedArgs.encoding === "base64" ? "base64" : "utf-8");
+      // The schema union guarantees one representation. Buffer.from() alone
+      // would silently discard malformed base64 characters, so validation and
+      // legacy whitespace normalization happen before decoding.
+      const blobInput = "blob" in typedArgs;
+      const legacyBase64 = "encoding" in typedArgs && typedArgs.encoding === "base64";
+      const suppliedContent = blobInput ? typedArgs.blob : typedArgs.content;
+      const normalizedContent = legacyBase64
+        ? compactBase64(suppliedContent)
+        : suppliedContent;
+      const buffer = Buffer.from(normalizedContent, blobInput || legacyBase64 ? "base64" : "utf-8");
       const policy = typedArgs.conflictPolicy ?? "FAIL";
 
       // Create with POST. POST is create-only — an existing file yields 409, and
@@ -185,8 +192,8 @@ export function registerFileHandlers(): void {
         } else {
           // FAIL (default). The caller did not request OVERWRITE/SKIP, so this is a
           // genuine, actionable conflict (not a contradictory "set what you set").
-          throw new McpError(
-            ErrorCode.InvalidRequest,
+          throw new ProtocolError(
+            ProtocolErrorCode.InvalidRequest,
             `Cannot write '${typedArgs.path}': a file already exists there. ` +
               `Set conflictPolicy: "OVERWRITE" to replace it, "SKIP" to leave it unchanged, or write to a different path.`
           );
@@ -273,7 +280,7 @@ export function registerFileHandlers(): void {
     category: "Project Files",
     title: "Search Project Files",
     description:
-      "Search a project's files and folders by ant-glob path 'pattern' (e.g. 'rules/**/*.xlsx'), file 'extensions', resource 'type' (FILE/FOLDER/ANY), and/or a case-insensitive 'content' substring (full-text). Maps to POST /projects/{projectId}/file-search. IMPORTANT: set recursive=true to search nested folders — by default (recursive omitted/false) only the project's TOP LEVEL is searched, and a '**' glob alone does NOT descend (so a project-wide search needs recursive=true, and to match files in subfolders use a '**/' pattern such as '**/*.xlsx', not '*.xlsx'). Scope SUBTREE (default) searches within the project and may target a historical 'version'; scope ANCESTORS walks up to the repository root. Returns matching nodes (path, name, type, size, ...), paginated client-side via 'limit'/'offset' (the response carries pagination metadata; the server returns the full match set). Use 'branch' to pin the project's branch. Use this for questions like \"where is portability loading mentioned?\" (content, recursive=true) or \"list every xlsx under rules\" (pattern '**/*.xlsx', recursive=true).",
+      "Search a project's files and folders by ant-glob path 'pattern' (e.g. 'rules/**/*.xlsx'), file 'extensions', resource 'type' (FILE/FOLDER/ANY), and/or a case-insensitive 'content' substring. Maps to POST /projects/{projectId}/file-search. CONTENT LIMITATION: Studio searches inside TEXT files only. It does not inspect binary formats such as XLSX/XLS/ZIP/images; find those only by path pattern, extension, or name, then read/download them separately. Combining content with a binary-only pattern or extension therefore returns no matches even when that text is visible in an Excel workbook. IMPORTANT: set recursive=true to search nested folders — by default (recursive omitted/false) only the project's TOP LEVEL is searched, and a '**' glob alone does NOT descend (so a project-wide search needs recursive=true, and to match files in subfolders use a '**/' pattern such as '**/*.xlsx', not '*.xlsx'). Scope SUBTREE (default) searches within the project and may target a historical 'version'; scope ANCESTORS walks up to the repository root. Returns matching nodes (path, name, type, size, ...), paginated client-side via 'limit'/'offset' (the response carries pagination metadata; the server returns the full match set). Use 'branch' to pin the project's branch. Use this for questions like \"where is portability loading mentioned in XML or Markdown?\" (content, recursive=true) or \"list every xlsx under rules\" (pattern '**/*.xlsx', recursive=true, without content).",
     schema: schemas.searchProjectFilesSchema,
     annotations: {
       readOnlyHint: true,

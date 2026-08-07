@@ -3,8 +3,7 @@
  * Owns the structured-payload argument validation used by the editing tools;
  * the post-edit table-id tracking they share lives in `table-id-tracking.ts`.
  */
-
-import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
+import { ProtocolError, ProtocolErrorCode } from "@modelcontextprotocol/server";
 import type { ZodError } from "zod";
 
 import * as schemas from "../schemas.js";
@@ -72,8 +71,8 @@ function validateRawSourceAppendRows(
   });
 
   if (problems.length > 0) {
-    throw new McpError(
-      ErrorCode.InvalidParams,
+    throw new ProtocolError(
+      ProtocolErrorCode.InvalidParams,
       `Cannot append to table '${tableLabel}': the table is ${width} column(s) wide, but ${problems.join("; ")}. ` +
         `Each appended RawSource row must cover all ${width} column(s) — provide one cell object per column ` +
         `(use { "value": null } for intentionally blank cells). Nothing was appended. ` +
@@ -107,8 +106,8 @@ function coercePayloadJson(value: unknown, payloadArg: string, toolName: string)
   try {
     return JSON.parse(trimmed);
   } catch (err) {
-    throw new McpError(
-      ErrorCode.InvalidParams,
+    throw new ProtocolError(
+      ProtocolErrorCode.InvalidParams,
       `${toolName}: '${payloadArg}' was provided as a string that is not valid JSON ` +
         `(${err instanceof Error ? err.message : String(err)}). Pass '${payloadArg}' as a JSON object, not a string.`,
     );
@@ -240,13 +239,14 @@ export function registerTableHandlers(): void {
       }
 
       const formattedResult = formatResponse(table, format);
+      const content: ToolResponse["content"] = staleIdNote
+        ? [
+            { type: "text", text: staleIdNote },
+            { type: "text", text: formattedResult },
+          ]
+        : [{ type: "text", text: formattedResult }];
 
-      return {
-        content: [
-          ...(staleIdNote ? [{ type: "text", text: staleIdNote }] : []),
-          { type: "text", text: formattedResult },
-        ],
-      };
+      return { content };
     },
   });
 
@@ -299,7 +299,7 @@ export function registerTableHandlers(): void {
     category: "Rules & Tables",
     title: "Replace Entire Table",
     description:
-      "Replace the ENTIRE table RawSource matrix with a modified version. Typed table DTOs are intentionally unsupported. Use for modifying, deleting, reordering, or structural changes; prefer the narrow raw action tools for isolated edits and append_table for additions. Required workflow: call get_table(), preserve the complete matrix including covered cells/spans/styles, modify it, then pass the full RawSource object here. The response returns the CURRENT tableId after relocation. The tool reads the table back to trigger recompilation, so openl_project_status reflects the change.",
+      "Replace the ENTIRE table RawSource matrix with a modified version. Typed table DTOs are intentionally unsupported. Use for modifying, deleting, reordering, or structural changes; prefer the narrow raw action tools for isolated edits and append_table for additions. Required workflow: call get_table() without styles=true, preserve the complete matrix including covered cells/spans, modify it, then pass the full RawSource object here. Studio table write APIs cannot change formatting, so cell style is read-only and rejected. The response returns the CURRENT tableId after relocation. The tool reads the table back to trigger recompilation, so openl_project_status reflects the change.",
     schema: schemas.updateTableSchema,
     annotations: {
       idempotentHint: true,
@@ -380,7 +380,6 @@ export function registerTableHandlers(): void {
       "Append RawSource rows to an existing table. Typed append DTOs are intentionally unsupported. Every row must cover ALL columns of the table; wrong-width rows are rejected before anything is written. Use { value: null } for a blank cell and preserve covered placeholders for merged regions. For modifying, deleting, or reordering use a narrow raw action tool or update_table. The response returns the CURRENT tableId after relocation, and the read-back triggers recompilation.",
     schema: schemas.appendTableSchema,
     annotations: {
-      idempotentHint: true,
       openWorldHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
@@ -474,7 +473,7 @@ export function registerTableHandlers(): void {
     category: "Rules & Tables",
     title: "Create New Table",
     description:
-      "Create a table from its complete RawSource 2D cell matrix. Typed table creation DTOs are intentionally unsupported because they omit workbook features and do not round-trip reliably. Requires moduleName plus table { tableType: \"RawSource\", name, source }. By default moduleName identifies an existing module; pass modulePath ending in .xlsx to create a new module. Build the exact OpenL grid from the bundled guides or copy an existing raw source, including covered cells/spans where needed. The response is metadata, not a compilation result; call openl_project_status afterward.",
+      "Create a table from its complete RawSource 2D cell matrix. Typed table creation DTOs are intentionally unsupported because they omit workbook features and do not round-trip reliably. Requires moduleName plus table { tableType: \"RawSource\", name, source }. By default moduleName identifies an existing module; pass modulePath ending in .xlsx to create a new module. Build the exact OpenL grid from the bundled guides or copy an existing raw source, including covered cells/spans where needed. Studio table write APIs cannot set cell formatting, so style is rejected. The response is metadata, not a compilation result; call openl_project_status afterward.",
     schema: schemas.createProjectTableSchema,
     annotations: {
       openWorldHint: true,

@@ -8,9 +8,7 @@
  * {@link file://../fetch-guides.ts}); they never call OpenL Studio or the
  * network. Only openl_get_project_agent_context talks to the studio.
  */
-
-import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
-
+import { ProtocolError, ProtocolErrorCode } from "@modelcontextprotocol/server";
 import * as schemas from "../schemas.js";
 import { formatResponse, paginateResults, formatAgentsDocument } from "../formatters.js";
 import {
@@ -165,8 +163,8 @@ export function registerGuideHandlers(): void {
 
       const { found, unknown } = readGuideBodies(ids);
       if (unknown.length > 0) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
           `Unknown guide id(s): ${unknown.join(", ")}. Ids must match the index exactly — ` +
             `call openl_list_guides (optionally with 'search') to look them up.`
         );

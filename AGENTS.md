@@ -84,17 +84,17 @@ branch; `send` merges the current branch into the other branch.
 - `openl_check_project_merge` - Preview merge direction, status, permissions, and blockers without changing Git
 - `openl_merge_project_branches` - Recheck and merge branches; creates session-bound conflict state when needed
 - `openl_get_merge_conflicts` - Get grouped conflicted paths, BASE/OURS/THEIRS revisions, and the default message
-- `openl_read_merge_conflict_file` - Read a bounded UTF-8/base64 chunk of one BASE/OURS/THEIRS file version
+- `openl_read_merge_conflict_file` - Read a bounded UTF-8 or base64 binary chunk for one BASE/OURS/THEIRS file version
 - `openl_cancel_merge_conflicts` - Clear the pending conflict session without modifying files or branches
 - `openl_delete_project` - Delete a project after exact current-name confirmation
 - `openl_delete_project_branch` - Delete a non-base branch after exact branch confirmation; protected bypass requires explicit force confirmation
 
 ### Rules/Tables Tools (10)
 - `openl_list_tables` - List project tables with pagination; follow `has_more` / `next_offset` until `has_more` is false when a complete inventory is required
-- `openl_get_table` - Get the authoritative `RawSource` 2D cell matrix; `startRow`/`maxRows` read a large table in row slices and `styles=true` includes Excel cell styles. A sliced response carries `totalRows` and is for reading or narrow raw actions only
-- `openl_update_table` - Replace the complete `RawSource` matrix; rejects a window carrying `totalRows` because writing it would delete omitted rows
+- `openl_get_table` - Get the authoritative `RawSource` 2D cell matrix; `startRow`/`maxRows` read a large table in row slices and `styles=true` includes read-only Excel cell styles. A sliced response carries `totalRows` and is for reading or narrow raw actions only
+- `openl_update_table` - Replace the complete `RawSource` matrix; rejects a window carrying `totalRows` because writing it would delete omitted rows. Call `openl_get_table` without `styles=true`: Studio write APIs cannot change formatting, and `style` is rejected rather than silently ignored
 - `openl_append_table` - Append full-width `RawSource` rows
-- `openl_create_project_table` - Create a table from a complete `RawSource` matrix in an existing module, or pass `modulePath` (an `.xlsx` project-relative path) to create a new module
+- `openl_create_project_table` - Create a table from a complete `RawSource` matrix in an existing module, or pass `modulePath` (an `.xlsx` project-relative path) to create a new module; cell formatting is unsupported by Studio write APIs
 - `openl_delete_table` - Delete an entire table (to remove a row/column WITHIN a table, use the raw action tools below)
 - `openl_run_table` - Execute a regular (non-Test) table with JSON input and wait for its result; `timeoutMs` bounds the complete start-and-result workflow (default 2 minutes), and cancellation, timeout, or any other failed workflow clears the pending Studio run. Studio permits only one run per HTTP session, so concurrent calls through the same MCP connection are rejected rather than allowed to replace each other's result
 - `openl_get_table_dependencies` - Get the whole project/module dependency graph or a table's dependency/dependent neighborhood
@@ -118,10 +118,10 @@ Cells / ranges:
 
 ### Project Files Tools (6, BETA)
 Operate on ANY file in a project by exact project-relative path (not just Excel rule files). Writes/deletes/copies/moves land in the project **working copy** — commit them with `openl_save_project`. Use the optional `branch` to pin the project's branch (omit for `local`/non-branch repositories).
-- `openl_read_project_file` - Read a file (text verbatim, binary as base64; optional `offset`/`length` byte range), read file metadata (`view: "meta"`), or list a folder (`recursive`, `viewMode` FLAT/NESTED, `extensions`, `namePattern`, `foldersOnly`); optional `version` reads a historical revision
-- `openl_write_project_file` - Create/replace a file from UTF-8 or base64 `content`; `createFolders` (default true), `conflictPolicy` FAIL/OVERWRITE/SKIP
+- `openl_read_project_file` - Read a file (text verbatim; arbitrary binary as lossless base64 `content` in a JSON TextContent envelope with MIME/byte metadata; optional `offset`/`length` byte range), read file metadata (`view: "meta"`), or list a folder (`recursive`, `viewMode` FLAT/NESTED, `extensions`, `namePattern`, `foldersOnly`); optional `version` reads a historical revision
+- `openl_write_project_file` - Create/replace a file from UTF-8 `content` or a base64 `blob` advertised with JSON Schema `contentEncoding: "base64"`; the legacy base64 `content` + `encoding` form remains accepted, including whitespace-wrapped base64; `createFolders` (default true), `conflictPolicy` FAIL/OVERWRITE/SKIP
 - `openl_delete_project_file` - Delete a file/folder (auto-cleans dangling config references)
-- `openl_search_project_files` - Search by glob `pattern`, `extensions`, `type`, or case-insensitive `content` substring; `scope` SUBTREE (default) or ANCESTORS
+- `openl_search_project_files` - Search by glob `pattern`, `extensions`, `type`, or case-insensitive `content` substring; `scope` SUBTREE (default) or ANCESTORS. Studio searches `content` only inside text files—not XLSX/XLS/ZIP/images; locate binary files by path/extension and read them separately
 - `openl_copy_project_file` - Copy a file within the project (no overwrite — destination collision returns 409)
 - `openl_move_project_file` - Move or rename a file within the project
 
@@ -219,9 +219,17 @@ HTTP), never from the server. A PAT is supplied as
 `OPENL_PERSONAL_ACCESS_TOKEN` / `--token`; without one, requests are anonymous
 (single-user Studio). Setup: [docs/guides/quick-start.md](docs/guides/quick-start.md).
 
+## MCP transports
+
+- The MCP SDK v2 serves both the modern `2026-07-28` protocol and legacy 2025 clients over stdio and Streamable HTTP.
+- Streamable HTTP validates browser `Origin` values against `MCP_ALLOWED_ORIGINS`; requests without `Origin` are treated as non-browser clients. Every approved browser response exposes `Mcp-Session-Id` for legacy clients.
+- Every anonymous legacy MCP session owns a distinct `OpenLClient` and Studio cookie jar. Never reuse a credential-less client across MCP sessions.
+- Modern HTTP is stateless and constructs a fresh Studio client per request. Use stdio or a legacy 2025 HTTP connection for multi-call workflows whose state is held in Studio's HTTP session (interactive trace, test results, and merge-conflict inspection).
+
 ## Response formatting
 
 - Formats: `json` (default), `markdown`, `markdown_concise`, `markdown_detailed` (the `response_format` argument). JSON is the authoritative, round-trippable representation for agent workflows; request a Markdown format only for human-readable output.
+- Binary file reads use a lossless JSON TextContent envelope with base64 `content`, MIME type, total/returned byte counts, and optional range metadata. Do not return arbitrary XLSX/ZIP/octet-stream bytes as embedded resources: clients commonly route every embedded blob to an image decoder and reject valid non-image files. Use `offset`/`length` to page large files.
 - List operations return pagination metadata.
 - Large responses are truncated at a 25K-character limit — except `openl_get_guides` bodies, which are returned verbatim (sizes are published in the index so callers can budget).
 
@@ -245,8 +253,11 @@ HTTP), never from the server. A PAT is supplied as
   encoded by the OpenL grid itself. That metadata is not authorization to expose
   a typed content contract.
 - Prefer the narrow raw table-source action tools for isolated edits. When a full
-  replacement is necessary, round-trip the complete `source` returned by
-  `openl_get_table`, preserving blank/covered cells, spans, and styles.
+  replacement is necessary, call `openl_get_table` without `styles=true` and
+  round-trip the complete `source`, preserving blank/covered cells and spans.
+- Cell styles are read-only in Studio's table REST API. `styles=true` is useful
+  for inspection, but every MCP table write schema rejects `style`; never
+  advertise formatting edits unless Studio adds a working write contract.
 
 ## External Resources
 

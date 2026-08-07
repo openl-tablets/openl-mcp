@@ -25,11 +25,6 @@ const rawTable = {
     colspan: 2,
     rowspan: 2,
     covered: false,
-    style: {
-      bold: true,
-      background: "#ffffff",
-      border: { bottom: { style: "solid" as const, width: 1 } },
-    },
   }]],
 };
 
@@ -43,7 +38,7 @@ describe("RawSource-only table contracts", () => {
     expect(updateJson.properties.view.properties.tableType.const).toBe("RawSource");
     expect(appendJson.properties.appendData.properties.tableType.const).toBe("RawSource");
     expect(JSON.stringify({ createJson, updateJson, appendJson })).not.toMatch(
-      /SimpleRules|SmartRules|SpreadsheetAppend|DatatypeAppend|EditableTableView/,
+      /SimpleRules|SmartRules|SpreadsheetAppend|DatatypeAppend|EditableTableView|"style"/,
     );
   });
 
@@ -59,6 +54,26 @@ describe("RawSource-only table contracts", () => {
       tableId: "t1",
       view: rawTable,
     }).view.source[0][0]).toEqual(rawTable.source[0][0]);
+  });
+
+  it("rejects read-only cell styles from every table write contract", () => {
+    const styledCell = { value: "Rules void Rate()", style: { background: "#4472C4", bold: true } };
+
+    expect(createProjectTableSchema.safeParse({
+      projectId: "p1",
+      moduleName: "Main",
+      table: { tableType: "RawSource", name: "Rate", source: [[styledCell]] },
+    }).success).toBe(false);
+    expect(updateTableSchema.safeParse({
+      projectId: "p1",
+      tableId: "t1",
+      view: { tableType: "RawSource", name: "Rate", source: [[styledCell]] },
+    }).success).toBe(false);
+    expect(appendTableSchema.safeParse({
+      projectId: "p1",
+      tableId: "t1",
+      appendData: { tableType: "RawSource", rows: [[styledCell]] },
+    }).success).toBe(false);
   });
 
   it("requires a nonblank name and complete source when creating", () => {
