@@ -231,15 +231,77 @@ These conventions are mandatory for anyone — human or AI agent — changing th
 - This covers every document, not just the README: this `AGENTS.md`, the `README*.md` files, everything under `docs/`, the prompt files in `prompts/`, and the spec docs under `.specify/`.
 - Remove obsolete information rather than letting it accumulate: no references to removed tools, prompts, or APIs, and no stale counts, examples, or links.
 
-### Git Commits
-
-- Commit every completed piece of work.
-- Write a short, meaningful subject that answers *why* the change was made, not *what* changed — the "what" is already visible in the diff and history.
-- The subject should explain the benefit to a user or a developer.
-- Add an extended body only when the subject alone cannot convey the meaning gracefully.
-- Do NOT add a `Co-Authored-By: Claude` trailer (or any co-author trailer) to commit messages.
-
 ### Pull Requests
 
 - Before creating a pull request, add an entry to [CHANGELOG.md](./CHANGELOG.md) under `## [Unreleased]` (in the matching `### Added` / `### Fixed` / etc. section, following the Keep a Changelog format).
 - Keep changelog entries short and to the point — describe the user-facing change, not the implementation. No deep technical details.
+
+### Commit Convention
+
+```
+EPBDS-NNNNN <subject>
+
+<optional body>
+```
+
+- **Commit every completed piece of work.**
+- **One logical change per commit** — one small piece of functionality or one refactoring step, with its tests and
+  documentation, buildable and green on its own.
+- **Fix issues in the commit that introduced them.** On an unpushed branch, fold fixes (bugs, failing tests,
+  documentation, review findings) into the originating commit instead of stacking follow-up commits:
+  - for the latest commit, use `git commit --amend`;
+  - for an earlier commit, use `git commit --fixup=<sha>` and squash with
+    `GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash --autostash <base>`;
+  - when a fix interacts with code changed by later commits (for example, an import they removed), adjust those
+    commits in the same rebase so that every commit in the history stays buildable.
+- **Prefix with the Jira ticket** (`EPBDS-NNNNN`), usually equal to the branch name.
+- **The subject explains _why_ or _what_, not the mechanical move** already visible in the diff. Start it with an
+  imperative verb.
+  - Good — `EPBDS-15494 Stream file downloads instead of buffering`
+  - Avoid — `EPBDS-15494 Move FileService into the rest package`
+- **For bug fixes, name the cause and its observable effect**, not the symptom:
+  - `EPBDS-15981 Fix NPE when ProjectDescriptor.name is null` — not `Fix 'something went wrong' message`
+  - `Fix date parsing which breaks UI rendering` — not `Fix missed input`
+- **Subject line only.** Add a body only when a single line cannot explain the change with fewer words.
+- **No `Co-Authored-By:` or other co-author trailers.**
+- **Skip the Jira prefix** when the change is unrelated to the ticket or conversation theme — an independent bug, a
+  misconfiguration, code cleanup or a dependency bump.
+
+### Sources of Truth
+
+- **Repository documentation is the centralized primary source.** `docs/` (notably `docs/development/architecture.md`) and
+  `AGENTS.md` files hold the approved architecture and decisions and must always contain the most current
+  knowledge.
+- **Jira is supplementary, non-centralized working information.** Tickets may contradict each other and the
+  repository documentation.
+- **Surface every conflict.** When tickets disagree with the repository documentation or with each other, show
+  the divergence to the user instead of silently preferring one side. The repository document remains the
+  approved position until the user decides otherwise.
+
+### Jira Workflow
+
+- **Search Jira before creating a ticket.** When a bug or an improvement is implemented, look for existing issues
+  first, trying different wordings — do not duplicate tickets.
+- **Keep the ticket description up to date.** When the scope or behavior changes during development, update the
+  description so it matches the real implementation.
+- **Create the ticket when it is absent** and fill it in completely:
+  - the actual sprint;
+  - the component;
+  - the fix version;
+  - additionally the affected version for a bug;
+  - Story Points and the original estimate (1 Story Point ≈ 8 hours).
+- **Link the tickets** when the relation is known: related to, depends on, and caused by.
+- **Show ticket IDs as links** (`https://jira.eisgroup.com/browse/EPBDS-NNNNN`) in replies and reports for easy
+  navigation.
+- **Ticket creation can be skipped** when the change does not affect the code functionality (build configuration,
+  process documentation, developer tooling, dead code) and no relevant ticket exists in Jira.
+
+### Markdown Rules
+
+- GFM style only
+- Single located images MUST have descriptive title text
+- Prefer bullet lists over dense prose
+- Tables only when both columns are short or 3+ columns; otherwise use `- **label** — description`
+- No version stamp in headings
+- Mermaid for structural diagrams
+- Admonitions: `> [!Note]` (single blockquote level only without title and nesting)
