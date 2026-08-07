@@ -18,7 +18,6 @@ export function registerTestingHandlers(): void {
     schema: schemas.startProjectTestsSchema,
     annotations: {
       openWorldHint: true,
-      idempotentHint: true,
     },
     handler: async (args, client): Promise<ToolResponse> => {
       const typedArgs = args;

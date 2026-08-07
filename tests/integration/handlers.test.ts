@@ -566,6 +566,22 @@ describe("Tool Handler Integration Tests", () => {
       expect(mockAxios.history.put).toHaveLength(0);
     });
 
+    it("openl_update_table rejects read-only styles instead of silently ignoring them", async () => {
+      await expect(executeTool("update_table", {
+        projectId: "p1",
+        tableId: "t1",
+        view: {
+          tableType: "RawSource",
+          name: "Driver",
+          source: [[{
+            value: "Rules void Driver()",
+            style: { background: "#4472C4", color: "#FFFFFF", bold: true },
+          }]],
+        },
+      }, client)).rejects.toThrow(/unrecognized (?:field|key).*style/i);
+      expect(mockAxios.history.put).toHaveLength(0);
+    });
+
     it("openl_update_table rejects a view that is a plain (non-JSON) string (no request sent)", async () => {
       let called = false;
       mockAxios.onPut(/\/tables\//).reply(() => {
@@ -2358,6 +2374,29 @@ describe("Tool Handler Integration Tests", () => {
         expect(parsed.data.content).toBe(binary.toString("base64"));
       });
 
+      it("openl_read_project_file keeps arbitrary MCP binary content in a lossless text envelope", async () => {
+        const binary = Buffer.from([0x00, 0x01, 0x02, 0xff]);
+        mockAxios.onGet("/projects/p1/files/data.bin").reply(200, binary, {
+          "content-type": "application/octet-stream",
+          "content-disposition": "attachment",
+        });
+
+        const result = await executeTool("read_project_file", {
+          projectId: "p1",
+          path: "data.bin",
+        }, client, { signal: new AbortController().signal });
+
+        expect(JSON.parse(result.content[0].text).data).toMatchObject({
+          path: "data.bin",
+          mimeType: "application/octet-stream",
+          byteLength: 4,
+          returnedBytes: 4,
+          content: binary.toString("base64"),
+        });
+        expect(result.content).toHaveLength(1);
+        expect(result.structuredContent).toBeUndefined();
+      });
+
       it("openl_read_project_file applies a client-side byte range", async () => {
         mockAxios.onGet("/projects/p1/files/nums.txt").reply(200, "0123456789", {
           "content-type": "text/plain",
@@ -2452,6 +2491,80 @@ describe("Tool Handler Integration Tests", () => {
         expect(parsed.data.committed).toBe(false);
       });
 
+      it("openl_write_project_file advertises and accepts a JSON Schema base64 blob", async () => {
+        const tool = getAllTools().find((candidate) => candidate.name === "write_project_file");
+        const alternatives = tool?.inputSchema.anyOf as Array<Record<string, unknown>>;
+        expect(tool?.inputSchema.type).toBe("object");
+        expect(alternatives).toHaveLength(3);
+
+        const blobAlternative = alternatives.find((alternative) =>
+          Object.hasOwn(alternative.properties as object, "blob"));
+        const blobProperties = blobAlternative?.properties as Record<string, Record<string, unknown>>;
+        expect(blobProperties.blob).toMatchObject({
+          type: "string",
+          contentEncoding: "base64",
+          contentMediaType: "application/octet-stream",
+        });
+        expect(blobAlternative?.required).toEqual(expect.arrayContaining(["blob"]));
+        expect(blobProperties).not.toHaveProperty("content");
+        expect(alternatives.every((alternative) => alternative.additionalProperties === false)).toBe(true);
+
+        let written: Buffer | undefined;
+        mockAxios.onPost("/projects/p1/files/rules/model.xlsx").reply((config) => {
+          written = config.data as Buffer;
+          return [201, {}];
+        });
+        const bytes = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+        await executeTool("write_project_file", {
+          projectId: "p1",
+          path: "rules/model.xlsx",
+          blob: bytes.toString("base64"),
+        }, client);
+
+        expect(written).toEqual(bytes);
+      });
+
+      it("openl_write_project_file accepts whitespace-wrapped legacy base64 content", async () => {
+        let written: Buffer | undefined;
+        mockAxios.onPost("/projects/p1/files/rules/model.xlsx").reply((config) => {
+          written = config.data as Buffer;
+          return [201, {}];
+        });
+        const bytes = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0xff, 0x00]);
+        const base64 = bytes.toString("base64");
+        const wrapped = `${base64.slice(0, 4)}\n${base64.slice(4)}\n`;
+
+        await executeTool("write_project_file", {
+          projectId: "p1",
+          path: "rules/model.xlsx",
+          content: wrapped,
+          encoding: "base64",
+        }, client);
+
+        expect(written).toEqual(bytes);
+      });
+
+      it("openl_write_project_file rejects invalid or ambiguous binary inputs", async () => {
+        await expect(executeTool("write_project_file", {
+          projectId: "p1",
+          path: "bad.bin",
+          blob: "not base64!",
+        }, client)).rejects.toThrow(/base64/i);
+
+        await expect(executeTool("write_project_file", {
+          projectId: "p1",
+          path: "ambiguous.bin",
+          content: "text",
+          blob: Buffer.from("bytes").toString("base64"),
+        }, client)).rejects.toThrow(/invalid arguments/i);
+
+        await expect(executeTool("write_project_file", {
+          projectId: "p1",
+          path: "missing.bin",
+        }, client)).rejects.toThrow(/invalid arguments/i);
+        expect(mockAxios.history.post).toHaveLength(0);
+      });
+
       it("openl_write_project_file with 'message' commits the write (save) and reports committed:true", async () => {
         mockAxios.onPost("/projects/p1/files/docs/x.md").reply(201, {});
         // saveProject(): GET project (EDITING, design) -> PATCH commit
@@ -2491,7 +2604,7 @@ describe("Tool Handler Integration Tests", () => {
       });
 
       it("openl_search_project_files builds the query body and returns matches", async () => {
-        const nodes = [{ path: "rules/M.xlsx", name: "M.xlsx", type: "file" }];
+        const nodes = [{ path: "rules/config.xml", name: "config.xml", type: "file" }];
         let body: Record<string, unknown> = {};
         mockAxios.onPost("/projects/p1/file-search").reply((config) => {
           body = JSON.parse(config.data);
@@ -2500,15 +2613,15 @@ describe("Tool Handler Integration Tests", () => {
 
         const result = await executeTool("search_project_files", {
           projectId: "p1",
-          pattern: "**/*.xlsx",
+          pattern: "**/*.xml",
           content: "premium",
           response_format: "json",
         }, client);
 
-        expect(body).toEqual({ pattern: "**/*.xlsx", content: "premium" });
+        expect(body).toEqual({ pattern: "**/*.xml", content: "premium" });
         const parsed = JSON.parse(result.content[0].text);
         expect(parsed.data).toHaveLength(1);
-        expect(parsed.data[0].name).toBe("M.xlsx");
+        expect(parsed.data[0].name).toBe("config.xml");
       });
 
       it("openl_search_project_files paginates the match set client-side (limit/offset)", async () => {

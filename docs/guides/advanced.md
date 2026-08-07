@@ -28,6 +28,7 @@ Most environment variables have a matching flag that overrides them, and are rea
 | `OPENL_TIMEOUT`               | `--timeout <ms>`             | Timeout to REST API, `30000` by default              |
 | `PORT`                        | `--http <port>`              | HTTP port, `3000` by default                         |
 | `MCP_MAX_BODY_SIZE`           | —                            | Max HTTP request-body size, `5mb` by default (HTTP transport only; e.g. a large trace `inputJson`) |
+| `MCP_ALLOWED_ORIGINS`         | —                            | Exact comma-separated browser origins allowed to call `/mcp`; defaults to the HTTP server's loopback origins |
 
 ### Transports
 
@@ -176,8 +177,24 @@ Clients then connect to `http://localhost:3000/mcp` with the HTTP transport:
 Omit `headers` for a single-user Studio. For remote access, put the server behind TLS and use `https://…/mcp` so
 the token isn't sent in the clear.
 
-In `--http` mode the server uses the MCP **Streamable HTTP** transport (MCP spec 2025-11-25).
-It does not support deprecated SSE transport.
+In `--http` mode the server uses MCP **Streamable HTTP** and serves both the modern
+`2026-07-28` protocol and legacy 2025 clients. It does not support the deprecated
+HTTP+SSE transport.
+
+Browser calls are rejected unless their exact `Origin` is allowlisted. The default
+allows only `http://localhost:<PORT>`, `http://127.0.0.1:<PORT>`, and
+`http://[::1]:<PORT>`. If a browser MCP client is hosted elsewhere, configure it
+explicitly, for example:
+
+```bash
+MCP_ALLOWED_ORIGINS=https://agent.example,https://admin.example
+```
+
+Non-browser MCP clients normally omit the `Origin` header and are unaffected.
+Modern HTTP is stateless and receives a fresh Studio HTTP client per request. For
+multi-call workflows whose state lives in Studio's HTTP session (interactive trace,
+test-result retrieval, or merge-conflict inspection), use stdio or a legacy 2025
+Streamable HTTP connection so one Studio session remains pinned for the workflow.
 
 ### Docker tips
 

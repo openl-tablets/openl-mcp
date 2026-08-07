@@ -11,13 +11,11 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import MockAdapter from "axios-mock-adapter";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-
+import { InMemoryTransport } from "@modelcontextprotocol/server";
+import type { Server } from "@modelcontextprotocol/server";
+import { Client } from "@modelcontextprotocol/client";
 import { OpenLClient } from "../src/client.js";
 import { createConfiguredServer } from "../src/mcp-core.js";
-import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
-
 describe("MCP core — tool-call error channel", () => {
   let openlClient: OpenLClient;
   let mockAxios: MockAdapter;
@@ -95,8 +93,55 @@ describe("MCP core — tool-call error channel", () => {
     expect(textOf(result)).toContain("Design");
   });
 
+  it("preserves non-image binary bytes and their base64 input schema on the MCP wire", async () => {
+    const bytes = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+    mockAxios.onGet("/projects/p1/files/model.xlsx").reply(200, bytes, {
+      "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "content-disposition": "attachment; filename=model.xlsx",
+    });
+
+    const result = await client.callTool({
+      name: "openl_read_project_file",
+      arguments: { projectId: "p1", path: "model.xlsx" },
+    });
+    expect(result.content).toHaveLength(1);
+    expect(JSON.parse((result.content[0] as { text: string }).text).data).toMatchObject({
+      path: "model.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      content: bytes.toString("base64"),
+    });
+
+    const tools = await client.listTools();
+    const writeTool = tools.tools.find((tool) => tool.name === "openl_write_project_file");
+    const alternatives = writeTool?.inputSchema.anyOf as Array<Record<string, unknown>>;
+    expect(writeTool?.inputSchema.type).toBe("object");
+    expect(alternatives).toHaveLength(3);
+    const blobAlternative = alternatives.find((alternative) =>
+      Object.hasOwn(alternative.properties as object, "blob"));
+    const properties = blobAlternative?.properties as Record<string, Record<string, unknown>>;
+    expect(properties.blob).toMatchObject({
+      contentEncoding: "base64",
+      contentMediaType: "application/octet-stream",
+    });
+    expect(blobAlternative?.required).toEqual(expect.arrayContaining(["blob"]));
+    expect(properties).not.toHaveProperty("content");
+  });
+
+  it("does not advertise repeatable side effects as idempotent", async () => {
+    const tools = await client.listTools();
+    for (const name of [
+      "openl_append_table",
+      "openl_start_project_tests",
+      "openl_deploy_project",
+      "openl_redeploy_project",
+    ]) {
+      const tool = tools.tools.find((candidate) => candidate.name === name);
+      expect(tool?.annotations?.idempotentHint).not.toBe(true);
+    }
+  });
+
   it("surfaces a backend HTTP 405 as an isError result, not a protocol error", async () => {
-    // handleToolError maps HTTP 405 to ErrorCode.MethodNotFound — the same code an
+    // handleToolError maps HTTP 405 to ProtocolErrorCode.MethodNotFound — the same code an
     // unknown tool produces. A registered tool that gets a 405 is still a tool
     // failure, so it must reach the agent as an isError result, not a throw.
     mockAxios.onGet(/\/tables\/t1$/).reply(405, { code: "METHOD_NOT_ALLOWED", message: "Not allowed here" });

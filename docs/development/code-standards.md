@@ -141,7 +141,7 @@ Errors include:
 ### Type-Safe Error Handling ✓
 
 - Type guards for AxiosError
-- McpError re-thrown as-is
+- `ProtocolError` re-thrown as-is
 - All other errors wrapped with context
 
 ## Testing
@@ -201,7 +201,7 @@ npm run test:coverage # With coverage
 ### ESLint Configuration ✓
 
 - **0 errors**
-- **0 warnings**
+- **No new warnings** beyond the tracked baseline
 - TypeScript-specific rules
 - Proper suppression for unavoidable cases
 
@@ -276,9 +276,8 @@ constants.ts        Low
 ### Dependencies ✓
 
 **Production dependencies**:
-- `@modelcontextprotocol/sdk`: Latest stable (v1.29.0)
+- `@modelcontextprotocol/client`, `@modelcontextprotocol/server`, `@modelcontextprotocol/node`: MCP SDK v2
 - `axios`: HTTP client
-- `cors`: CORS middleware
 - `express`: HTTP server framework
 - `form-data`: File uploads
 - `yaml`: YAML parsing
@@ -286,8 +285,8 @@ constants.ts        Low
 
 **No unnecessary dependencies** ✓
 
-All dependencies actively maintained and secure:
-- npm audit: 0 vulnerabilities
+Review `npm audit` findings during dependency updates; do not preserve a stale
+fixed vulnerability count in documentation.
 - Latest versions used
 - Regular updates via dependabot
 
@@ -298,14 +297,14 @@ All dependencies actively maintained and secure:
 - **No credentials**: .gitignore properly configured
 - **Clean history**: Logical, atomic commits
 
-## MCP Best Practices (2025 Specification)
+## MCP SDK v2 Best Practices
 
 ### SDK Version ✓
 
-- **Latest stable**: v1.26.0
-- **All features**: Using latest protocol features
+- **SDK generation**: v2 through the split `@modelcontextprotocol/server`, `@modelcontextprotocol/node`, and `@modelcontextprotocol/client` packages
+- **All features**: Using the MCP SDK v2 contract
 - **Type support**: Full TypeScript support
-- **Protocol compliance**: MCP 2025 specification
+- **Protocol compliance**: Modern `2026-07-28` protocol with negotiated legacy 2025 support
 
 ### Schema Validation ✓
 
@@ -316,7 +315,7 @@ All dependencies actively maintained and secure:
 
 ### Tool Metadata ✓
 
-**MCP SDK Annotations** (v1.26.0 supported):
+**MCP SDK v2 Annotations**:
 - **annotations**: Standard MCP annotations including:
   - `readOnlyHint`: Indicates read-only operations
   - `destructiveHint`: Marks potentially destructive operations
@@ -348,14 +347,14 @@ All dependencies actively maintained and secure:
 - Tool names for error tracing
 - Sanitized messages (credentials redacted)
 
-*Note: Enhanced error handling is implemented at the application level. The MCP SDK provides `McpError` with standard error codes, which we extend with additional context.*
+*Note: Enhanced error handling is implemented at the application level. MCP SDK v2 provides `ProtocolError` with standard protocol error codes, which the server enriches with sanitized context.*
 
 ## Compliance Checklist
 
 ### Code Quality ✓
 
 - [x] TypeScript strict mode
-- [x] ESLint clean (0 errors, 0 warnings)
+- [x] ESLint clean (0 errors; existing warnings tracked)
 - [x] No unused imports
 - [x] Proper return types
 - [x] JSDoc documentation

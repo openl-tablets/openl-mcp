@@ -120,7 +120,7 @@ export function sanitizeError(error: unknown): string {
  * context. Long string values (e.g. a raw file body passed to
  * openl_write_project_file via its `content` arg) are replaced with a length
  * marker so proprietary rules / PII / pasted secrets can't leak into logs or
- * into the McpError data returned to the client. Generous enough for normal
+ * into the ProtocolError data returned to the client. Generous enough for normal
  * args (paths, comments, ids).
  */
 const MAX_SANITIZED_STRING_LENGTH = 2048;

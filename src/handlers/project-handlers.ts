@@ -2,9 +2,7 @@
  * Project tool handlers — list/get projects, project status, open/save/close,
  * create projects and project branches.
  */
-
-import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
-
+import { ProtocolError, ProtocolErrorCode } from "@modelcontextprotocol/server";
 import type { OpenLClient } from "../client.js";
 import * as schemas from "../schemas.js";
 import type * as Types from "../types.js";
@@ -20,7 +18,7 @@ import { registerTool, rethrowConflictAsActionable, type ToolResponse } from "./
  * @param error - Error to handle
  * @param toolName - Name of the tool that failed
  * @param toolArgs - Tool arguments that were passed (will be sanitized)
- * @returns McpError with enhanced context
+ * @returns ProtocolError with enhanced context
  */
 /**
  * Severity ordering for `compilation.messages.items`. Anything not recognised
@@ -216,8 +214,8 @@ export function registerProjectHandlers(): void {
       // projectId is an opaque backend value and must be passed through unchanged.
       const transformedProjects = projects.map((project) => {
         if (typeof project.id !== "string" || project.id.length === 0) {
-          throw new McpError(
-            ErrorCode.InternalError,
+          throw new ProtocolError(
+            ProtocolErrorCode.InternalError,
             "Invalid project ID returned by backend: expected non-empty string."
           );
         }
@@ -461,8 +459,8 @@ export function registerProjectHandlers(): void {
 
       // Validate that both saveChanges and discardChanges are not set to true
       if (typedArgs.saveChanges === true && typedArgs.discardChanges === true) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
           "Cannot set both saveChanges and discardChanges to true. Choose one option:\n" +
           "1. Set saveChanges: true (with comment) to save changes before closing\n" +
           "2. Set discardChanges: true to explicitly discard unsaved changes (destructive operation)"
@@ -473,8 +471,8 @@ export function registerProjectHandlers(): void {
         if (typedArgs.saveChanges === true) {
           // Save changes before closing
           if (!typedArgs.comment) {
-            throw new McpError(
-              ErrorCode.InvalidParams,
+            throw new ProtocolError(
+              ProtocolErrorCode.InvalidParams,
               "comment is required when saveChanges is true. Provide a commit message describing the changes."
             );
           }
@@ -519,8 +517,8 @@ export function registerProjectHandlers(): void {
           };
         } else {
           // Error: must choose to save or discard
-          throw new McpError(
-            ErrorCode.InvalidParams,
+          throw new ProtocolError(
+            ProtocolErrorCode.InvalidParams,
             "Project has unsaved changes. You must either:\n" +
             "1. Set saveChanges: true (with comment) to save and close\n" +
             "2. Set discardChanges: true to close without saving (then ask user to confirm and call again with confirmDiscard: true)"
@@ -614,8 +612,8 @@ export function registerProjectHandlers(): void {
             );
       } catch (error) {
         if (source && isNotFoundError(error)) {
-          throw new McpError(
-            ErrorCode.InvalidParams,
+          throw new ProtocolError(
+            ProtocolErrorCode.InvalidParams,
             `Cannot copy: source project '${source}' was not found in repository '${typedArgs.repository}'. ` +
               "Use openl_list_projects() to find an existing source project.",
           );

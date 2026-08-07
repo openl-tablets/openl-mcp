@@ -249,17 +249,22 @@ evidence to the user for manual resolution in Studio rather than choosing or
 applying a side themselves.
 
 **Project File Tools**:
-- `openl_read_project_file` - Read a project file
-- `openl_write_project_file` - Write a project file
+- `openl_read_project_file` - Read text directly and return arbitrary binary bytes as base64 in a JSON TextContent envelope with MIME and byte-range metadata
+- `openl_write_project_file` - Write UTF-8 `content` or a JSON Schema `contentEncoding: "base64"` binary `blob`
 - `openl_copy_project_file` - Copy a project file
 - `openl_move_project_file` - Move a project file
 - `openl_delete_project_file` - Delete a project file
-- `openl_search_project_files` - Search across project files
+- `openl_search_project_files` - Search paths and metadata across project files; content matching inspects text files only and never XLSX/ZIP/other binary content
+
+Arbitrary binary bytes use a lossless JSON TextContent envelope with base64
+`content`, MIME type, total size, and returned byte range. Do not use embedded
+blob resources for XLSX, ZIP, or generic octet streams: common MCP clients route
+them through image rendering and reject them as unsupported images.
 
 **Rules / Table Tools**:
 - `openl_list_tables` - List tables/rules with filters (supports pagination)
 - `openl_get_table` - Get the authoritative RawSource cell matrix; sliced responses carry `totalRows`
-- `openl_update_table` - Replace a complete RawSource matrix; reject sliced views carrying `totalRows` to prevent deletion of omitted rows
+- `openl_update_table` - Replace a complete RawSource matrix; reject sliced views carrying `totalRows` to prevent deletion of omitted rows; reject read-only cell `style` fields because Studio cannot write formatting
 - `openl_append_table` - Append full-width RawSource rows
 - `openl_create_project_table` - Create a table/rule from a complete RawSource matrix
 - `openl_delete_table` - Delete an entire table from the project
@@ -529,7 +534,7 @@ pagination via `limit` and `offset` parameters.
 - All inputs validated before processing
 - No SQL injection vulnerabilities
 - No path traversal vulnerabilities
-- npm audit clean (0 vulnerabilities)
+- npm audit findings reviewed; no unaccepted high/critical vulnerabilities
 
 ### NFR-2: Performance
 
@@ -549,7 +554,7 @@ pagination via `limit` and `offset` parameters.
 ### NFR-4: Maintainability
 
 - Modular architecture with clear separation
-- ESLint compliance (0 errors, 0 warnings)
+- ESLint compliance (0 errors; no new warnings beyond the tracked baseline)
 - TypeScript strict mode compliance
 - Comprehensive tests
 - Up-to-date documentation
@@ -558,10 +563,18 @@ pagination via `limit` and `offset` parameters.
 
 - Node.js 24.0.0 or higher
 - OpenL Studio 6.0.0 or higher
-- MCP SDK 1.21.1 or higher
+- MCP TypeScript SDK v2
+- MCP protocol `2026-07-28`, with legacy 2025 negotiation support
 - ES Modules (type: "module")
 
-### NFR-6: Usability
+### NFR-6: HTTP transport isolation
+
+- Reject browser requests whose exact `Origin` is not in `MCP_ALLOWED_ORIGINS`
+- Expose `Mcp-Session-Id` to approved browser origins for legacy clients
+- Never share an `OpenLClient`, Studio cookies, caches, or session-bound workflow state between anonymous legacy MCP sessions
+- Construct a fresh Studio client for every stateless modern HTTP request
+
+### NFR-7: Usability
 
 - Clear error messages
 - Helpful validation feedback
@@ -582,7 +595,7 @@ The MCP server is considered successful when:
 7. ⏳ Test coverage >38% (target: 80%)
 8. ✅ ESLint enforced (no errors on commit)
 9. ✅ TypeScript strict mode clean
-10. ✅ npm audit clean (0 vulnerabilities)
+10. ✅ npm audit findings reviewed; no unaccepted high/critical vulnerabilities
 11. ✅ Documentation complete and accurate
 12. ✅ Examples verified and working
 13. ✅ Compatible with OpenL 6.0.0+

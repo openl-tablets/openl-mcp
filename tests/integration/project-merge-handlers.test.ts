@@ -222,6 +222,31 @@ describe("project branch and merge handlers", () => {
     });
   });
 
+  it("returns binary conflict chunks as lossless base64 TextContent", async () => {
+    const bytes = Buffer.from([0, 1, 2, 3]);
+    mockAxios.onGet("/projects/p1/merge/conflicts/files").reply(200, bytes, {
+      "content-type": "application/octet-stream",
+    });
+
+    const response = await executeTool("read_merge_conflict_file", {
+      projectId: "p1",
+      file: "rules/Main.xlsx",
+      side: "THEIRS",
+      length: 3,
+    }, client, { signal: new AbortController().signal });
+
+    expect(jsonResult<Record<string, unknown>>(response.content[0].text)).toMatchObject({
+      file: "rules/Main.xlsx",
+      side: "THEIRS",
+      mimeType: "application/octet-stream",
+      returnedBytes: 3,
+      hasMore: true,
+      nextOffset: 3,
+      content: Buffer.from([0, 1, 2]).toString("base64"),
+    });
+    expect(response.content).toHaveLength(1);
+  });
+
   it("keeps UTF-8 characters complete across conflict-file chunks", async () => {
     const content = Buffer.from("A😀B", "utf-8");
     mockAxios.onGet("/projects/p1/merge/conflicts/files").reply(200, content, {

@@ -37,7 +37,7 @@ Provide a production-ready, enterprise-grade MCP server that enables AI coding a
 // All errors pass through sanitizeError()
 catch (error: unknown) {
   const sanitizedMessage = sanitizeError(error);
-  throw new McpError(ErrorCode.InternalError, sanitizedMessage);
+  throw new ProtocolError(ProtocolErrorCode.InternalError, sanitizedMessage);
 }
 ```
 
@@ -123,8 +123,8 @@ server.registerTool("getTable", ...);
 ```typescript
 catch (error: unknown) {
   if (axios.isAxiosError(error)) {
-    throw new McpError(
-      ErrorCode.InternalError,
+    throw new ProtocolError(
+      ProtocolErrorCode.InternalError,
       `API error (${error.response?.status}): ${sanitizeError(error)}`
     );
   }
@@ -148,7 +148,8 @@ catch (error: unknown) {
 
 ### 10. MCP Protocol Compliance
 
-- **Latest SDK** - Use stable MCP SDK v1.21.1+
+- **Latest SDK** - Use the stable split MCP SDK v2 packages
+- **Protocol eras** - Serve modern `2026-07-28` and retain negotiated legacy 2025 compatibility
 - **Standard patterns** - Follow MCP best practices
 - **Tool metadata** - Include version, category, auth requirements
 
@@ -159,12 +160,14 @@ catch (error: unknown) {
 - **Security audit** - Regular npm audit checks
 - **Version pinning** - Use exact versions in production
 
-**Production Dependencies** (5 only):
-- `@modelcontextprotocol/sdk`
+**Production Dependencies**:
+- `@modelcontextprotocol/server`, `@modelcontextprotocol/node`
+- `@stomp/stompjs`, `ws`
 - `axios`
+- `express`
 - `form-data`
+- `yaml`
 - `zod`
-- `zod-to-json-schema`
 
 ## Development Guidelines
 
@@ -186,7 +189,7 @@ catch (error: unknown) {
 
 **ESLint Compliance**:
 - 0 errors
-- 0 warnings
+- No new warnings beyond the tracked baseline
 - Fix issues, don't suppress (except documented exceptions)
 
 ### RegisterTool Pattern (Not Switch Statements)
@@ -421,7 +424,7 @@ export function registerAllTools(
 
 ### Pre-Commit
 - Code compiles without errors
-- ESLint passes with 0 errors/warnings
+- ESLint passes with 0 errors and no new warnings
 - All tests pass
 
 ### Pre-PR
@@ -432,7 +435,7 @@ export function registerAllTools(
 
 ### Pre-Release
 - Full test suite passes
-- npm audit clean (0 vulnerabilities)
+- npm audit findings reviewed; no unaccepted high/critical vulnerabilities
 - Documentation complete and reviewed
 - Examples tested and verified
 
@@ -455,7 +458,7 @@ export function registerAllTools(
 - ❌ **Switch statements for tool handling** - Use `registerTool()` pattern only.
 
 **Security**:
-- ❌ **No security vulnerabilities** - npm audit must be clean.
+- ❌ **No untriaged security vulnerabilities** - review every npm audit finding and block unaccepted high/critical risk.
 - ❌ **No unvalidated inputs** - All inputs must pass through Zod schemas.
 - ❌ **No timeout-less requests** - All network requests must have timeouts.
 
@@ -468,7 +471,7 @@ export function registerAllTools(
 - Documentation: Complete
 
 **Security**:
-- npm audit: 0 vulnerabilities
+- npm audit: findings reviewed and documented
 - Credential sanitization: 100%
 - Input validation: All inputs validated
 

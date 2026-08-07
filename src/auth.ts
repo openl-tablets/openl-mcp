@@ -27,10 +27,10 @@ const loggedAuthConfigs = new Set<string>();
  * Authentication manager for OpenL Studio API
  *
  * Handles:
- * - Token lifecycle management
- * - Automatic token refresh
+ * - Optional Personal Access Token headers
+ * - Anonymous single-user Studio access
  * - Request/response interceptors
- * - Multiple authentication methods
+ * - Actionable 401 diagnostics
  */
 export class AuthenticationManager {
   private config: Types.OpenLConfig;

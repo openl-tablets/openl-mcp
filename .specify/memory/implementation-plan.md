@@ -1,7 +1,7 @@
 # OpenL MCP Server - Implementation Plan
 
-> **Status**: Experimental (v1.0.0) - 40 tools active
-> **Last Updated**: 2026-01-28
+> **Status**: Active (v1.1.0) - 73 tools
+> **Last Updated**: 2026-08-07
 > **Major Milestone**: Completed architectural refactoring from monolithic to modular design
 
 ## Executive Summary
@@ -15,7 +15,7 @@ The OpenL MCP Server underwent a **major architectural refactoring** in November
 - ✅ **Response Formatting**: Unified JSON/Markdown formatting with pagination support
 - ✅ **Structured Logging**: stderr-only logging with credential sanitization
 - ✅ **MCP Annotations**: First-class support for readOnlyHint, idempotentHint, destructiveHint, openWorldHint
-- ✅ **Tool Prefix**: All 40 tools use the `openl_` prefix for namespacing
+- ✅ **Tool Prefix**: All 73 tools use the `openl_` prefix for namespacing
 - ✅ **Character Limits**: Automatic truncation at 25,000 characters
 - ✅ **Pagination**: Built-in pagination (limit: 50, max: 200) for all list operations
 
@@ -37,47 +37,51 @@ The OpenL MCP Server underwent a **major architectural refactoring** in November
 - Rationale: LTS version with ESM support, widespread adoption
 - Features used: ES Modules, async/await, modern APIs
 
-**Language**: TypeScript 5.7.2
+**Language**: TypeScript 6
 - Rationale: Type safety, excellent IDE support, industry standard
 - Configuration: Strict mode enabled, ES2022 target
 - Module system: Node16 (native ESM)
 
-**Protocol**: Model Context Protocol (MCP) SDK 1.21.1
-- Rationale: Official SDK, latest stable version
-- Features: Tools, prompts, type-safe validation
+**Protocol**: Model Context Protocol (MCP) TypeScript SDK v2
+- Rationale: Official SDK with modern `2026-07-28` and legacy 2025 negotiation
+- Features: Tools, prompts, type-safe validation, stdio, and Streamable HTTP
 
 ### Dependencies
 
-**Production Dependencies** (5):
+**Production Dependencies**:
 
-1. **@modelcontextprotocol/sdk** (^1.21.1)
+1. **@modelcontextprotocol/server** / **@modelcontextprotocol/node** (v2)
    - Purpose: MCP protocol implementation
    - Features: Server, tools, prompts
    - Size: ~500KB
 
-2. **axios** (^1.7.9)
+2. **@stomp/stompjs** / **ws**
+   - Purpose: wait for Studio compilation events over STOMP WebSockets
+
+3. **axios**
    - Purpose: HTTP client for OpenL API
    - Features: Interceptors, timeout, connection pooling
    - Alternatives considered: fetch (lacks interceptors), node-fetch (no TypeScript)
 
-3. **form-data** (^4.0.1)
+4. **express**
+   - Purpose: Streamable HTTP hosting
+
+5. **form-data**
    - Purpose: Multipart file uploads
    - Features: Stream support, proper content-type headers
    - Usage: Excel file uploads
 
-4. **zod** (^3.23.8)
+6. **yaml**
+   - Purpose: parse repository agent guidance metadata
+
+7. **zod**
    - Purpose: Runtime schema validation
    - Features: Type inference, composable, excellent errors
    - Alternatives considered: Joi (no type inference), Yup (less TypeScript-friendly)
 
-5. **zod-to-json-schema** (^3.23.5)
-   - Purpose: Convert Zod schemas to JSON Schema for MCP
-   - Features: Automatic conversion, maintains metadata
-   - Integration: Seamless with Zod
-
 **Development Dependencies**:
 - TypeScript tooling: `typescript`, `ts-jest`
-- Testing: `jest`, `@jest/globals`, `nock`
+- Testing: `jest`, `@jest/globals`, `nock`, `axios-mock-adapter`, `@modelcontextprotocol/client`
 - Linting: `eslint`, `@typescript-eslint/*`
 - Type definitions: `@types/node`
 
@@ -95,11 +99,11 @@ The OpenL MCP Server underwent a **major architectural refactoring** in November
 ┌─────────────────────────────────────────────────┐
 │         AI Coding Agent (Claude, etc.)          │
 └───────────────────┬─────────────────────────────┘
-                    │ MCP Protocol (stdio)
+                    │ MCP Protocol (stdio / Streamable HTTP)
 ┌───────────────────▼─────────────────────────────┐
 │            MCP Server (index.ts)                │
 │  ┌──────────────────────────────────────────┐   │
-│  │  Tool Handlers (40 tools)                │   │
+│  │  Tool Handlers (73 tools)                │   │
 │  ├──────────────────────────────────────────┤   │
 │  │  Prompt Registry (14 prompts)            │   │
 │  └──────────────────────────────────────────┘   │
@@ -109,7 +113,7 @@ The OpenL MCP Server underwent a **major architectural refactoring** in November
 │         OpenL Studio API Client                │
 │  ┌──────────────────────────────────────────┐   │
 │  │  Authentication Manager                  │   │
-│  │  - Basic Auth, API Key, OAuth 2.1        │   │
+│  │  - Anonymous or Personal Access Token    │   │
 │  ├──────────────────────────────────────────┤   │
 │  │  API Methods (30+ methods)               │   │
 │  │  - Repository, Project, Rules, Deploy    │   │
@@ -175,10 +179,10 @@ The MCP server has been **refactored from a 766-line monolithic index.ts to a mo
 
 #### Layer 5: Cross-Cutting Concerns
 - `src/auth.ts` (232 lines)
-  - Authentication lifecycle
-  - Token management
+  - Optional Personal Access Token authentication
+  - Anonymous single-user Studio access
   - Request interceptors
-  - Multi-method support (Basic, API Key, OAuth 2.1)
+  - Sanitized 401 diagnostics
 
 - `src/prompts-registry.ts` (262 lines)
   - Registry built from prompt-file frontmatter (name derived from filename)
@@ -199,7 +203,7 @@ The MCP server has been **refactored from a 766-line monolithic index.ts to a mo
 #### Layer 6: Definitions
 - `src/schemas.ts` (270 lines, **ENHANCED**)
   - Zod schemas with .strict() mode
-  - Input validation (40 tool schemas)
+- Input validation (73 tool schemas)
   - Type inference
   - Runtime safety
 
@@ -241,64 +245,40 @@ The MCP server has been **refactored from a 766-line monolithic index.ts to a mo
 
 **Error Flow**:
 ```text
-1. Error occurs (any layer)
-2. Catch with try/catch
-3. Sanitize error message (redact credentials)
-4. Wrap in McpError with context
-5. Return to AI agent with error details
+1. MCP request handler resolves the requested tool in the registry
+2. If the tool is unknown, return a `ProtocolError` protocol failure
+3. If the registered tool fails, `executeTool()` sanitizes the detailed error message
+4. MCP request handler returns that message as a tool result with `isError: true`
+5. AI agent receives actionable failure details without misclassifying them as a protocol fault
 ```
 
-**Authentication Flow (OAuth)**:
+**Authentication Flow**:
 ```text
-1. Request needs authentication
-2. Check if token cached and valid
-3. If not, acquire new token:
-   a. POST to token URL with client credentials
-   b. Parse response for access_token
-   c. Cache token with expiration
-4. Add token to Authorization header
-5. Proceed with request
+1. Resolve an optional PAT from the client configuration
+2. If present, add `Authorization: Token <PAT>`
+3. Otherwise send no authorization header for single-user Studio
+4. Proceed with the request
 ```
 
 ## Implementation Details
 
 ### Authentication System
 
-**Design**: Pluggable authentication via interceptors
+**Design**: Optional PAT authentication via Axios interceptors
 
 **Supported Methods**:
 
-1. **Basic Authentication**:
+1. **Personal Access Token**:
    ```typescript
-   config: { username: "admin", password: "admin" }
-   → Header: "Authorization: Basic YWRtaW46YWRtaW4="
+   config: { personalAccessToken: "openl_pat_..." }
+   → Header: "Authorization: Token openl_pat_..."
    ```
 
-2. **API Key**:
+2. **Anonymous single-user Studio**:
    ```typescript
-   config: { apiKey: "sk-..." }
-   → Header: "Authorization: Bearer sk-..."
+   config: { baseUrl: "http://localhost:8080" }
+   → No Authorization header
    ```
-
-3. **OAuth 2.1**:
-   ```typescript
-   config: {
-     oauth: {
-       tokenUrl: "https://auth.example.com/token",
-       clientId: "client-id",
-       clientSecret: "secret",
-       grantType: "client_credentials",
-       scope: "openl:read openl:write"
-     }
-   }
-   → Fetch token → Cache → Header: "Authorization: Bearer eyJ..."
-   ```
-
-**Token Caching**:
-- Tokens cached in memory with expiration
-- Automatic refresh before expiration
-- Concurrent request deduplication
-- No persistent storage (security)
 
 **Interceptors**:
 - Request interceptor adds auth headers
@@ -324,10 +304,13 @@ export const listProjectsSchema = z.object({
 type ListProjectsInput = z.infer<typeof listProjectsSchema>;
 ```
 
-**JSON Schema Conversion**:
+**Schema Registration**:
 ```typescript
-const inputSchema = zodToJsonSchema(listProjectsSchema);
-// → Used in MCP tool definition
+registerTool({
+  schema: schemas.listProjectsSchema,
+  // The registry converts the Zod schema when advertising the MCP tool definition.
+  // ...
+});
 ```
 
 **Benefits**:
@@ -359,8 +342,8 @@ try {
   const result = await this.client.someMethod();
 } catch (error: unknown) {
   if (axios.isAxiosError(error)) {
-    throw new McpError(
-      ErrorCode.InternalError,
+    throw new ProtocolError(
+      ProtocolErrorCode.InternalError,
       `API error (${error.response?.status}): ${sanitizeError(error)}`,
       {
         endpoint: error.config?.url,
@@ -402,7 +385,7 @@ registerTool({
   name: "openl_list_repositories",
   title: "List Repositories",
   description: "List all design repositories...",
-  inputSchema: zodToJsonSchema(schemas.listRepositoriesSchema) as Record<string, unknown>,
+  schema: schemas.listRepositoriesSchema,
   annotations: {
     readOnlyHint: true,
     openWorldHint: true,
@@ -439,13 +422,13 @@ const toolHandlers = new Map<string, ToolDefinition>();
 export function registerAllTools(server: Server, client: OpenLClient): void {
   registerTool({ /* tool 1 */ });
   registerTool({ /* tool 2 */ });
-  // ... 40 tools total
+  // ... 73 tools total
 }
 
 // Execute tool by name
 export async function executeTool(name: string, args: unknown, client: OpenLClient) {
   const tool = toolHandlers.get(name);
-  if (!tool) throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+  if (!tool) throw new ProtocolError(ProtocolErrorCode.MethodNotFound, `Unknown tool: ${name}`);
   return await tool.handler(args, client);
 }
 ```
@@ -477,7 +460,7 @@ registerTool({
   name: "openl_my_new_tool",  // Always use openl_ prefix
   title: "My New Tool",
   description: "Detailed description for AI agents",
-  inputSchema: zodToJsonSchema(schemas.myNewToolSchema) as Record<string, unknown>,
+  schema: schemas.myNewToolSchema,
   annotations: {
     readOnlyHint: true,  // Does not modify data
     idempotentHint: true,  // Safe to retry
@@ -969,7 +952,7 @@ npm run lint:fix   # Fix automatically
 - Extends: @typescript-eslint/recommended
 - Parser: @typescript-eslint/parser
 - Rules: Strict TypeScript rules
-- Target: 0 errors, 0 warnings
+- Target: 0 errors; do not add warnings to the tracked baseline
 
 **TypeScript**:
 - Strict mode enabled
@@ -1127,6 +1110,6 @@ npm run lint:fix   # Fix automatically
 
 ---
 
-*Last Updated: 2026-01-28*
+*Last Updated: 2026-08-07*
 *Version: 2.0.0* (Post-Refactoring)
 *Status: Refactored & Production-Ready*

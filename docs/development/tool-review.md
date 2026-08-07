@@ -103,10 +103,12 @@ See **AGENTS.md** § "Local projects (repository: local)" for agent-facing summa
 **Extra/Missed Inputs**:
 - ✅ Always requests `raw=true`; supports `startRow`, `maxRows`, and `styles`
 - ✅ Returns only the authoritative `RawTableView` cell matrix
+- ✅ Treats styles as read-only; write schemas reject `style` because Studio ignores formatting updates
 
 **Recommendations**:
 - Do not expose Studio's typed/parsed table views. They are incomplete and lossy.
 - Never pass a window carrying `totalRows` to `openl_update_table`; read the complete matrix first or use a narrow raw action.
+- Read with `styles=true` only for inspection; read without styles before a full update.
 
 ---
 
@@ -132,13 +134,23 @@ See **AGENTS.md** § "Local projects (repository: local)" for agent-facing summa
 
 ## File Management Tools
 
-Project files are managed through the text-oriented file tools `openl_read_project_file`,
+Project files are managed through the binary-safe file tools `openl_read_project_file`,
 `openl_write_project_file`, `openl_search_project_files`, `openl_copy_project_file`,
 `openl_move_project_file`, and `openl_delete_project_file`.
 
-> **Removed**: there is no Excel-file upload/download tool. The earlier
+`openl_search_project_files.content` is text-only: Studio does not index or
+inspect XLSX, ZIP, images, or other binary formats. Binary files can be located
+by path pattern/extension and then read separately.
+
+MCP binary reads use a JSON TextContent envelope with base64 `content`, `mimeType`,
+and byte-range metadata; binary writes accept the `blob` parameter whose JSON Schema declares
+`contentEncoding: "base64"` and `contentMediaType: "application/octet-stream"`.
+The old `content` plus `encoding: "base64"` request remains accepted for compatibility.
+
+> **Removed**: there is no separate Excel-file upload/download tool. The earlier
 > `openl_upload_file` / `openl_download_file` tools have been removed and have no
-> MCP replacement.
+> one-purpose replacement; the generic project-file tools handle Excel and other
+> binary files through standard MCP binary content.
 
 ---
 
@@ -515,7 +527,7 @@ The server registers **73 tools**. All are listed below.
 | 16 | `openl_repository_project_revisions` | Repository | ✅ Complete | `GET /repos/{repository}/projects/{projectName}/history` | Get committed project revision history |
 | 17 | `openl_read_project_file` | Files | ✅ Complete | project file read | Read a file from the project |
 | 18 | `openl_write_project_file` | Files | ✅ Complete | project file write | Create or overwrite a project file |
-| 19 | `openl_search_project_files` | Files | ✅ Complete | project file search | Search project files by name/content |
+| 19 | `openl_search_project_files` | Files | ✅ Complete | project file search | Search paths and text-file content |
 | 20 | `openl_copy_project_file` | Files | ✅ Complete | project file copy | Copy a project file |
 | 21 | `openl_move_project_file` | Files | ✅ Complete | project file move | Move/rename a project file |
 | 22 | `openl_delete_project_file` | Files | ✅ Complete | project file delete | Delete a project file |

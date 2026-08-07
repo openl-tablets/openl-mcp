@@ -3,9 +3,7 @@
  * execution, dependency discovery, module/sheet/property discovery, and
  * server-side table copying.
  */
-
-import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
-
+import { ProtocolError, ProtocolErrorCode } from "@modelcontextprotocol/server";
 import * as schemas from "../schemas.js";
 import { formatResponse } from "../formatters.js";
 import { isAxiosError } from "../utils.js";
@@ -37,9 +35,9 @@ function makeAbortError(): Error {
   return error;
 }
 
-function makeRunTimeoutError(timeoutMs: number): McpError {
-  return new McpError(
-    ErrorCode.RequestTimeout,
+function makeRunTimeoutError(timeoutMs: number): ProtocolError {
+  return new ProtocolError(
+    ProtocolErrorCode.InvalidRequest,
     `Table execution did not finish within ${timeoutMs} ms. The pending Studio run was cancelled; retry with a larger timeoutMs if the table is expected to run longer.`,
   );
 }
@@ -144,8 +142,8 @@ export function registerTableWorkflowHandlers(): void {
         throw makeAbortError();
       }
       if (activeTableRunClients.has(client)) {
-        throw new McpError(
-          ErrorCode.InvalidRequest,
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidRequest,
           "Another openl_run_table call is already active in this Studio session. Wait for it to finish or cancel it before starting another table run.",
         );
       }

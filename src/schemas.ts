@@ -16,6 +16,7 @@
  */
 
 import { z } from "zod";
+import { isValidBase64 } from "./content-utils.js";
 
 // Re-export z for convenience
 export { z };
@@ -197,34 +198,13 @@ export const copyTableSchema = z.object({
   response_format: ResponseFormat.optional(),
 }).strict();
 
-const rawBorderSideView = z.strictObject({
-  style: z.enum(["solid", "dashed", "dotted", "double"]).optional(),
-  width: z.number().int().optional(),
-});
-const rawCellStyleView = z.strictObject({
-  align: z.enum(["right", "center", "justify"]).optional(),
-  background: z.string().optional(),
-  bold: z.boolean().optional(),
-  border: z.strictObject({
-    bottom: rawBorderSideView.optional(),
-    left: rawBorderSideView.optional(),
-    right: rawBorderSideView.optional(),
-    top: rawBorderSideView.optional(),
-  }).optional(),
-  color: z.string().optional(),
-  indent: z.number().int().min(1).optional(),
-  italic: z.boolean().optional(),
-  underline: z.boolean().optional(),
-  valign: z.enum(["center", "top"]).optional(),
-});
 const rawTableCellSchema = z.strictObject({
   value: z.unknown().optional(),
   colspan: z.number().int().min(1).optional(),
   rowspan: z.number().int().min(1).optional(),
   covered: z.boolean().optional(),
   cell: z.string().optional(),
-  style: rawCellStyleView.optional(),
-});
+}).describe("Writable raw cell. Studio exposes style only when reading with styles=true; table write APIs do not support changing style, so style is intentionally rejected.");
 
 export const appendTableSchema = z.object({
   projectId: projectIdSchema,
@@ -514,7 +494,7 @@ const rawTableViewSchema = z.strictObject({
     kind: z.enum(["Rules", "Spreadsheet", "Datatype", "Data", "Test", "TBasic", "Column Match", "Method", "Run", "Constants", "Conditions", "Actions", "Returns", "Environment", "Properties", "Other"]).optional().describe("Informational table kind."),
     messages: z.array(z.any()).optional().describe("Read-only diagnostics tolerated when a get response is round-tripped."),
     pos: z.string().optional(),
-    source: z.array(z.array(rawTableCellSchema)).describe("Complete 2D source matrix. Preserve cell positions, covered placeholders, spans, and styles when replacing a table."),
+    source: z.array(z.array(rawTableCellSchema)).describe("Complete 2D source matrix. Preserve cell positions, covered placeholders, and spans when replacing a table. Remove read-only style objects returned by styles=true; Studio table write APIs cannot change formatting."),
     totalRows: z.number().int().optional().describe("Total row count when the response contains a window."),
 }).describe("Complete RawSource table structure. Typed table DTOs are intentionally unsupported because they cannot reliably round-trip workbook content.");
 
@@ -797,7 +777,7 @@ export const readProjectFileSchema = z.object({
     .boolean()
     .optional()
     .describe(
-      "For a folder, set true to download the folder and its contents as a ZIP archive (returned base64-encoded). Ignored for files."
+      "For a folder, set true to download the folder and its contents as a ZIP archive (base64 content in a JSON text envelope). Ignored for files."
     ),
   recursive: z
     .boolean()
@@ -836,7 +816,7 @@ export const readProjectFileSchema = z.object({
     .enum(["auto", "utf-8", "base64"])
     .default("auto")
     .describe(
-      "How to return file content. 'auto' (default) returns text as UTF-8 and binary as base64; 'utf-8' forces text; 'base64' forces base64. Ignored for metadata/listing responses."
+      "How to return file content. 'auto' (default) returns text as UTF-8 and binary as base64 content in a JSON text envelope; 'utf-8' forces text; 'base64' forces the base64 envelope. Ignored for metadata/listing responses."
     ),
   offset: z
     .number()
@@ -855,16 +835,9 @@ export const readProjectFileSchema = z.object({
   response_format: ResponseFormat.optional(),
 }).strict();
 
-export const writeProjectFileSchema = z.object({
+const writeProjectFileBaseSchema = z.object({
   projectId: projectIdSchema,
   path: filePathSchema,
-  content: z
-    .string()
-    .describe("File content, interpreted according to 'encoding'. Use base64 for binary files (xlsx, images, zip)."),
-  encoding: z
-    .enum(["utf-8", "base64"])
-    .default("utf-8")
-    .describe("How 'content' is encoded: 'utf-8' (default) for text, 'base64' for binary."),
   createFolders: z
     .boolean()
     .default(true)
@@ -879,7 +852,45 @@ export const writeProjectFileSchema = z.object({
     .describe("Optional commit message. PRESENT → the write is committed to Git after saving the project (a new revision is created). ABSENT → the write stays in the project WORKING COPY (commit it later with openl_save_project). NOTE: committing saves ALL pending project changes (OpenL has no per-file commit), and only works for design (Git) repositories — not 'local'."),
   branch: fileBranchSchema,
   response_format: ResponseFormat.optional(),
+});
+
+const writeUtf8ProjectFileSchema = writeProjectFileBaseSchema.extend({
+  content: z
+    .string()
+    .describe("UTF-8 text content."),
+  encoding: z
+    .literal("utf-8")
+    .optional()
+    .describe("Optional explicit UTF-8 encoding; omitted means UTF-8."),
 }).strict();
+
+const writeLegacyBase64ProjectFileSchema = writeProjectFileBaseSchema.extend({
+  content: z
+    .string()
+    .refine(isValidBase64, "Content is not valid base64.")
+    .describe("Legacy base64 binary content. Whitespace and line wrapping are accepted."),
+  encoding: z
+    .literal("base64")
+    .describe("Marks the legacy content parameter as base64."),
+}).strict();
+
+const writeBlobProjectFileSchema = writeProjectFileBaseSchema.extend({
+  blob: z
+    .base64()
+    .meta({ contentMediaType: "application/octet-stream" })
+    .describe("Binary file bytes encoded as base64. Uses JSON Schema 2020-12 contentEncoding='base64'."),
+}).strict();
+
+/**
+ * Exactly one content representation is accepted. Keeping this as a Zod union
+ * makes the same mutually exclusive alternatives visible in the generated MCP JSON Schema;
+ * superRefine alone would enforce it only at runtime.
+ */
+export const writeProjectFileSchema = z.union([
+  writeUtf8ProjectFileSchema,
+  writeLegacyBase64ProjectFileSchema,
+  writeBlobProjectFileSchema,
+]);
 
 export const deleteProjectFileSchema = z.object({
   projectId: projectIdSchema,
@@ -893,15 +904,15 @@ export const searchProjectFilesSchema = z.object({
   pattern: z
     .string()
     .optional()
-    .describe("Ant-glob path pattern, e.g. 'rules/**/*.xlsx' or '**/*.xml'."),
+    .describe("Ant-glob path pattern, e.g. 'rules/**/*.xlsx' or '**/*.xml'. This can find binary files by path, but content is never searched inside them."),
   content: z
     .string()
     .optional()
-    .describe("Case-insensitive content substring to match inside files (full-text search)."),
+    .describe("Case-insensitive substring to match inside TEXT files only. Studio does not inspect binary content such as XLSX/XLS/ZIP/images; use pattern/extensions to locate binary files instead."),
   extensions: z
     .array(z.string())
     .optional()
-    .describe("Filter by file extensions without the dot, e.g. ['xlsx','xml']."),
+    .describe("Filter by file extensions without the dot, e.g. ['xlsx','xml']. With content, only matching text files are inspected; binary extensions such as xlsx can be located but not searched internally."),
   type: z
     .enum(["FILE", "FOLDER", "ANY"])
     .optional()

@@ -13,11 +13,21 @@ export function looksBinary(buffer: Buffer): boolean {
   return suspicious / sampleLength > 0.1;
 }
 
-/** Validate base64 strictly because Buffer.from silently ignores bad input. */
+/** Remove line wrapping accepted by the legacy base64 file-write contract. */
+export function compactBase64(value: string): string {
+  return value.replace(/\s+/g, "");
+}
+
+/** Validate standard base64 after accepting legacy whitespace wrapping. */
 export function isValidBase64(value: string): boolean {
-  const compact = value.replace(/\s+/g, "");
+  const compact = compactBase64(value);
   if (compact.length === 0) return true;
   if (compact.length % 4 !== 0) return false;
   if (!/^[A-Za-z0-9+/]*={0,2}$/.test(compact)) return false;
   return Buffer.from(compact, "base64").toString("base64") === compact;
+}
+
+/** Normalize an HTTP Content-Type value for an MCP resource block. */
+export function normalizeMimeType(contentType: string): string {
+  return contentType.split(";", 1)[0]?.trim().toLowerCase() || "application/octet-stream";
 }

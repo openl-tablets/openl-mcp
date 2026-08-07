@@ -11,9 +11,7 @@
  * endpoint inside the tool call and returns the stack of the next stop, so
  * the agent never has to poll.
  */
-
-import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
-
+import { ProtocolError, ProtocolErrorCode } from "@modelcontextprotocol/server";
 import * as schemas from "../schemas.js";
 import { formatResponse } from "../formatters.js";
 import { isAxiosError, isNotFoundError } from "../utils.js";
@@ -167,7 +165,7 @@ function makeAbortError(): Error {
 }
 
 /**
- * Rethrow the trace API's two signature failures as actionable McpErrors:
+ * Rethrow the trace API's two signature failures as actionable ProtocolErrors:
  * 404 = no active debug session (or it was reaped / lives in another HTTP
  * session), or the referenced frame/parameter does not exist in it;
  * 409 = the session is not suspended. Anything else passes through to the
@@ -183,15 +181,15 @@ const NO_ACTIVE_SESSION =
 
 function rethrowTraceStateError(error: unknown, action: string): never {
   if (isNotFoundError(error)) {
-    throw new McpError(
-      ErrorCode.InvalidRequest,
+    throw new ProtocolError(
+      ProtocolErrorCode.InvalidRequest,
       `The ${action} found no target: either ${NO_ACTIVE_SESSION}, or the referenced frame index / parameter id ` +
         `does not exist in the current session (lazy parameter ids are registered when openl_inspect_trace_frame freezes a frame, and cleared on restart).`,
     );
   }
   if (is409(error)) {
-    throw new McpError(
-      ErrorCode.InvalidRequest,
+    throw new ProtocolError(
+      ProtocolErrorCode.InvalidRequest,
       `The debug session is not suspended, so ${action} is not possible right now. ` +
         `While running, wait for the stop with openl_resume_trace; on a terminal status (completed/error/terminated) ` +
         `the final state is in the last returned stack — restart with openl_start_trace or finish with openl_stop_trace.`,
@@ -201,22 +199,22 @@ function rethrowTraceStateError(error: unknown, action: string): never {
 }
 
 /**
- * Map the tree-children endpoint's signature failures to actionable McpErrors.
+ * Map the tree-children endpoint's signature failures to actionable ProtocolErrors.
  * Unlike a frame read, expanding the tree does NOT need a suspended session (it
  * reads the retained tree of a completed profiling run), so 404 is about the
  * session or the node reference, and 409 means the tree is not ready yet.
  */
 function rethrowTraceTreeError(error: unknown): never {
   if (isNotFoundError(error)) {
-    throw new McpError(
-      ErrorCode.InvalidRequest,
+    throw new ProtocolError(
+      ProtocolErrorCode.InvalidRequest,
       `Call-tree expansion found no target: either ${NO_ACTIVE_SESSION}, ` +
         "or the uri/instance/step does not name a retained node. The executed tree exists only for a profiling run (openl_start_trace with profiling: true), and a step is expandable only when its childrenTotal > 0; take the uri/instance from the /stack `tree` root (includeTree: true) or an earlier openl_expand_trace_tree page.",
     );
   }
   if (is409(error)) {
-    throw new McpError(
-      ErrorCode.InvalidRequest,
+    throw new ProtocolError(
+      ProtocolErrorCode.InvalidRequest,
       "The executed call tree is not available yet — the profiling run is still in progress. Wait for it to finish with openl_resume_trace, then expand the tree.",
     );
   }
@@ -395,7 +393,7 @@ export function registerTraceHandlers(): void {
       } catch (error) {
         // A client cancellation surfaces as an AbortError from the poll's delay.
         if (error instanceof Error && error.name === "AbortError") {
-          throw new McpError(ErrorCode.InvalidRequest, "resume_trace: request cancelled while waiting for the next stop.");
+          throw new ProtocolError(ProtocolErrorCode.InvalidRequest, "resume_trace: request cancelled while waiting for the next stop.");
         }
         // The session can be reaped or the studio can blip mid-poll — map the
         // 404/409 to the same actionable message the other trace tools give.

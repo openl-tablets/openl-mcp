@@ -7,10 +7,8 @@
  * import from here and never the other way around, so this file has no
  * dependency on any handler module and the registry lives in exactly one place.
  */
-
-import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
-import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
-import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
+import { ProtocolError, ProtocolErrorCode } from "@modelcontextprotocol/server";
+import type { ContentBlock, ProgressToken, ServerNotification } from "@modelcontextprotocol/server";
 import { z, type ZodType } from "zod";
 
 import type { OpenLClient } from "../client.js";
@@ -23,7 +21,12 @@ import { isAxiosError, sanitizeError, extractApiErrorInfo, sanitizeJson } from "
  * Tool response structure
  */
 export interface ToolResponse {
-  content: Array<{ type: string; text: string }>;
+  [key: string]: unknown;
+  // Every OpenL result starts with a text summary so CLI and older MCP clients
+  // remain useful; protocol-native image/audio/resource blocks may follow it.
+  content: [{ type: "text"; text: string }, ...ContentBlock[]];
+  structuredContent?: Record<string, unknown>;
+  isError?: boolean;
 }
 
 /**
@@ -31,7 +34,11 @@ export interface ToolResponse {
  * `progressToken` (under `_meta`), a `sendNotification` callback bound to the calling
  * session's transport, and an `AbortSignal` that fires when the client cancels.
  */
-export type ToolHandlerExtra = RequestHandlerExtra<ServerRequest, ServerNotification>;
+export interface ToolHandlerExtra {
+  signal: AbortSignal;
+  _meta?: { progressToken?: ProgressToken };
+  sendNotification?: (notification: ServerNotification) => Promise<void>;
+}
 
 /**
  * Tool handler function type
@@ -148,6 +155,9 @@ function getInputSchema(schema: ZodType): Record<string, unknown> {
   let inputSchema = inputSchemaCache.get(schema);
   if (!inputSchema) {
     inputSchema = z.toJSONSchema(schema) as Record<string, unknown>;
+    // MCP tool input schemas always have an object root. Zod emits object-only
+    // unions as top-level oneOf without repeating that shared root type.
+    inputSchema.type ??= "object";
     inputSchemaCache.set(schema, inputSchema);
   }
   return inputSchema;
@@ -169,8 +179,8 @@ export function registerTool<TSchema extends ZodType>(tool: ToolDefinition<TSche
  * Whether a tool with this bare (un-prefixed) name is registered. Lets the
  * transport layer tell a genuinely unknown tool (a protocol fault) apart from a
  * registered tool that failed at runtime — the two are otherwise indistinguishable
- * once both surface as an `McpError` (e.g. a backend HTTP 405 also maps to
- * `ErrorCode.MethodNotFound`).
+ * once both surface as a `ProtocolError` (e.g. a backend HTTP 405 also maps to
+ * `ProtocolErrorCode.MethodNotFound`).
  */
 export function hasTool(name: string): boolean {
   return toolHandlers.has(name);
@@ -210,7 +220,7 @@ export async function executeTool(
 ): Promise<ToolResponse> {
   const tool = toolHandlers.get(name);
   if (!tool) {
-    throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+    throw new ProtocolError(ProtocolErrorCode.MethodNotFound, `Unknown tool: ${name}`);
   }
 
   try {
@@ -218,15 +228,15 @@ export async function executeTool(
     const preparedArgs = tool.validateArgs ? tool.validateArgs(rawArgs) : rawArgs;
     const result = tool.schema.safeParse(preparedArgs);
     if (!result.success) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
+      throw new ProtocolError(
+        ProtocolErrorCode.InvalidParams,
         tool.formatValidationError?.(result.error) ?? formatSchemaValidationError(name, result.error),
       );
     }
     const strippedPaths = findStrippedPaths(preparedArgs, result.data);
     if (strippedPaths.length > 0) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
+      throw new ProtocolError(
+        ProtocolErrorCode.InvalidParams,
         `Invalid arguments for ${name}: unrecognized field(s): ${strippedPaths.join(", ")}`,
       );
     }
@@ -251,9 +261,9 @@ export const STALE_TABLE_ID_HINT =
 
 /**
  * Rethrow an HTTP 409 (conflict) from a mutating call as a clear, actionable
- * McpError; rethrow anything else unchanged so it reaches {@link handleToolError}.
+ * ProtocolError; rethrow anything else unchanged so it reaches {@link handleToolError}.
  *
- * The default status→ErrorCode mapping turns 409 into InternalError, which reads
+ * The default status→ProtocolErrorCode mapping turns 409 into InternalError, which reads
  * to the model as a server fault rather than a recoverable "name already taken".
  * Create/clone use this to tell the model exactly how to recover.
  *
@@ -261,7 +271,7 @@ export const STALE_TABLE_ID_HINT =
  */
 export function rethrowConflictAsActionable(error: unknown, conflictMessage: string): never {
   if (isAxiosError(error) && error.response?.status === 409) {
-    throw new McpError(ErrorCode.InvalidRequest, conflictMessage);
+    throw new ProtocolError(ProtocolErrorCode.InvalidRequest, conflictMessage);
   }
   throw error;
 }
@@ -323,7 +333,7 @@ function formatApiErrorDetails(info: ExtractedErrorInfo): string {
   return sections.join("\n");
 }
 
-function handleToolError(error: unknown, toolName: string, toolArgs?: unknown): McpError {
+function handleToolError(error: unknown, toolName: string, toolArgs?: unknown): ProtocolError {
   // Enhanced error handling with context
   if (isAxiosError(error)) {
     const status = error.response?.status;
@@ -443,26 +453,26 @@ function handleToolError(error: unknown, toolName: string, toolArgs?: unknown): 
     logger.error(`Tool error: ${summary}`, errorDetails);
 
     // Use appropriate error code based on status
-    let errorCode = ErrorCode.InternalError;
+    let errorCode = ProtocolErrorCode.InternalError;
     if (status === 400) {
-      errorCode = ErrorCode.InvalidParams;
+      errorCode = ProtocolErrorCode.InvalidParams;
     } else if (status === 401 || status === 403) {
-      errorCode = ErrorCode.InvalidRequest; // MCP doesn't have specific auth error code
+      errorCode = ProtocolErrorCode.InvalidRequest; // MCP doesn't have specific auth error code
     } else if (status === 404) {
-      errorCode = ErrorCode.InvalidParams;
+      errorCode = ProtocolErrorCode.InvalidParams;
     } else if (status === 405) {
-      errorCode = ErrorCode.MethodNotFound;
+      errorCode = ProtocolErrorCode.MethodNotFound;
     }
 
-    throw new McpError(
+    throw new ProtocolError(
       errorCode,
       finalMessage,
       errorDetails
     );
   }
 
-  // Re-throw McpErrors as-is
-  if (error instanceof McpError) {
+  // Re-throw protocol errors as-is.
+  if (error instanceof ProtocolError) {
     throw error;
   }
 
@@ -480,8 +490,8 @@ function handleToolError(error: unknown, toolName: string, toolArgs?: unknown): 
 
   logger.error(`Tool error: ${toolName} ${sanitizedMessage}`, errorDetails);
 
-  throw new McpError(
-    ErrorCode.InternalError,
+  throw new ProtocolError(
+    ProtocolErrorCode.InternalError,
     `Error executing ${toolName}: ${sanitizedMessage}`,
     errorDetails
   );
