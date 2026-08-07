@@ -50,7 +50,7 @@ fetched by id on demand.
 - `openl_repository_project_revisions` - Get project revision history
 
 ### Project Tools (14)
-- `openl_list_projects` - List projects with filters
+- `openl_list_projects` - List projects with filters and pagination; follow `has_more` / `next_offset` until `has_more` is false when a complete inventory is required
 - `openl_get_project` - Get project details
 - `openl_project_status` - Get project compile state and diagnostics (errors/warnings with location)
 - `openl_create_project` - Create a new project: omit `template` for a BLANK project (atomic commit on the default branch; returns commit revision), or pass `template` = an existing project name to CLONE it (full copy + rename in rules.xml). A default (branch-less) clone is committed atomically and indexed, so it appears in `openl_list_projects` immediately. Cloning onto a specific `branch` writes directly to repository Git via the files API, so a branch clone may not appear in `openl_list_projects` (and its revision may be unavailable) until OpenL re-indexes the repository
@@ -66,7 +66,7 @@ fetched by id on demand.
 - `openl_get_test_results_by_table` - Get test results filtered by table ID
 
 ### Rules/Tables Tools (6)
-- `openl_list_tables` - List all tables in project
+- `openl_list_tables` - List project tables with pagination; follow `has_more` / `next_offset` until `has_more` is false when a complete inventory is required
 - `openl_get_table` - Get table structure and data (use `raw=true` for raw 2D cell matrix view; raw-only options: `startRow`/`maxRows` read a large table in row slices — a windowed response carries `totalRows` — and `styles=true` adds each cell's Excel style: background/font colour, bold/italic/underline, alignment, indent, borders)
 - `openl_update_table` - Replace entire table
 - `openl_append_table` - Add rows/fields to table
@@ -149,7 +149,7 @@ and walk it level by level with `openl_expand_trace_tree`.
 Projects with `repository: 'local'` are stored on disk without Git; **OPENED/EDITING status is not checked or required** for them — local projects are always considered editable.
 
 **For local, these work:**
-- `openl_list_projects` (call without repository filter, then filter by `repository: "local"` in the response; the `repository: "local"` filter may fail because the "local" repository is often not returned by `openl_list_repositories`), `openl_get_project`;
+- `openl_list_projects` (call without repository filter, follow pagination to completion, then filter by `repository: "local"` in the response; the `repository: "local"` filter may fail because the "local" repository is often not returned by `openl_list_repositories`), `openl_get_project`;
 - Table tools: `openl_list_tables`, `openl_get_table`, `openl_update_table`, `openl_append_table`, `openl_create_project_table`, `openl_delete_table`, and the raw table-source action tools (`openl_insert_table_rows`/`openl_delete_table_rows`/`openl_update_table_cell`/`openl_merge_table_cells`/…);
 - Test execution and results: `openl_start_project_tests`, `openl_get_test_results_summary`, `openl_get_test_results`, `openl_get_test_results_by_table` (the project is not opened before running tests for local).
 

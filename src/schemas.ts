@@ -34,6 +34,16 @@ export const PaginationParams = z.object({
   offset: z.number().int().nonnegative().default(0).optional(),
 });
 
+// Studio's project/table list APIs use page/size, so their offset must identify
+// the start of a page exactly. The cross-field constraint is enforced by the
+// handlers; these descriptions expose it in the generated tool schema.
+export const PagePaginationParams = z.object({
+  limit: z.number().int().positive().max(200).default(50).optional()
+    .describe("Number of results per page (default 50, maximum 200)."),
+  offset: z.number().int().nonnegative().default(0).optional()
+    .describe("Zero-based item offset. Must be a multiple of limit so it maps exactly to the Studio endpoint's page/size pagination."),
+});
+
 // Project ID: opaque backend identifier from openl_list_projects() response
 export const projectIdSchema = z.string().describe("Project ID returned by backend. Use the exact 'projectId' value from openl_list_projects() response without modification or reformatting.");
 
@@ -53,7 +63,7 @@ export const listProjectsSchema = z.object({
   status: z.enum(["LOCAL", "ARCHIVED", "OPENED", "VIEWING_VERSION", "EDITING", "CLOSED"]).optional().describe("Filter by project status. Valid values: 'LOCAL', 'ARCHIVED', 'OPENED', 'VIEWING_VERSION', 'EDITING', 'CLOSED'."),
   tags: z.record(z.string(), z.string()).optional().describe("Filter by project tags. Tags must be prefixed with 'tags.' in the query string (e.g., tags.version='1.0', tags.environment='production'). This is handled automatically by the API client - provide as object with tag names as keys."),
   response_format: ResponseFormat.optional(),
-}).merge(PaginationParams).strict();
+}).merge(PagePaginationParams).strict();
 
 export const getProjectSchema = z.object({
   projectId: projectIdSchema,
@@ -102,7 +112,7 @@ export const listTablesSchema = z.object({
   name: z.string().optional().describe("Filter by table name fragment (e.g., 'calculate', 'Premium'). Omit to show all tables."),
   properties: z.record(z.string(), z.string()).optional().describe("Filter by project properties. Properties must be prefixed with 'properties.' in the query string (e.g., properties.state='CA', properties.lob='Auto'). This is handled automatically by the API client."),
   response_format: ResponseFormat.optional(),
-}).merge(PaginationParams).strict();
+}).merge(PagePaginationParams).strict();
 
 export const getTableSchema = z.object({
   projectId: projectIdSchema,
@@ -1076,5 +1086,3 @@ export const redeployProjectSchema = z.object({
   comment: commentSchema,
   response_format: ResponseFormat.optional(),
 }).strict();
-
-

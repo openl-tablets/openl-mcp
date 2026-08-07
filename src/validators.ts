@@ -45,6 +45,26 @@ export function validatePagination(
 }
 
 /**
+ * Validate pagination for Studio endpoints that accept page/size rather than a
+ * true offset. An aligned offset maps to one exact backend page; accepting any
+ * other value would return a different range than the caller requested.
+ */
+export function validatePagePagination(
+  limit?: number,
+  offset?: number,
+): { limit: number; offset: number } {
+  const pagination = validatePagination(limit, offset);
+  if (pagination.offset % pagination.limit !== 0) {
+    throw new McpError(
+      ErrorCode.InvalidParams,
+      `offset must be a multiple of limit for this page-based endpoint. Got offset: ${pagination.offset}, limit: ${pagination.limit}. ` +
+      `Use offset: ${Math.floor(pagination.offset / pagination.limit) * pagination.limit} or offset: ${Math.ceil(pagination.offset / pagination.limit) * pagination.limit}.`,
+    );
+  }
+  return pagination;
+}
+
+/**
  * Validate response format parameter
  *
  * @param format - Response format to validate

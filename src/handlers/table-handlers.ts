@@ -9,8 +9,8 @@ import type { ZodError, ZodType } from "zod";
 
 import * as schemas from "../schemas.js";
 import type * as Types from "../types.js";
-import { formatResponse, paginateResults } from "../formatters.js";
-import { validateResponseFormat, validatePagination } from "../validators.js";
+import { formatResponse, paginateCollection } from "../formatters.js";
+import { validateResponseFormat, validatePagePagination } from "../validators.js";
 import { isNotFoundError, isPlainObject } from "../utils.js";
 import { registerTool, STALE_TABLE_ID_HINT, type ToolResponse } from "./common.js";
 import {
@@ -215,7 +215,7 @@ export function registerTableHandlers(): void {
     name: "list_tables",
     category: "Rules & Tables",
     title: "List Project Tables",
-    description: "List all tables/rules in a project with optional filters for type, name, and file. Returns table metadata including 'tableId' (the 'id' field) which is required for calling get_table(), update_table(), append_table(), or run_project_tests(). Use the 'tableId' field from the response to reference specific tables in other API calls. IMPORTANT: a table id is derived from its location and changes when an edit relocates the table (it had no room to grow in place). After openl_update_table/openl_append_table, use the 'tableId' those tools return (or re-run openl_list_tables); an id from a listing taken before such an edit is stale.",
+    description: "List tables/rules in a project with optional filters for kind, name, and properties. Results are paginated (default 50, maximum 200): when a complete inventory is required, follow pagination.has_more and call again with pagination.next_offset until has_more is false. Returns table metadata including 'tableId' (the 'id' field) which is required for calling get_table(), update_table(), append_table(), or run_project_tests(). Use the 'tableId' field from the response to reference specific tables in other API calls. IMPORTANT: a table id is derived from its location and changes when an edit relocates the table (it had no room to grow in place). After openl_update_table/openl_append_table, use the 'tableId' those tools return (or re-run openl_list_tables); an id from a listing taken before such an edit is stale.",
     inputSchema: schemas.z.toJSONSchema(schemas.listTablesSchema) as Record<string, unknown>,
     annotations: {
       readOnlyHint: true,
@@ -238,7 +238,7 @@ export function registerTableHandlers(): void {
       }
 
       const format = validateResponseFormat(typedArgs.response_format);
-      const { limit, offset } = validatePagination(typedArgs.limit, typedArgs.offset);
+      const { limit, offset } = validatePagePagination(typedArgs.limit, typedArgs.offset);
 
       const filters: Types.TableFilters = {};
       if (typedArgs.kind && typedArgs.kind.length > 0) {
@@ -253,72 +253,14 @@ export function registerTableHandlers(): void {
         filters.limit = limit;
       }
 
-      const tablesResponse = await client.listTables(typedArgs.projectId, filters);
-
-      // Handle case when API returns PageResponse instead of array
-      // API now returns { content: [...], pageNumber, pageSize, numberOfElements, total }
-      let tables: Types.TableMetadata[];
-      let totalCount: number | undefined;
-      let apiPageNumber: number | undefined;
-      let apiPageSize: number | undefined;
-
-      if (Array.isArray(tablesResponse)) {
-        // Direct array response (backward compatibility, no pagination metadata)
-        tables = tablesResponse;
-        totalCount = tables.length;
-      } else if (tablesResponse && typeof tablesResponse === 'object' && 'content' in tablesResponse && Array.isArray((tablesResponse as any).content)) {
-        // PageResponse format: { content: [...], pageNumber, pageSize, numberOfElements, total }
-        tables = (tablesResponse as any).content;
-        apiPageNumber = (tablesResponse as any).pageNumber;
-        apiPageSize = (tablesResponse as any).pageSize;
-        // Use total if available (OpenL API), otherwise totalElements
-        // Do NOT use numberOfElements as it's the current page size, not the global total
-        const total = (tablesResponse as any).total;
-        const totalElements = (tablesResponse as any).totalElements;
-        if (total !== undefined && total !== null) {
-          totalCount = total;
-        } else if (totalElements !== undefined && totalElements !== null) {
-          totalCount = totalElements;
-        } else {
-          // Total count unknown - let has_more logic rely on page cursor/size
-          totalCount = undefined;
-        }
-      } else {
-        // Fallback: empty array
-        tables = [];
-        totalCount = 0;
-      }
+      const tablesPage = await client.listTablesPage(typedArgs.projectId, filters);
 
       // If API already paginated, use its pagination metadata
       // Otherwise apply client-side pagination
-      let paginated;
-      if (apiPageNumber !== undefined && apiPageSize !== undefined && totalCount !== undefined) {
-        // API already paginated - use its metadata
-        paginated = {
-          data: tables,
-          has_more: (apiPageNumber + 1) * apiPageSize < totalCount,
-          next_offset: (apiPageNumber + 1) * apiPageSize < totalCount ? (apiPageNumber + 1) * apiPageSize : null,
-          total_count: totalCount,
-        };
-      } else {
-        // Apply client-side pagination
-        paginated = paginateResults(tables, limit, offset);
-      }
-
-      // Use API pagination metadata if available, otherwise use client-side pagination values
-      const paginationOffset = apiPageNumber !== undefined && apiPageSize !== undefined
-        ? apiPageNumber * apiPageSize
-        : offset;
-      const paginationLimit = apiPageSize !== undefined
-        ? apiPageSize
-        : limit;
+      const paginated = paginateCollection(tablesPage, limit, offset);
 
       const formattedResult = formatResponse(paginated.data, format, {
-        pagination: {
-          limit: paginationLimit,
-          offset: paginationOffset,
-          total: paginated.total_count,
-        },
+        pagination: paginated.pagination,
         dataType: "tables",
       });
 

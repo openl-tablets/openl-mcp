@@ -30,7 +30,7 @@ longer-term. Effort: S (< ½ day), M (½–2 days), L (> 2 days).
 
 ## Workstream A — Correctness bugs (P0)
 
-### A1. Server-side pagination is double-applied — page 2+ of `list_projects`/`list_tables` is always empty [P0, M]
+### Resolved — server-side pagination was double-applied (`EPBDS-16387`)
 
 `client.listProjects` / `client.listTables` convert `offset`/`limit` to `page`/`size`
 query params, then **unwrap the backend's `PageResponse` to a bare array and discard
@@ -47,11 +47,14 @@ array; they only compile via `as any`). The one integration test covering this
 (`tests/integration/handlers.test.ts`, "pagination") mocks a backend that ignores
 `page`/`size`, which is exactly why the bug is invisible.
 
-**Fix:** have the client return the page envelope (`{ items, pageNumber, pageSize,
-total }`), use what is today the dead handler branch, and never re-slice
-server-paged data; make the mock backend actually paginate (see E6).
-**Done when:** a mocked 120-item project lists correctly across 3 pages with
-correct `total_count`/`has_more`/`next_offset`.
+**Resolution:** the client now normalizes collection responses while preserving
+the page envelope (`{ items, pageNumber, pageSize, total }`), and the shared
+pagination helper never re-slices a server-paged collection. A mocked 120-item
+project verifies all three pages and the correct
+`total_count`/`has_more`/`next_offset`. When an older backend omits the total, a
+full page is treated as potentially incomplete instead of being reported as the
+whole collection. Non-page-aligned offsets are rejected before the request
+instead of silently returning a different range.
 
 ### A2. `list_tables` `kind` filter is silently ignored [P0, S]
 
@@ -355,8 +358,8 @@ translation ×2, PageResponse unwrapping ×2 (divergent), branch-param config
 building ×8, local-repo guard ×2, test-summary GET boilerplate ×2. **Fix in two
 steps:** (1) a small private request core — one path builder owning encoding *and*
 dot-segment validation, one params builder, typed `getJson`/`postJson`/`getBinary`
-helpers with a single error-mapping policy, and a typed page-envelope return
-(prerequisite for A1); (2) split the domains into focused modules composed onto
+helpers with a single error-mapping policy, extending the typed page-envelope
+normalization introduced for EPBDS-16387; (2) split the domains into focused modules composed onto
 the client, mirroring the handler categories. Step 1 alone collapses most of the
 duplication and makes A2/C1-class drift structurally impossible.
 
@@ -378,8 +381,6 @@ accumulation (all verified by repo-wide grep — kept alive only by their own te
   `createRule`, `healthCheck` — zero production callers. Plus `validateProject`,
   called only from `saveProject` against an endpoint the method's own docblock
   says does not exist — every save performs a known-doomed GET.
-- **Handlers (~120 lines):** the statically-dead `'content' in response` and
-  "API already paginated" branches (deleted as part of A1).
 - **`utils.ts`:** `parseProjectId` (actively dangerous — invites splitting opaque
   ids), `extractErrorDetails`, `createProjectId` (its own JSDoc says "legacy,
   should not be used").
@@ -497,8 +498,6 @@ vs none, oversized body, unknown session id, origin checks, shutdown.
 
 ### E6. Test-suite correctness [P1, S]
 
-- The pagination mock must actually paginate (returning everything regardless of
-  `page`/`size` is what hid A1). Mocks should mirror real backend behavior.
 - `cli-spawn.test.ts` rebuilds `dist/` when it is older than **4 hand-picked
   files** — edits to `mcp-core.ts`/handlers don't trigger a rebuild (stale-dist
   test runs), and in CI the rebuild shells out to `git clone github.com/...`
@@ -580,7 +579,7 @@ purpose-built `/health` endpoint is unused there), and pin or checksum the night
 | Phase | Contents | Rationale |
 |-------|----------|-----------|
 | 1 | A2, A6–A11, B2, B3, E1, E2, E3, F1 (all S) | Maximum wrong-result/security payoff per line changed; unblocks trustworthy CI |
-| 2 | A1 + E6 (pagination + honest mocks), A3 (STOMP state machine), A4/A5 (formatting truth), B1, B4–B6, E4 | The two correctness clusters and transport hardening, each landing with its regression tests |
+| 2 | A3 (STOMP state machine), A4/A5 (formatting truth), B1, B4–B6, E4 | The remaining correctness clusters and transport hardening, each landing with its regression tests |
 | 3 | D1 (uniform validation) → D5, C1–C5, D4 (dead-code sweep), E5 | Structural leverage: one change activates all schemas; the sweep shrinks the surface before deeper refactors |
 | 4 | D2 (client core + split), D3 (typed formatters), D6, F2–F5 | Long-term maintainability on a now-tested base |
 | 5 | B7, B8, C6, C7, F6, F7 | Polish and feature-level work |

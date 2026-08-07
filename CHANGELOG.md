@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `openl_list_projects` and `openl_list_tables` now preserve the Studio's page metadata instead of treating one backend page as the complete result and paginating it a second time. `total_count`, `has_more`, and `next_offset` now describe the full collection; page 2+ no longer comes back empty. Because these Studio endpoints use page/size pagination, an `offset` that is not a multiple of `limit` is rejected instead of returning the wrong range (EPBDS-16387).
+
 ### Removed
 
 - **BREAKING:** the `openl-mcp login` / `openl-mcp logout` browser sign-in commands and the

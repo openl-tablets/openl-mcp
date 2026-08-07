@@ -37,7 +37,8 @@ interface FormatOptions {
   pagination?: {
     limit: number;
     offset: number;
-    total: number;
+    total?: number;
+    hasMore?: boolean;
   };
   /** Character limit (defaults to RESPONSE_LIMITS.MAX_CHARACTERS) */
   characterLimit?: number;
@@ -45,6 +46,23 @@ interface FormatOptions {
   dataType?: string;
   /** Skip truncation for this response (useful for test results and other large data) */
   skipTruncation?: boolean;
+}
+
+/** Return the number of elements represented by one formatted page. */
+function pageItemCount(data: unknown): number {
+  if (Array.isArray(data)) {
+    return data.length;
+  }
+  if (data && typeof data === "object") {
+    const envelope = data as Record<string, unknown>;
+    if (typeof envelope.numberOfElements === "number" && Number.isFinite(envelope.numberOfElements)) {
+      return Math.max(0, envelope.numberOfElements);
+    }
+    if (Array.isArray(envelope.content)) {
+      return envelope.content.length;
+    }
+  }
+  return 1;
 }
 
 /**
@@ -69,13 +87,14 @@ export function formatResponse<T>(
   // Add pagination metadata if provided
   if (options && options.pagination) {
     const { limit, offset, total } = options.pagination;
-    const has_more = offset + limit < total;
+    const count = pageItemCount(data);
+    const has_more = options.pagination.hasMore ?? (total !== undefined && offset + count < total);
     response.pagination = {
       limit,
       offset,
       has_more,
       next_offset: has_more ? offset + limit : undefined,
-      total_count: total,
+      ...(total !== undefined ? { total_count: total } : {}),
     };
   }
 
@@ -207,7 +226,7 @@ export function toMarkdown<T>(
 
   // Add pagination info if present
   if (response.pagination) {
-    parts.push(formatPagination(response.pagination));
+    parts.push(formatPagination(response.pagination, pageItemCount(data)));
   }
 
   return parts.join("\n\n");
@@ -242,7 +261,15 @@ export function toMarkdownConcise<T>(
   // Generate concise summary based on data type
   if (Array.isArray(data)) {
     const count = data.length;
-    const total = (response.pagination && response.pagination.total_count) || count;
+    const total = response.pagination ? response.pagination.total_count : count;
+
+    if (total === undefined) {
+      parts.push(`Showing ${count} ${count === 1 ? 'item' : 'items'} on this page; the total count is unavailable.`);
+      if (response.pagination && response.pagination.has_more) {
+        parts.push(`Use offset=${response.pagination.next_offset} to retrieve more results.`);
+      }
+      return parts.join(" ");
+    }
 
     switch (dataType) {
       case "repositories":
@@ -326,9 +353,11 @@ export function toMarkdownDetailed<T>(
   // Add contextual header with metadata
   if (Array.isArray(data)) {
     const count = data.length;
-    const total = (response.pagination && response.pagination.total_count) || count;
+    const total = response.pagination ? response.pagination.total_count : count;
     parts.push(`# ${dataType ? dataType.charAt(0).toUpperCase() + dataType.slice(1) : 'Results'}`);
-    parts.push(`\n**Summary:** ${total} total ${total === 1 ? 'item' : 'items'}${count < total ? ` (showing ${count} on this page)` : ''}`);
+    parts.push(total === undefined
+      ? `\n**Summary:** showing ${count} ${count === 1 ? 'item' : 'items'} on this page; total count unavailable`
+      : `\n**Summary:** ${total} total ${total === 1 ? 'item' : 'items'}${count < total ? ` (showing ${count} on this page)` : ''}`);
 
     // Add timestamp
     parts.push(`**Retrieved:** ${new Date().toISOString()}`);
@@ -655,20 +684,19 @@ function formatGeneric(data: any): string {
 /**
  * Format pagination metadata as markdown
  */
-function formatPagination(pagination: PaginationMetadata): string {
+function formatPagination(pagination: PaginationMetadata, pageCount: number): string {
   const lines = [
     "---",
     "**Pagination**",
   ];
 
   // Handle empty results or undefined total_count
-  const totalCount = pagination.total_count ?? 0;
-  if (totalCount === 0) {
+  if (pageCount === 0) {
     lines.push("- Showing items 0-0 (No items)");
   } else {
     // Calculate start and end positions
     const start = pagination.offset + 1;
-    const end = Math.min(pagination.offset + pagination.limit, totalCount);
+    const end = pagination.offset + pageCount;
     lines.push(`- Showing items ${start}-${end}`);
   }
 
@@ -707,6 +735,58 @@ export function paginateResults<T>(
   const next_offset = has_more ? offset + limit : null;
 
   return { data, has_more, next_offset, total_count };
+}
+
+/**
+ * Resolve pagination once for either a backend-paginated collection or a
+ * legacy bare array. Backend pages are passed through untouched; bare arrays
+ * are sliced locally for compatibility with older Studio versions.
+ */
+export function paginateCollection<T>(
+  page: Types.CollectionPage<T>,
+  limit: number,
+  offset: number,
+): {
+  data: T[];
+  pagination: { limit: number; offset: number; total?: number; hasMore: boolean };
+} {
+  if (!page.serverPaginated) {
+    const paginated = paginateResults(page.items, limit, offset);
+    return {
+      data: paginated.data,
+      pagination: {
+        limit,
+        offset,
+        total: paginated.total_count,
+        hasMore: paginated.has_more,
+      },
+    };
+  }
+
+  const pageLimit = page.pageSize ?? limit;
+  const pageOffset = page.pageNumber !== undefined
+    ? page.pageNumber * pageLimit
+    : offset;
+  if (pageOffset !== offset) {
+    throw new RangeError(
+      `Requested offset ${offset} does not align with backend page offset ${pageOffset}; offset must be a multiple of limit ${pageLimit}.`,
+    );
+  }
+  const hasMore = page.total !== undefined
+    ? pageOffset + page.items.length < page.total
+    : page.totalPages !== undefined && page.pageNumber !== undefined
+      ? page.pageNumber + 1 < page.totalPages
+      : page.items.length === pageLimit;
+
+  return {
+    data: page.items,
+    pagination: {
+      limit: pageLimit,
+      offset: pageOffset,
+      total: page.total,
+      hasMore,
+    },
+  };
 }
 
 /**

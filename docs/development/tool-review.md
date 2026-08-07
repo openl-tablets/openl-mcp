@@ -83,7 +83,7 @@ See **AGENTS.md** § "Local projects (repository: local)" for agent-facing summa
 ### 5. `openl_list_projects`
 
 **Status**: ✅ Complete  
-**OpenL API**: `GET /projects?repository={repo}&status={status}&tags.{key}={value}`
+**OpenL API**: `GET /projects?repository={repo}&status={status}&tags.{key}={value}&page={page}&size={size}`
 
 **Extra/Missed Inputs**:
 - ✅ All API parameters covered: `repository`, `status`, `tags`
@@ -144,7 +144,7 @@ Project files are managed through the text-oriented file tools `openl_read_proje
 ### 10. `openl_list_tables`
 
 **Status**: ✅ Complete  
-**OpenL API**: `GET /projects/{projectId}/tables?kind={kind[]}&name={name}&properties.{key}={value}`
+**OpenL API**: `GET /projects/{projectId}/tables?kind={kind[]}&name={name}&properties.{key}={value}&page={page}&size={size}`
 
 **Extra/Missed Inputs**:
 - ✅ All API parameters covered: `kind` (array), `name`, `properties`
@@ -519,7 +519,7 @@ The server registers **58 tools**. All are listed below.
 | 2 | `openl_list_branches` | Repository | ✅ Complete | `GET /repos/{repository}/branches` | List Git branches in a repository |
 | 3 | `openl_list_repository_features` | Repository | ✅ Complete | `GET /repos/{repository}/features` | Get repository features (branching, searchable, etc.) |
 | 4 | `openl_list_deploy_repositories` | Deployment | ✅ Complete | `GET /production-repos` | List all deployment repositories |
-| 5 | `openl_list_projects` | Project | ✅ Complete | `GET /projects?repository={repo}&status={status}&tags.{key}={value}` | List projects with filters (repository, status, tags) |
+| 5 | `openl_list_projects` | Project | ✅ Complete | `GET /projects?repository={repo}&status={status}&tags.{key}={value}&page={page}&size={size}` | List projects with filters (repository, status, tags) |
 | 6 | `openl_get_project` | Project | ✅ Complete | `GET /projects/{projectId}` | Get comprehensive project information |
 | 7 | `openl_create_project` | Project | ✅ Complete | `POST /projects` | Create a new project |
 | 8 | `openl_open_project` | Project | ✅ Complete | `PATCH /projects/{projectId}` with `status: "OPENED"` | Open project for editing (supports branch/revision) |
@@ -537,7 +537,7 @@ The server registers **58 tools**. All are listed below.
 | 20 | `openl_copy_project_file` | Files | ✅ Complete | project file copy | Copy a project file |
 | 21 | `openl_move_project_file` | Files | ✅ Complete | project file move | Move/rename a project file |
 | 22 | `openl_delete_project_file` | Files | ✅ Complete | project file delete | Delete a project file |
-| 23 | `openl_list_tables` | Rules | ✅ Complete | `GET /projects/{projectId}/tables?kind={kind[]}&name={name}` | List all tables/rules in project |
+| 23 | `openl_list_tables` | Rules | ✅ Complete | `GET /projects/{projectId}/tables?kind={kind[]}&name={name}&properties.{key}={value}&page={page}&size={size}` | List project tables/rules with pagination |
 | 24 | `openl_get_table` | Rules | ✅ Complete | `GET /projects/{projectId}/tables/{tableId}` | Get detailed table structure and data |
 | 25 | `openl_update_table` | Rules | ✅ Complete | `PUT /projects/{projectId}/tables/{tableId}` | Replace entire table structure |
 | 26 | `openl_append_table` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/lines` | Append rows/fields to table |

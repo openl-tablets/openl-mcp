@@ -7,6 +7,7 @@ import { describe, it, expect } from "@jest/globals";
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import {
   validatePagination,
+  validatePagePagination,
   validateResponseFormat,
 } from "../src/validators.js";
 
@@ -74,6 +75,19 @@ describe("validators", () => {
     it("throws McpError with InvalidParams code for an invalid offset", () => {
       expect(() => validatePagination(50, -1)).toThrow(
         expect.objectContaining({ code: ErrorCode.InvalidParams })
+      );
+    });
+  });
+
+  describe("validatePagePagination", () => {
+    it("accepts offsets aligned to the requested page size", () => {
+      expect(validatePagePagination(50, 0)).toEqual({ limit: 50, offset: 0 });
+      expect(validatePagePagination(50, 100)).toEqual({ limit: 50, offset: 100 });
+    });
+
+    it("rejects an offset that cannot map to an exact backend page", () => {
+      expect(() => validatePagePagination(50, 25)).toThrow(
+        /offset must be a multiple of limit.*offset: 25, limit: 50/,
       );
     });
   });

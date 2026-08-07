@@ -194,12 +194,20 @@ export function registerRepositoryHandlers(): void {
         page: typedArgs.page,
         size: typedArgs.size,
       });
+      const revisionOffset = revisions.pageNumber * revisions.pageSize;
+      const totalElements = typeof revisions.totalElements === "number" ? revisions.totalElements : undefined;
+      const hasMore = totalElements !== undefined
+        ? revisionOffset + revisions.numberOfElements < totalElements
+        : typeof revisions.totalPages === "number"
+          ? revisions.pageNumber + 1 < revisions.totalPages
+          : revisions.numberOfElements >= revisions.pageSize;
 
       const formattedResult = formatResponse(revisions, format, {
         pagination: {
           limit: revisions.pageSize,
-          offset: revisions.pageNumber * revisions.pageSize,
-          total: revisions.totalElements || revisions.numberOfElements,
+          offset: revisionOffset,
+          total: totalElements,
+          hasMore,
         },
         dataType: "revisions",
       });

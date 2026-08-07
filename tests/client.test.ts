@@ -177,6 +177,38 @@ describe("OpenLClient", () => {
         expect(result[0].name).toBe("Project 1");
       });
 
+      it("should preserve project page metadata for paginated consumers", async () => {
+        const content = Array.from({ length: 50 }, (_, i) => ({
+          id: `design:p${i + 50}:hash${i + 50}`,
+          name: `p${i + 50}`,
+          repository: "design",
+          status: "CLOSED" as const,
+          path: `p${i + 50}`,
+          modifiedBy: "admin",
+          modifiedAt: "2024-01-01T00:00:00Z",
+        }));
+        mockAxios.onGet("/projects", { params: { page: 1, size: 50 } }).reply(200, {
+          content,
+          pageNumber: 1,
+          pageSize: 50,
+          numberOfElements: 50,
+          totalElements: 120,
+          totalPages: 3,
+        });
+
+        const result = await client.listProjectsPage({ offset: 50, limit: 50 });
+
+        expect(result).toMatchObject({
+          serverPaginated: true,
+          pageNumber: 1,
+          pageSize: 50,
+          total: 120,
+          totalPages: 3,
+        });
+        expect(result.items).toHaveLength(50);
+        expect(result.items[0].name).toBe("p50");
+      });
+
       it("should filter by status", async () => {
         const openProjects: Partial<ProjectViewModel>[] = [
           {

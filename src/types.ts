@@ -822,6 +822,23 @@ export interface PageResponse<T> {
   totalPages?: number; // Calculated as Math.ceil(total / pageSize)
 }
 
+/**
+ * Normalized collection returned by list endpoints.
+ *
+ * `serverPaginated` distinguishes a backend page from a legacy bare array. A
+ * bare array still needs client-side pagination; a backend page must never be
+ * sliced a second time. The total can be absent on older Studio versions, so
+ * callers must not substitute the current page size for it.
+ */
+export interface CollectionPage<T> {
+  items: T[];
+  serverPaginated: boolean;
+  pageNumber?: number;
+  pageSize?: number;
+  total?: number;
+  totalPages?: number;
+}
+
 /** Paginated response for project history (OpenAPI 3.0.1) */
 export interface PageResponseProjectRevision_Short {
   content: ProjectRevision_Short[];
@@ -1258,4 +1275,3 @@ export interface ExtractedErrorInfo {
   fields?: ApiFieldError[];
   rawResponse?: unknown; // Original response data if structure doesn't match expected formats
 }
-
