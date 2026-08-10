@@ -375,12 +375,15 @@ export const createBranchSchema = z.object({
 
 export const listProjectBranchesSchema = z.object({
   projectId: projectIdSchema,
+  scope: z.enum(["project", "repository"]).default("project").optional().describe(
+    "Branches to list: 'project' (default) returns branches that already hold the project and can be switched to; 'repository' returns every repository branch, including merge targets that do not hold the project yet.",
+  ),
   response_format: ResponseFormat.optional(),
 }).strict();
 
 const mergeRequestFields = {
   projectId: projectIdSchema,
-  otherBranch: z.string().trim().min(1).describe("The other branch: source for receive mode, target for send mode. Discover project branches with openl_list_project_branches()."),
+  otherBranch: z.string().trim().min(1).describe("The other branch: source for receive mode, target for send mode. Discover all merge targets with openl_list_project_branches(scope='repository')."),
   mode: z.enum(["receive", "send"]).describe("receive merges the other branch into the project's current branch; send merges the current branch into otherBranch."),
 };
 

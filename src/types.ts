@@ -304,12 +304,15 @@ export interface RunExecutionResult {
   tableName?: string;
 }
 
-/** Project-scoped branch metadata returned by Studio. */
+/** Branch metadata returned by the project branch-listing endpoint. */
 export interface ProjectBranchInfo {
   base?: boolean;
   name?: string;
   protected?: boolean;
 }
+
+/** Query scope accepted by GET /projects/{projectId}/branches. */
+export type BranchScope = "project" | "repository";
 
 export type MergeMode = "receive" | "send";
 

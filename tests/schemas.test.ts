@@ -9,6 +9,7 @@ import {
   deleteProjectSchema,
   getProjectRevisionsSchema,
   getTableDependenciesSchema,
+  listProjectBranchesSchema,
   listProjectsSchema,
   mergeProjectBranchesSchema,
   runTableSchema,
@@ -152,6 +153,19 @@ describe("table workflow schemas", () => {
 });
 
 describe("project branch and merge schemas", () => {
+  it("defaults branch listings to project scope and accepts repository merge-target discovery", () => {
+    expect(listProjectBranchesSchema.parse({ projectId: "p1" }).scope).toBe("project");
+    expect(listProjectBranchesSchema.parse({ projectId: "p1", scope: "repository" }).scope).toBe("repository");
+    expect(listProjectBranchesSchema.safeParse({ projectId: "p1", scope: "all" }).success).toBe(false);
+
+    const jsonSchema = z.toJSONSchema(listProjectBranchesSchema);
+    expect(jsonSchema.required).not.toContain("scope");
+    expect(jsonSchema.properties?.scope).toMatchObject({
+      default: "project",
+      enum: ["project", "repository"],
+    });
+  });
+
   it("requires explicit confirmation for protected-branch force", () => {
     const merge = { projectId: "p1", otherBranch: "release", mode: "send", force: true } as const;
     expect(mergeProjectBranchesSchema.safeParse(merge).success).toBe(false);
