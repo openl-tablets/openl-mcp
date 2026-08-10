@@ -1398,10 +1398,16 @@ export class OpenLClient {
     return true;
   }
 
-  /** List branches available to one project, including base/protected flags. */
-  async listProjectBranches(projectId: string): Promise<Types.ProjectBranchInfo[]> {
+  /** List project-holding branches or every repository branch, including base/protected flags. */
+  async listProjectBranches(
+    projectId: string,
+    scope?: Types.BranchScope,
+  ): Promise<Types.ProjectBranchInfo[]> {
     const projectPath = this.buildProjectPath(projectId);
-    const response = await this.axiosInstance.get<Types.ProjectBranchInfo[]>(`${projectPath}/branches`);
+    const response = await this.axiosInstance.get<Types.ProjectBranchInfo[]>(
+      `${projectPath}/branches`,
+      scope ? { params: { scope } } : undefined,
+    );
     return response.data;
   }
 

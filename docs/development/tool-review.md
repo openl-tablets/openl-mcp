@@ -574,7 +574,7 @@ The server registers **73 tools**. All are listed below.
 | 63 | `openl_list_module_sheets` | Project | ✅ Complete | `GET /projects/{projectId}/modules/{moduleName}/sheets` | List worksheet names in a module |
 | 64 | `openl_list_table_property_definitions` | Rules | ✅ Complete | `GET /projects/{projectId}/properties` | List properties allowed for a table context |
 | 65 | `openl_copy_table` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/copy` | Copy a table server-side with its source structure and formatting |
-| 66 | `openl_list_project_branches` | Project | ✅ Complete | `GET /projects/{projectId}/branches` | List project branches with base/protected flags |
+| 66 | `openl_list_project_branches` | Project | ✅ Complete | `GET /projects/{projectId}/branches?scope=project\|repository` | List project-holding branches by default or all repository merge targets, with base/protected flags |
 | 67 | `openl_check_project_merge` | Project | ✅ Complete | `POST /projects/{projectId}/merge/check` | Preview merge direction, feasibility, permissions, and blockers |
 | 68 | `openl_merge_project_branches` | Project | ✅ Complete | `POST /merge/check` + `POST /projects/{projectId}/merge` | Recheck and merge branches; return session-bound conflicts when present |
 | 69 | `openl_get_merge_conflicts` | Project | ✅ Complete | `GET /projects/{projectId}/merge/conflicts` | Get conflicted paths, revision sides, and default merge message |

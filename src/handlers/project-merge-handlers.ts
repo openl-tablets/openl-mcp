@@ -41,7 +41,7 @@ export function registerProjectMergeHandlers(): void {
     category: "Project",
     title: "List Project Branches",
     description:
-      "List branches available to a specific project, including the repository base branch and protected-branch flags. Unlike openl_list_branches, this is project-aware and supplies the safety metadata needed before merge or deletion.",
+      "List branch metadata in the repository that hosts a project, including repository base and protected flags. scope='project' (default) returns branches that already hold the project and are candidates for switching or deletion. Inspect the flags before deletion: the base branch cannot be deleted, while a protected branch requires force and explicit confirmation. scope='repository' returns every repository branch, including branches that do not hold the project yet; use it to discover otherBranch values before openl_check_project_merge or openl_merge_project_branches. Unlike openl_list_branches, this tool is project-aware and returns safety metadata.",
     schema: schemas.listProjectBranchesSchema,
     annotations: {
       readOnlyHint: true,
@@ -50,7 +50,7 @@ export function registerProjectMergeHandlers(): void {
     },
     handler: async (args, client): Promise<ToolResponse> => {
       const format = args.response_format;
-      const branches = await client.listProjectBranches(args.projectId);
+      const branches = await client.listProjectBranches(args.projectId, args.scope);
       return { content: [{ type: "text", text: formatResponse(branches, format) }] };
     },
   });
@@ -60,7 +60,7 @@ export function registerProjectMergeHandlers(): void {
     category: "Project",
     title: "Check Project Merge",
     description:
-      "Preview whether two project branches can be merged without changing them. mode='receive' merges otherBranch into the project's current branch; mode='send' merges the current branch into otherBranch. Returns source/target, mergeable or up-to-date status, canMerge, and blockedBy (bypass-required/protected-branch/locked). Run this before openl_merge_project_branches.",
+      "Preview whether two project branches can be merged without changing them. mode='receive' merges otherBranch into the project's current branch; mode='send' merges the current branch into otherBranch. Discover merge targets with openl_list_project_branches(scope='repository'), because a valid target may not hold the project yet. Returns source/target, mergeable or up-to-date status, canMerge, and blockedBy (bypass-required/protected-branch/locked). Run this before openl_merge_project_branches.",
     schema: schemas.checkProjectMergeSchema,
     annotations: {
       readOnlyHint: true,

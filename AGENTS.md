@@ -80,7 +80,7 @@ tool only to clear pending MCP session state after the user takes over or the
 merge is abandoned. `receive` merges the other branch into the project's current
 branch; `send` merges the current branch into the other branch.
 
-- `openl_list_project_branches` - List branches available to a project with base/protected flags
+- `openl_list_project_branches` - List branches with base/protected flags: `scope: "project"` (default) returns branches that hold the project for switching/deletion; `scope: "repository"` returns every repository branch for merge-target discovery, including branches that do not hold the project yet
 - `openl_check_project_merge` - Preview merge direction, status, permissions, and blockers without changing Git
 - `openl_merge_project_branches` - Recheck and merge branches; creates session-bound conflict state when needed
 - `openl_get_merge_conflicts` - Get grouped conflicted paths, BASE/OURS/THEIRS revisions, and the default message

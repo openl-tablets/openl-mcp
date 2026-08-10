@@ -1930,6 +1930,21 @@ describe("OpenLClient — additional method coverage", () => {
       });
     });
 
+    describe("listProjectBranches", () => {
+      it("preserves the omitted project default and passes repository scope", async () => {
+        const scopes: unknown[] = [];
+        mockAxios.onGet(`${projectPath}/branches`).reply((config) => {
+          scopes.push(config.params?.scope);
+          return [200, []];
+        });
+
+        await client.listProjectBranches(projectId);
+        await client.listProjectBranches(projectId, "repository");
+
+        expect(scopes).toEqual([undefined, "repository"]);
+      });
+    });
+
     describe("deleteProjectBranch", () => {
       it("rejects traversal segments before issuing a request", async () => {
         await expect(client.deleteProjectBranch(projectId, "feature/../../main")).rejects.toThrow(

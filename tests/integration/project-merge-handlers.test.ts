@@ -26,18 +26,31 @@ describe("project branch and merge handlers", () => {
     mockAxios.restore();
   });
 
-  it("lists project-aware branch metadata", async () => {
-    const branches = [
-      { name: "main", base: true, protected: true },
+  it("lists project branches by default and repository-wide merge targets on request", async () => {
+    const projectBranches = [
       { name: "feature/rates" },
     ];
-    mockAxios.onGet("/projects/p1/branches").reply(200, branches);
+    const repositoryBranches = [
+      { name: "main", base: true, protected: true },
+      ...projectBranches,
+    ];
+    const scopes: unknown[] = [];
+    mockAxios.onGet("/projects/p1/branches").reply((config) => {
+      const scope = config.params?.scope;
+      scopes.push(scope);
+      return [200, scope === "repository" ? repositoryBranches : projectBranches];
+    });
 
-    const response = await executeTool("list_project_branches", {
+    const projectResponse = await executeTool("list_project_branches", {
       projectId: "p1", response_format: "json",
     }, client);
+    const repositoryResponse = await executeTool("list_project_branches", {
+      projectId: "p1", scope: "repository", response_format: "json",
+    }, client);
 
-    expect(jsonResult(response.content[0].text)).toEqual(branches);
+    expect(scopes).toEqual(["project", "repository"]);
+    expect(jsonResult(projectResponse.content[0].text)).toEqual(projectBranches);
+    expect(jsonResult(repositoryResponse.content[0].text)).toEqual(repositoryBranches);
   });
 
   it("checks merge direction with the current backend request shape", async () => {
@@ -303,7 +316,10 @@ describe("project branch and merge handlers", () => {
       { name: "feature/rates 2026" },
     ];
     const deletions: Array<{ url: string; params?: Record<string, unknown> }> = [];
-    mockAxios.onGet("/projects/p1/branches").reply(200, branches);
+    mockAxios.onGet("/projects/p1/branches").reply((config) => {
+      expect(config.params).toBeUndefined();
+      return [200, branches];
+    });
     mockAxios.onDelete(/\/projects\/p1\/branches\//).reply((config) => {
       deletions.push({ url: config.url ?? "", params: config.params });
       return [204];

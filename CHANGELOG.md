@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `openl_list_project_branches` now supports repository-wide merge-target discovery, so projects created on isolated branches can be merged into a base branch that does not hold the project yet (EPBDS-16410).
 - Streamable HTTP now rejects browser requests from origins outside the explicit `MCP_ALLOWED_ORIGINS` allowlist, exposes `Mcp-Session-Id` to approved browser clients, and gives every anonymous legacy MCP session its own Studio HTTP client (EPBDS-16385).
 - Append, test-start, deploy, and redeploy tools no longer advertise themselves as idempotent, preventing MCP clients from treating repeatable side effects as safe automatic retries (EPBDS-16385).
 - Windowed `openl_get_table` responses can no longer be passed to `openl_update_table`, preventing omitted rows from being deleted during a partial-view round trip (EPBDS-16385).

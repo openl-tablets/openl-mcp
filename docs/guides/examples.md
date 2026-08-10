@@ -116,6 +116,7 @@ Show the version history of 'insurance-rules'
 What branches exist in the 'design' repository?
 Create a branch 'feature/new-premium-logic' for 'insurance-rules'
 Show project-aware branches and indicate which are base or protected
+Show every repository branch that can be a merge target for 'insurance-rules'
 Check whether 'feature/new-premium-logic' can be merged into the current branch
 Merge 'feature/new-premium-logic' into the current branch
 ```
