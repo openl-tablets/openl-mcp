@@ -85,11 +85,7 @@ describe("Tool Handler Integration Tests", () => {
     });
 
     it("uses the current revision total to derive more pages", async () => {
-      const mockRepos: RepositoryInfo[] = [
-        { id: "design", name: "Design Repository", aclId: "acl-design" },
-      ];
-      mockAxios.onGet("/repos").reply(200, mockRepos);
-      mockAxios.onGet("/repos/design/projects/InsuranceRules/history", {
+      mockAxios.onGet(`/projects/${encodeProjectPath(projectId)}/history`, {
         params: { techRevs: false, page: 0, size: 2 },
       }).reply(200, {
         content: [
@@ -115,8 +111,7 @@ describe("Tool Handler Integration Tests", () => {
       });
 
       const result = await executeTool("repository_project_revisions", {
-        repository: "Design Repository",
-        projectName: "InsuranceRules",
+        projectId,
         page: 0,
         size: 2,
         response_format: "json",
@@ -133,11 +128,7 @@ describe("Tool Handler Integration Tests", () => {
     });
 
     it("preserves a non-page-aligned revision offset in response metadata", async () => {
-      const mockRepos: RepositoryInfo[] = [
-        { id: "design", name: "Design Repository", aclId: "acl-design" },
-      ];
-      mockAxios.onGet("/repos").reply(200, mockRepos);
-      mockAxios.onGet("/repos/design/projects/InsuranceRules/history", {
+      mockAxios.onGet(`/projects/${encodeProjectPath(projectId)}/history`, {
         params: { techRevs: false, offset: 25, size: 50 },
       }).reply(200, {
         content: [],
@@ -148,8 +139,7 @@ describe("Tool Handler Integration Tests", () => {
       });
 
       const result = await executeTool("repository_project_revisions", {
-        repository: "Design Repository",
-        projectName: "InsuranceRules",
+        projectId,
         offset: 25,
         size: 50,
         response_format: "json",

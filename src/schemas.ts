@@ -632,9 +632,7 @@ export const getRepositoryFeaturesSchema = z.object({
 }).strict();
 
 export const getProjectRevisionsSchema = z.object({
-  repository: repositoryNameSchema,
-  projectName: projectNameSchema,
-  branch: branchNameSchema.optional().describe("Branch name (optional, only if repository supports branches)"),
+  projectId: projectIdSchema,
   search: z.string().optional().describe("Search term to filter revisions by commit message or author"),
   techRevs: z.boolean().default(false).optional().describe("Include technical revisions (default: false)"),
   offset: z.number().int().nonnegative().optional().describe("Item offset (0-based). Mutually exclusive with page."),

@@ -381,18 +381,15 @@ export class OpenLClient {
   }
 
   /**
-   * Get project revision history from repository
+   * Get the revision history of a project in its current branch.
    *
-   * @param repository - Repository ID
-   * @param projectName - Project name
-   * @param options - Query options (branch, search, pagination, etc.)
+   * @param projectId - Stable project ID
+   * @param options - Query options (search, technical revisions, pagination)
    * @returns Paginated project revisions
    */
   async getProjectRevisions(
-    repository: string,
-    projectName: string,
+    projectId: string,
     options?: {
-      branch?: string;
       search?: string;
       techRevs?: boolean;
       offset?: number;
@@ -407,12 +404,8 @@ export class OpenLClient {
     else if (options?.offset !== undefined) params.offset = options.offset;
     if (options?.size !== undefined) params.size = options.size;
 
-    const url = options?.branch
-      ? `/repos/${encodeURIComponent(repository)}/branches/${encodeURIComponent(options.branch)}/projects/${encodeURIComponent(projectName)}/history`
-      : `/repos/${encodeURIComponent(repository)}/projects/${encodeURIComponent(projectName)}/history`;
-
     const response = await this.axiosInstance.get<Types.PageResponse<Types.ProjectRevision>>(
-      url,
+      `/projects/${encodeURIComponent(projectId)}/history`,
       { params }
     );
     return response.data;

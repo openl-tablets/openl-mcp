@@ -387,7 +387,7 @@ export interface RepositoryCapabilities {
   canManage?: boolean;
 }
 
-/** Project revision from repository history (from OpenAPI) */
+/** Project revision from GET /projects/{projectId}/history. */
 export interface ProjectRevision {
   revisionNo: string;
   shortRevisionNo?: string;

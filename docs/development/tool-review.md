@@ -286,13 +286,15 @@ The old `content` plus `encoding: "base64"` request remains accepted for compati
 ### 19. `openl_repository_project_revisions`
 
 **Status**: ✅ Complete  
-**OpenL API**: `GET /repos/{repository}/projects/{projectName}/history?branch={branch}&search={search}&techRevs={techRevs}&page={page}&size={size}`
+**OpenL API**: `GET /projects/{projectId}/history?search={search}&techRevs={techRevs}&offset={offset}&size={size}` (or `page={page}` instead of `offset`)
 
 **Extra/Missed Inputs**:
-- ✅ All API parameters covered: `repository`, `projectName`, `branch`, `search`, `techRevs`, `page`, `size`
+- ✅ Agent-safe API parameters covered: `projectId`, `search`, `techRevs`, `offset`, `page`, `size`
+- ✅ `offset` and `page` are mutually exclusive
+- ℹ️ The Studio `unpaged` and sparse `fields` parameters are intentionally not exposed; bounded pagination keeps MCP responses reusable and below the response limit
 
 **Recommendations**:
-- None - tool matches API perfectly
+- None
 
 ---
 
@@ -524,7 +526,7 @@ The server registers **73 tools**. All are listed below.
 | 13 | `openl_create_project_branch` | Project | ✅ Complete | `POST /projects/{projectId}/branches` | Create new branch from revision |
 | 14 | `openl_list_project_local_changes` | Project | ✅ Complete | `GET /history/project` (session-based) | List local change history (requires project open) |
 | 15 | `openl_restore_project_local_change` | Project | ✅ Complete | `POST /history/restore` with `historyId` | Restore project to previous local version |
-| 16 | `openl_repository_project_revisions` | Repository | ✅ Complete | `GET /repos/{repository}/projects/{projectName}/history` | Get committed project revision history |
+| 16 | `openl_repository_project_revisions` | Repository | ✅ Complete | `GET /projects/{projectId}/history` | Get committed history in the project's current branch |
 | 17 | `openl_read_project_file` | Files | ✅ Complete | project file read | Read a file from the project |
 | 18 | `openl_write_project_file` | Files | ✅ Complete | project file write | Create or overwrite a project file |
 | 19 | `openl_search_project_files` | Files | ✅ Complete | project file search | Search paths and text-file content |

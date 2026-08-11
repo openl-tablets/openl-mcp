@@ -48,7 +48,7 @@ by id on demand.
 - `openl_list_repositories` - List all design repositories
 - `openl_list_branches` - List Git branches in a repository
 - `openl_list_repository_features` - Get repository capabilities
-- `openl_repository_project_revisions` - Get project revision history
+- `openl_repository_project_revisions` - Get project revision history by stable project ID in the project's current branch
 
 ### Project Tools (16)
 - `openl_list_projects` - List projects with filters and pagination; follow `has_more` / `next_offset` until `has_more` is false when a complete inventory is required

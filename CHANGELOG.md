@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Upgraded to the MCP TypeScript SDK v2 and added negotiation for the modern `2026-07-28` protocol while retaining the legacy 2025 protocol for existing clients. HTTP modern requests are stateless; stdio remains connection-pinned (EPBDS-16385).
 - **BREAKING:** tool responses now default to structured JSON so read results can be reused safely in later tool calls; Markdown remains available through explicit `response_format` values (EPBDS-16385).
 - **BREAKING:** table content is now exposed only as the authoritative `RawSource` cell matrix. `openl_get_table` always requests raw content, while create/update/append reject the incomplete typed table DTOs that could lose workbook structure during round trips (EPBDS-16385).
+- **BREAKING:** `openl_repository_project_revisions` now requires the stable `projectId` returned by `openl_list_projects` and no longer accepts `repository`, `projectName`, or `branch`; it uses the project-level history API so an unsaved rename does not fail with 404 (EPBDS-16432).
 - Aligned MCP project, repository, table, test, trace, deployment, and file contracts with the current OpenL Studio OpenAPI (EPBDS-16385).
 - `openl_create_project` now creates blank projects on an optional target branch and copies existing projects through Studio's atomic, indexed server-side copy API instead of downloading ZIPs or writing branch files individually (EPBDS-16385).
 

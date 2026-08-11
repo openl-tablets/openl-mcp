@@ -31,12 +31,12 @@ Use this for the project's Git commit log. It is read-only and does not require 
 - Track team activity and review past saves/merges
 
 Key arguments:
-- `repository` — repository id or name (call **openl_list_repositories** first; both id and name are accepted)
-- `projectName` — the project to inspect
-- `branch` — optional, only for repositories that support branches
+- `projectId` — the stable project ID returned by **openl_list_projects**; use it unchanged rather than deriving it from the displayed name
 - `search` — optional filter on commit message or author
 - `techRevs` — optional, include technical revisions (default: false)
-- `page` / `size` — optional pagination (size default 50, max 200)
+- `offset` or `page` / `size` — optional pagination; `offset` and `page` are mutually exclusive (size default 50, max 200)
+
+The history is read from the branch the project is currently on. Addressing it by ID keeps the history available when `rules.xml` contains an unsaved project rename and the repository still uses the published name.
 
 ## Local workspace history — openl_list_project_local_changes
 
