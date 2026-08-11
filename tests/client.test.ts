@@ -1844,62 +1844,48 @@ describe("OpenLClient — additional method coverage", () => {
         total: 1,
       };
 
-      it("uses the non-branch history URL and forwards filter params when no branch is given", async () => {
+      it("uses the project-level history URL and forwards filter params", async () => {
         let seenUrl = "";
         let seenParams: Record<string, unknown> | undefined;
-        mockAxios.onGet(/\/repos\/design\/projects\/InsuranceRules\/history/).reply((config) => {
+        const revisionProjectId = "design:Insurance Rules:abc/123";
+        mockAxios.onGet(`/projects/${encodeURIComponent(revisionProjectId)}/history`).reply((config) => {
           seenUrl = config.url || "";
           seenParams = config.params;
           return [200, page];
         });
 
-        const result = await client.getProjectRevisions("design", "InsuranceRules", {
+        const result = await client.getProjectRevisions(revisionProjectId, {
           search: "premium",
           techRevs: false,
           page: 0,
           size: 50,
         });
 
-        expect(seenUrl).toBe("/repos/design/projects/InsuranceRules/history");
+        expect(seenUrl).toBe(`/projects/${encodeURIComponent(revisionProjectId)}/history`);
         expect(seenParams).toEqual({ search: "premium", techRevs: false, page: 0, size: 50 });
         expect(result.content[0].revisionNo).toBe("abc123");
       });
 
-      it("switches to the branch-scoped history URL when a branch is given", async () => {
-        let seenUrl = "";
-        let seenParams: Record<string, unknown> | undefined;
-        mockAxios.onGet(/\/branches\/develop\/projects\/InsuranceRules\/history/).reply((config) => {
-          seenUrl = config.url || "";
-          seenParams = config.params;
-          return [200, page];
-        });
-
-        await client.getProjectRevisions("design", "InsuranceRules", { branch: "develop" });
-
-        expect(seenUrl).toBe("/repos/design/branches/develop/projects/InsuranceRules/history");
-        expect(seenParams).toEqual({});
-      });
-
       it("forwards a non-page-aligned revision offset without converting it to a page", async () => {
         let seenParams: Record<string, unknown> | undefined;
-        mockAxios.onGet(/\/repos\/design\/projects\/InsuranceRules\/history/).reply((config) => {
+        mockAxios.onGet(`/projects/${encodeURIComponent("design:InsuranceRules")}/history`).reply((config) => {
           seenParams = config.params;
           return [200, page];
         });
 
-        await client.getProjectRevisions("design", "InsuranceRules", { offset: 25, size: 50 });
+        await client.getProjectRevisions("design:InsuranceRules", { offset: 25, size: 50 });
 
         expect(seenParams).toEqual({ offset: 25, size: 50 });
       });
 
       it("prefers an explicit page when called directly with both pagination forms", async () => {
         let seenParams: Record<string, unknown> | undefined;
-        mockAxios.onGet(/\/repos\/design\/projects\/InsuranceRules\/history/).reply((config) => {
+        mockAxios.onGet(`/projects/${encodeURIComponent("design:InsuranceRules")}/history`).reply((config) => {
           seenParams = config.params;
           return [200, page];
         });
 
-        await client.getProjectRevisions("design", "InsuranceRules", { page: 2, offset: 25, size: 50 });
+        await client.getProjectRevisions("design:InsuranceRules", { page: 2, offset: 25, size: 50 });
 
         expect(seenParams).toEqual({ page: 2, size: 50 });
       });

@@ -1,6 +1,6 @@
 /**
  * Repository tool handlers — list design repositories, branches, repository
- * features, project revisions, and deploy repositories.
+ * features, project revision history, and deploy repositories.
  */
 
 import * as schemas from "../schemas.js";
@@ -111,7 +111,7 @@ export function registerRepositoryHandlers(): void {
     category: "Repository",
     title: "Get Project Revision History",
     description:
-      "Get revision history (commit history) of a project in a design repository. Returns list of revisions with commit hashes, authors, timestamps, and commit types. Supports pagination and filtering by branch and search term. Pass either the id or name from openl_list_repositories() — both are accepted (case-insensitive). Do not invent example values; call openl_list_repositories() first if not in context.",
+      "Get revision history (commit history) of a project in the branch it is currently on. Addressing the project by its stable ID keeps history available after an unsaved rename. Returns revisions with commit hashes, authors, timestamps, and commit types, with pagination and optional search and technical-revision filters. Use the projectId returned by openl_list_projects; do not construct it from the displayed project name.",
     schema: schemas.getProjectRevisionsSchema,
     annotations: {
       readOnlyHint: true,
@@ -123,10 +123,7 @@ export function registerRepositoryHandlers(): void {
 
       const format = typedArgs.response_format;
 
-      // Convert repository name to ID for API call
-      const repositoryId = await client.getRepositoryIdByName(typedArgs.repository);
-      const revisions = await client.getProjectRevisions(repositoryId, typedArgs.projectName, {
-        branch: typedArgs.branch,
+      const revisions = await client.getProjectRevisions(typedArgs.projectId, {
         search: typedArgs.search,
         techRevs: typedArgs.techRevs,
         offset: typedArgs.offset,

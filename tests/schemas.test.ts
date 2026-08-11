@@ -189,8 +189,14 @@ describe("current project filters", () => {
     expect(listProjectsSchema.safeParse({ status: "ARCHIVED" }).success).toBe(false);
   });
 
-  it("accepts an exact revision offset and rejects combining it with page", () => {
-    expect(getProjectRevisionsSchema.safeParse({ repository: "design", projectName: "Rules", offset: 25 }).success).toBe(true);
-    expect(getProjectRevisionsSchema.safeParse({ repository: "design", projectName: "Rules", offset: 25, page: 0 }).success).toBe(false);
+  it("addresses revision history by project ID and keeps pagination forms exclusive", () => {
+    expect(getProjectRevisionsSchema.safeParse({ projectId: "design:Rules", offset: 25 }).success).toBe(true);
+    expect(getProjectRevisionsSchema.safeParse({ projectId: "design:Rules", offset: 25, page: 0 }).success).toBe(false);
+    expect(getProjectRevisionsSchema.safeParse({
+      projectId: "design:Rules",
+      repository: "design",
+      projectName: "Rules",
+      branch: "main",
+    }).success).toBe(false);
   });
 });
