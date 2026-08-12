@@ -517,7 +517,7 @@ The server registers **73 tools**. All are listed below.
 | 4 | `openl_list_deploy_repositories` | Deployment | ✅ Complete | `GET /production-repos` | List all deployment repositories |
 | 5 | `openl_list_projects` | Project | ✅ Complete | `GET /projects?...&offset={offset}&size={size}` | List projects with current Studio filters and exact item-offset pagination |
 | 6 | `openl_get_project` | Project | ✅ Complete | `GET /projects/{projectId}` | Get comprehensive project information |
-| 7 | `openl_create_project` | Project | ✅ Complete | `PUT /repos/{repo}/projects/{name}` / `POST .../from-project` | Create or copy a project on an optional target branch |
+| 7 | `openl_create_project` | Project | ✅ Complete | `PUT /repos/{repo}/projects/{name}` / `POST .../from-project` | Create a blank project or copy one addressed by stable project ID |
 | 8 | `openl_open_project` | Project | ✅ Complete | `PATCH /projects/{projectId}` with `status: "OPENED"` | Open project for editing (supports branch/revision) |
 | 9 | `openl_save_project` | Project | ✅ Complete | `PATCH /projects/{projectId}` with `{ comment }` | Save project changes to Git (validates on save) |
 | 10 | `openl_close_project` | Project | ✅ Complete | `PATCH /projects/{projectId}` with `status: "CLOSED"` | Close project (with save/discard safety checks) |

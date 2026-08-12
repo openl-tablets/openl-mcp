@@ -578,7 +578,7 @@ export function registerProjectHandlers(): void {
     description:
       "Create a new OpenL project in a design repository and commit it. Two modes, selected by the `template` argument:\n" +
       "• CREATE (omit `template`): create a BLANK project from the default empty skeleton.\n" +
-      "• COPY (pass `template` = an existing project name): use Studio's server-side project-copy API to copy the source project's FULL structure and rename its descriptor to projectName.\n" +
+      "• COPY (pass `template` = an existing project's exact projectId from openl_list_projects): use Studio's server-side project-copy API to copy that source project's FULL structure and rename its descriptor to projectName. Do not pass the displayed project name because mapped repositories may contain multiple projects with the same name.\n" +
       "Both modes are committed and indexed atomically. Omit `branch` for the repository's configured/default branch, or pass a target branch from openl_list_branches(); Studio also supports creating a missing branch from the base branch. Returns the new project name, commit revision, and Studio's opaque projectId. A name collision, missing copy source, or missing permission is rejected with an actionable error. Local repositories are not supported.",
     schema: schemas.createProjectSchema,
     annotations: {
@@ -600,7 +600,6 @@ export function registerProjectHandlers(): void {
           ? await client.copyProject(
               repositoryId,
               typedArgs.projectName,
-              repositoryId,
               source,
               { comment: typedArgs.comment, branch: typedArgs.branch },
             )
@@ -614,8 +613,8 @@ export function registerProjectHandlers(): void {
         if (source && isNotFoundError(error)) {
           throw new ProtocolError(
             ProtocolErrorCode.InvalidParams,
-            `Cannot copy: source project '${source}' was not found in repository '${typedArgs.repository}'. ` +
-              "Use openl_list_projects() to find an existing source project.",
+            `Cannot copy: source project '${source}' was not found. ` +
+              "Use the exact projectId from openl_list_projects().",
           );
         }
         rethrowConflictAsActionable(

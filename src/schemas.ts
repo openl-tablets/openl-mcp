@@ -455,8 +455,8 @@ export const createProjectSchema = z.object({
   projectName: projectNameSchema.describe(
     "Name for the new project (the ticket's `project`). Becomes the project folder name and — when cloning — the renamed project name written into rules.xml. Must be unique in the repository; a collision is rejected with 409. Allowed characters: letters, digits, space, '_' and '-'."
   ),
-  template: z.string().optional().describe(
-    "How to create the project (the ticket's `template`). OMIT to create a BLANK project from the default empty skeleton. To CLONE an existing project, pass its name (from openl_list_projects()): its full structure is copied (rules, tests, settings, request/response examples) and the project is renamed to projectName. The clone source must be in the same repository."
+  template: projectIdSchema.min(1, "Source projectId must not be empty.").optional().describe(
+    "How to create the project (the ticket's `template`). OMIT to create a BLANK project from the default empty skeleton. To CLONE an existing project, pass its exact opaque projectId from openl_list_projects() without modification: its full structure is copied (rules, tests, settings, request/response examples) and the project is renamed to projectName. Never pass the displayed project name because mapped repositories may contain multiple projects with the same name."
   ),
   branch: branchNameSchema.optional().describe(
     "Target branch for either BLANK creation or CLONING. Omit for the repository's configured/default branch. Studio selects an existing branch case-insensitively; when the branch does not exist, Studio may create it from the repository base branch. Use openl_list_branches() first to avoid accidental branch creation."

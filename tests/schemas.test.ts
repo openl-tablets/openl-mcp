@@ -4,6 +4,7 @@ import { describe, expect, it } from "@jest/globals";
 import {
   appendTableSchema,
   copyTableSchema,
+  createProjectSchema,
   createProjectTableSchema,
   deleteProjectBranchSchema,
   deleteProjectSchema,
@@ -198,5 +199,11 @@ describe("current project filters", () => {
       projectName: "Rules",
       branch: "main",
     }).success).toBe(false);
+  });
+});
+
+describe("project creation", () => {
+  it("rejects an empty copy source instead of falling back to blank project creation", () => {
+    expect(createProjectSchema.safeParse({ repository: "design", projectName: "Copy", template: "" }).success).toBe(false);
   });
 });

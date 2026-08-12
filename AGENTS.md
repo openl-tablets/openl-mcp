@@ -54,7 +54,7 @@ by id on demand.
 - `openl_list_projects` - List projects with filters and pagination; follow `has_more` / `next_offset` until `has_more` is false when a complete inventory is required
 - `openl_get_project` - Get project details
 - `openl_project_status` - Compile lazily when needed and return project compile state and diagnostics (errors/warnings with location); `wait=true` is the default, while explicit `wait=false` is a snapshot that may return `idle`/`compiling`
-- `openl_create_project` - Create or copy a project atomically through Studio: omit `template` for a BLANK project, or pass an existing project name to copy its full structure and rename it. Both modes accept an optional target `branch`, are indexed immediately, and return the commit revision plus Studio's opaque `projectId`
+- `openl_create_project` - Create or copy a project atomically through Studio: omit `template` for a BLANK project, or pass an existing project's exact `projectId` from `openl_list_projects` to copy its full structure and rename it. Both modes accept an optional target `branch` and return the commit revision plus Studio's opaque `projectId` when it can be resolved; if it is missing, call `openl_list_projects` to find the created project
 - `openl_open_project` - Open project for editing (supports branch/revision switching)
 - `openl_save_project` - Save project changes to Git with validation
 - `openl_close_project` - Close project with save/discard options (prevents data loss)
