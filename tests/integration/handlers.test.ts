@@ -3804,12 +3804,9 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
 
     it("should copy a project through Studio's server-side copy API", async () => {
       mockAxios.onGet("/repos").reply(200, mockRepositories);
-      mockAxios.onGet("/projects", {
-        params: { repository: "design", name: "Offer-US", offset: 0, size: 200 },
-      }).reply(200, [{ id: "source-id", name: "Offer-US", repository: "design" }]);
+      const sourceProjectId = "mapped:Offer-US:opaque-id";
       mockAxios.onPost("/repos/design/projects/Offer-CW/from-project", {
-        sourceRepositoryId: "design",
-        sourceProjectName: "Offer-US",
+        sourceProject: sourceProjectId,
       }).reply(200, { revision: "def456", branch: "main" });
       const canonicalProjectId = Buffer.from("design:Offer-CW").toString("base64");
       mockAxios.onGet("/projects", {
@@ -3824,7 +3821,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
 
       const result = await executeTool(
         "create_project",
-        { repository: "design", template: "Offer-US", projectName: "Offer-CW", response_format: "json" },
+        { repository: "design", template: sourceProjectId, projectName: "Offer-CW", response_format: "json" },
         client
       );
 
@@ -3834,18 +3831,15 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
         projectId: canonicalProjectId,
         revision: "def456",
       });
-      expect(response.message).toContain("Copied 'Offer-US'");
+      expect(response.message).toContain(`Copied '${sourceProjectId}'`);
       expect(mockAxios.history.post.some((p) => p.url === "/repos/design/file-copy")).toBe(false);
     });
 
     it("should copy a project atomically onto a requested branch", async () => {
       mockAxios.onGet("/repos").reply(200, mockRepositories);
-      mockAxios.onGet("/projects", {
-        params: { repository: "design", name: "Offer-US", offset: 0, size: 200 },
-      }).reply(200, [{ id: "source-id", name: "Offer-US", repository: "design" }]);
+      const sourceProjectId = "mapped:Offer-US:opaque-id";
       mockAxios.onPost("/repos/design/projects/Offer-CW/from-project", {
-        sourceRepositoryId: "design",
-        sourceProjectName: "Offer-US",
+        sourceProject: sourceProjectId,
         branch: "dev",
       }).reply(200, { revision: "def456", branch: "dev" });
       const canonicalProjectId = Buffer.from("design:Offer-CW").toString("base64");
@@ -3861,7 +3855,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
 
       const result = await executeTool(
         "create_project",
-        { repository: "design", template: "Offer-US", projectName: "Offer-CW", branch: "dev", response_format: "json" },
+        { repository: "design", template: sourceProjectId, projectName: "Offer-CW", branch: "dev", response_format: "json" },
         client
       );
 
@@ -3876,15 +3870,12 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
 
     it("should reject a copy when the destination already exists (409)", async () => {
       mockAxios.onGet("/repos").reply(200, mockRepositories);
-      mockAxios.onGet("/projects", {
-        params: { repository: "design", name: "Offer-US", offset: 0, size: 200 },
-      }).reply(200, [{ id: "source-id", name: "Offer-US", repository: "design" }]);
       mockAxios.onPost("/repos/design/projects/Existing/from-project").reply(409, { message: "duplicated.project.message" });
 
       await expect(
         executeTool(
           "create_project",
-          { repository: "design", template: "Offer-US", projectName: "Existing" },
+          { repository: "design", template: "mapped:Offer-US:opaque-id", projectName: "Existing" },
           client
         )
       ).rejects.toThrow(/already exists/i);
@@ -3899,7 +3890,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
       await expect(
         executeTool(
           "create_project",
-          { repository: "design", template: "Nope", projectName: "NewOne" },
+          { repository: "design", template: "missing-project-id", projectName: "NewOne" },
           client
         )
       ).rejects.toThrow(/not found/i);

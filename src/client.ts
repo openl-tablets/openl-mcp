@@ -452,19 +452,17 @@ export class OpenLClient {
     return response.data;
   }
 
-  /** Copy an existing project server-side and register the copy in Studio. */
+  /** Copy a project addressed by its stable ID and register the copy in Studio. */
   async copyProject(
     targetRepositoryId: string,
     targetProjectName: string,
-    sourceRepositoryId: string,
-    sourceProjectName: string,
+    sourceProject: string,
     options?: { comment?: string; branch?: string; revision?: string; path?: string },
   ): Promise<Types.CreateProjectResult> {
     const response = await this.axiosInstance.post<Types.CreateProjectResult>(
       `/repos/${encodeURIComponent(targetRepositoryId)}/projects/${encodeURIComponent(targetProjectName)}/from-project`,
       {
-        sourceRepositoryId,
-        sourceProjectName,
+        sourceProject,
         ...(options?.comment ? { comment: options.comment } : {}),
         ...(options?.branch ? { branch: options.branch } : {}),
         ...(options?.revision ? { revision: options.revision } : {}),

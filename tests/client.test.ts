@@ -1376,8 +1376,7 @@ describe("OpenLClient", () => {
     it("copyProject uses Studio's server-side project-copy endpoint", async () => {
       mockAxios.onPost("/repos/design/projects/Offer-CW/from-project").reply((config) => {
         expect(JSON.parse(config.data)).toEqual({
-          sourceRepositoryId: "design",
-          sourceProjectName: "Offer-US",
+          sourceProject: "mapped:Offer-US:opaque-id",
           comment: "Copy rates",
           branch: "feature/rates",
         });
@@ -1387,8 +1386,7 @@ describe("OpenLClient", () => {
       await expect(client.copyProject(
         "design",
         "Offer-CW",
-        "design",
-        "Offer-US",
+        "mapped:Offer-US:opaque-id",
         { comment: "Copy rates", branch: "feature/rates" },
       )).resolves.toEqual({ revision: "copy123", branch: "feature/rates" });
     });
