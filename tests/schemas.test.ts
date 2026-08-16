@@ -138,10 +138,12 @@ describe("table workflow schemas", () => {
   });
 
   it("enforces distinct project-graph and table-neighborhood options", () => {
-    expect(getTableDependenciesSchema.safeParse({ projectId: "p1", module: "Main" }).success).toBe(true);
+    expect(getTableDependenciesSchema.safeParse({ projectId: "p1", module: "Main", layer: "datatype" }).success).toBe(true);
     expect(getTableDependenciesSchema.safeParse({ projectId: "p1", tableId: "t1", direction: "DEPENDENCIES", depth: 2 }).success).toBe(true);
     expect(getTableDependenciesSchema.safeParse({ projectId: "p1", direction: "DEPENDENCIES" }).success).toBe(false);
     expect(getTableDependenciesSchema.safeParse({ projectId: "p1", tableId: "t1", module: "Main" }).success).toBe(false);
+    expect(getTableDependenciesSchema.safeParse({ projectId: "p1", tableId: "t1", layer: "datatype" }).success).toBe(false);
+    expect(getTableDependenciesSchema.safeParse({ projectId: "p1", layer: "unknown" }).success).toBe(false);
   });
 
   it("requires copy destinations and validates new module paths", () => {

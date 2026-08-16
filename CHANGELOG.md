@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `openl_get_table_dependencies` now exposes Studio's datatype/vocabulary graph with project-level layer filtering and datatype relationship and value details (EPBDS-15474).
 - Binary project/conflict file reads now return lossless base64 in an interoperable JSON TextContent envelope, and `openl_write_project_file` accepts a schema-declared base64 `blob` while retaining whitespace-wrapped legacy base64 input (EPBDS-16385).
 - Upgraded to the MCP TypeScript SDK v2 and added negotiation for the modern `2026-07-28` protocol while retaining the legacy 2025 protocol for existing clients. HTTP modern requests are stateless; stdio remains connection-pinned (EPBDS-16385).
 - **BREAKING:** tool responses now default to structured JSON so read results can be reused safely in later tool calls; Markdown remains available through explicit `response_format` values (EPBDS-16385).

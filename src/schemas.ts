@@ -155,12 +155,18 @@ export const getTableDependenciesSchema = z.object({
   projectId: projectIdSchema,
   tableId: tableIdSchema.optional().describe("Optional table whose dependency neighborhood to return. Omit to return the whole project (or module) graph."),
   module: z.string().trim().min(1).optional().describe("When tableId is omitted, limit the project graph to this module. Discover names with openl_list_project_modules()."),
+  layer: z.enum(["executable", "datatype", "all"]).optional().describe("When tableId is omitted, return executable tables, datatype/vocabulary nodes, or both (backend default all)."),
   direction: z.enum(["DEPENDENCIES", "DEPENDENTS", "BOTH"]).optional().describe("When tableId is provided, relations to traverse (backend default BOTH)."),
   depth: z.number().int().min(1).optional().describe("When tableId is provided, maximum traversal depth from that table."),
   response_format: ResponseFormat.optional(),
 }).strict().superRefine((value, ctx) => {
-  if (value.tableId && value.module) {
-    ctx.addIssue({ code: "custom", path: ["module"], message: "module cannot be combined with tableId; it applies only to the whole-project graph." });
+  if (value.tableId) {
+    if (value.module) {
+      ctx.addIssue({ code: "custom", path: ["module"], message: "module cannot be combined with tableId; it applies only to the whole-project graph." });
+    }
+    if (value.layer) {
+      ctx.addIssue({ code: "custom", path: ["layer"], message: "layer cannot be combined with tableId; the root table determines the graph layer." });
+    }
   }
   if (!value.tableId && (value.direction || value.depth !== undefined)) {
     ctx.addIssue({ code: "custom", path: [value.direction ? "direction" : "depth"], message: "direction and depth require tableId." });

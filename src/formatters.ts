@@ -159,10 +159,25 @@ export function formatResponse<T>(
     };
   }
 
+  const charLimit = (options && options.characterLimit) || RESPONSE_LIMITS.MAX_CHARACTERS;
+
   // Convert to string
   let formattedString: string;
   if (format === "json") {
     formattedString = safeStringify(response, 2);
+  } else if (
+    options?.dataType === "table_dependencies"
+    && Array.isArray(data)
+    && (format === "markdown" || format === "markdown_detailed")
+  ) {
+    formattedString = formatTableDependencies(
+      data as Types.TableNodeView[],
+      options.markdownContext,
+      {
+        detailed: format === "markdown_detailed",
+        characterLimit: options.skipTruncation ? undefined : charLimit,
+      },
+    );
   } else if (format === "markdown_concise") {
     formattedString = toMarkdownConcise(response, options?.dataType, options?.markdownContext);
   } else if (format === "markdown_detailed") {
@@ -177,7 +192,6 @@ export function formatResponse<T>(
     return formattedString;
   }
 
-  const charLimit = (options && options.characterLimit) || RESPONSE_LIMITS.MAX_CHARACTERS;
   if (formattedString.length > charLimit) {
     if (format === "json") {
       try {
@@ -368,16 +382,60 @@ export function toMarkdownConcise<T>(
         break;
       case "table_dependencies": {
         const nodes = data as Types.TableNodeView[];
-        const edges = nodes.reduce((sum, node) => sum + (node.dependencies?.length ?? 0), 0);
-        parts.push(`Dependency graph contains ${total} ${total === 1 ? "table" : "tables"} and ${edges} ${edges === 1 ? "dependency link" : "dependency links"}.`);
-        const connectedNodes = nodes.filter(
-          (node) => (node.dependencies?.length ?? 0) + (node.dependents?.length ?? 0) > 0,
+        const edges = collectDependencyEdges(nodes);
+        const executableNodes = nodes.filter((node) => !isDatatypeNode(node));
+        const datatypes = nodes.filter(isDatatypeNode);
+        const executableIds = new Set(executableNodes.flatMap((node) => node.id ? [node.id] : []));
+        const datatypeIds = new Set(datatypes.flatMap((node) => node.id ? [node.id] : []));
+        const executableLinks = edges.filter(
+          (edge) => executableIds.has(edge.source) && executableIds.has(edge.target),
         );
-        const connected = connectedNodes
+        const datatypeLinks = edges.filter(
+          (edge) => datatypeIds.has(edge.source) && datatypeIds.has(edge.target),
+        );
+        const layerSummaries: string[] = [];
+        if (executableNodes.length > 0) {
+          layerSummaries.push(`${formatCount(executableNodes.length, "executable node")} with ${formatCount(executableLinks.length, "call link")}`);
+        }
+        if (datatypes.length > 0) {
+          layerSummaries.push(`${formatCount(datatypes.length, "datatype/vocabulary node")} with ${formatCount(datatypeLinks.length, "model link")}`);
+        }
+        parts.push(`Dependency graph contains ${formatCount(total, "node")} and ${formatCount(edges.length, "link")}${layerSummaries.length > 0 ? `: ${layerSummaries.join("; ")}` : ""}.`);
+
+        const executableFanOut = new Map<string, number>();
+        for (const edge of executableLinks) {
+          executableFanOut.set(edge.source, (executableFanOut.get(edge.source) ?? 0) + 1);
+        }
+        const fanOutOf = (node: Types.TableNodeView): number => node.id
+          ? executableFanOut.get(node.id) ?? 0
+          : 0;
+        const highestFanOut = executableNodes
+          .filter((node) => fanOutOf(node) > 0)
+          .sort((left, right) => fanOutOf(right) - fanOutOf(left))
           .slice(0, 3)
-          .map((node) => `${node.name ?? node.id ?? "unnamed"}: ${node.dependencies?.length ?? 0} dependencies, ${node.dependents?.length ?? 0} dependents`);
-        if (connected.length > 0) {
-          parts.push(`Connected tables: ${connected.join("; ")}${connectedNodes.length > connected.length ? "; …" : ""}.`);
+          .map((node) => `${node.name ?? node.id ?? "unnamed"} (${formatCount(fanOutOf(node), "dependency", "dependencies")})`);
+        if (highestFanOut.length > 0) {
+          parts.push(`Highest executable fan-out: ${highestFanOut.join(", ")}.`);
+        }
+
+        if (datatypes.length > 0) {
+          const fields = datatypes.flatMap((node) => node.fields ?? []);
+          const references = fields.filter((field) => field.ref);
+          const collections = references.filter((field) => field.collection);
+          const vocabularies = datatypes.flatMap((node) => node.vocabulary ? [node.vocabulary] : []);
+          const vocabularyValues = vocabularies.reduce((sum, vocabulary) => sum + (vocabulary.valueCount ?? vocabulary.valuesPreview?.length ?? 0), 0);
+          const truncatedVocabularies = vocabularies.filter((vocabulary) => vocabulary.truncated).length;
+          const inheritance = datatypes.filter((node) => node.extends).length;
+          const connectedDatatypeIds = new Set(datatypeLinks.flatMap((edge) => [edge.source, edge.target]));
+          const isolated = datatypes.filter((node) => !node.id || !connectedDatatypeIds.has(node.id)).length;
+          parts.push(
+            `Data model declares ${formatCount(fields.length, "field")}, including ${formatCount(references.length, "typed reference")} (${formatCount(collections.length, "collection")}), with ${formatCount(inheritance, "inheritance relation")}; ${isolated === 0 ? "every data-model node has a model-layer link" : `${formatCount(isolated, "data-model node")} ${isolated === 1 ? "has" : "have"} no links within the datatype layer`}.`,
+          );
+          if (vocabularies.length > 0) {
+            parts.push(
+              `It also contains ${formatCount(vocabularies.length, "vocabulary", "vocabularies")} with ${formatCount(vocabularyValues, "declared value")}${truncatedVocabularies > 0 ? `; ${formatCount(truncatedVocabularies, "preview")} ${truncatedVocabularies === 1 ? "is" : "are"} truncated` : "; all value previews are complete"}.`,
+            );
+          }
         }
         const query = formatDependencyQuery(markdownContext, true);
         if (query) parts.push(query);
@@ -432,6 +490,10 @@ export function toMarkdownDetailed<T>(
 ): string {
   const parts: string[] = [];
   const data = response.data;
+
+  if (dataType === "table_dependencies" && Array.isArray(data)) {
+    return formatTableDependencies(data as Types.TableNodeView[], markdownContext, { detailed: true });
+  }
 
   // Detect data type if not provided
   if (!dataType && Array.isArray(data) && data.length > 0) {
@@ -609,9 +671,69 @@ function formatTables(tables: any[]): string {
   return lines.join("\n");
 }
 
+function formatCount(count: number, singular: string, plural: string = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 function dependencyLabel(id: string, nodesById: ReadonlyMap<string, Types.TableNodeView>): string {
   const name = nodesById.get(id)?.name;
   return name ? `${String(name).replace(/\n/g, " ")} (\`${id}\`)` : `\`${id}\``;
+}
+
+function dependencyNodesById(nodes: Types.TableNodeView[]): Map<string, Types.TableNodeView> {
+  return new Map(nodes.flatMap((node) => node.id ? [[node.id, node] as const] : []));
+}
+
+function isDatatypeNode(node: Types.TableNodeView): node is Types.DatatypeNodeView {
+  return node.kind === "Datatype";
+}
+
+function hasDependencyNodeId<T extends Types.TableNodeView>(node: T): node is T & { id: string } {
+  return typeof node.id === "string" && node.id.length > 0;
+}
+
+function formatDatatypeField(
+  field: Types.DatatypeNodeFieldView,
+  nodesById: ReadonlyMap<string, Types.TableNodeView>,
+): string {
+  const name = String(field.name ?? "unnamed").replace(/\n/g, " ");
+  const type = String(field.type ?? "unknown").replace(/\n/g, " ");
+  const target = field.ref
+    ? ` -> ${dependencyLabel(field.ref, nodesById)}`
+    : "";
+  return `\`${name}: ${type}\`${target}${field.collection ? " (collection)" : ""}`;
+}
+
+interface VocabularyPreviewItem {
+  omitted?: number;
+  value?: unknown;
+}
+
+/** Insert a presentation-only gap between the first and last backend preview values. */
+function vocabularyPreviewItems(vocabulary: Types.DatatypeNodeVocabularyView): VocabularyPreviewItem[] {
+  const values = vocabulary.valuesPreview ?? [];
+  const omitted = Math.max(0, (vocabulary.valueCount ?? values.length) - values.length);
+  if (!vocabulary.truncated || omitted === 0) return values.map((value) => ({ value }));
+
+  const head = Math.ceil(values.length / 2);
+  return [
+    ...values.slice(0, head).map((value) => ({ value })),
+    { omitted },
+    ...values.slice(head).map((value) => ({ value })),
+  ];
+}
+
+function vocabularyValueText(value: unknown): string {
+  return typeof value === "string" ? value : safeStringify(value);
+}
+
+function formatVocabularyPreview(vocabulary: Types.DatatypeNodeVocabularyView): string {
+  const items = vocabularyPreviewItems(vocabulary);
+  if (items.length === 0) return "None";
+  return items.map((item) => item.omitted !== undefined
+    ? `+ ${item.omitted} more`
+    : `\`${vocabularyValueText(item.value).replace(/`/g, "\\`")}\``
+  ).join(", ");
 }
 
 function formatDependencyQuery(
@@ -623,52 +745,479 @@ function formatDependencyQuery(
   if (context.scope) values.push(`scope ${String(context.scope)}`);
   if (context.tableId) values.push(`root table \`${String(context.tableId)}\``);
   if (context.module) values.push(`module \`${String(context.module)}\``);
+  if (context.layer) values.push(`layer ${String(context.layer)}`);
   if (context.direction) values.push(`direction ${String(context.direction)}`);
   if (context.depth !== undefined) values.push(`depth ${String(context.depth)}`);
   if (values.length === 0) return "";
   return inline ? `Query: ${values.join(", ")}.` : `**Query:** ${values.join(", ")}`;
 }
 
-/** Render graph edges explicitly instead of losing them in the flat table-list template. */
+interface DependencyMarkdownOptions {
+  detailed?: boolean;
+  characterLimit?: number;
+}
+
+interface DependencyEdge {
+  source: string;
+  target: string;
+}
+
+interface DependencyRelations {
+  dependencies: ReadonlyMap<string, string[]>;
+  dependents: ReadonlyMap<string, string[]>;
+}
+
+function normalizeMermaidText(value: unknown, fallback: string): string {
+  const normalized = String(value ?? fallback).replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim();
+  return normalized || fallback;
+}
+
+function escapeMermaidLabel(value: unknown, fallback: string): string {
+  return normalizeMermaidText(value, fallback)
+    .replace(/&/g, "&amp;")
+    .replace(/%/g, "&#37;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function escapeMermaidRelationship(value: unknown, fallback: string): string {
+  return normalizeMermaidText(value, fallback)
+    .replace(/[%:;{}[\]<>|"'`]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim() || fallback;
+}
+
+function mermaidErAttribute(value: unknown, fallback: string, isType: boolean): string {
+  const allowed = isType ? /[^A-Za-z0-9_()[\]-]+/g : /[^A-Za-z0-9_-]+/g;
+  const normalized = normalizeMermaidText(value, fallback)
+    .replace(allowed, "_")
+    .replace(/^_+|_+$/g, "");
+  return /^[A-Za-z]/.test(normalized) ? normalized : `${fallback}_${normalized || fallback}`;
+}
+
+/**
+ * Mermaid ER attributes require both a type and a name. A zero-width space is
+ * accepted by the ER grammar and keeps the mandatory type column visually
+ * empty for vocabulary values, whose shared type is already in the entity
+ * header. The omitted-values row uses it for both mandatory columns so only
+ * its `+ N more` comment is visible.
+ */
+const MERMAID_ER_EMPTY_ATTRIBUTE_PART = "\u200B";
+
+function collectDependencyEdges(nodes: Types.TableNodeView[]): DependencyEdge[] {
+  const nodeIds = new Set(nodes.flatMap((node) => node.id ? [node.id] : []));
+  const edges = new Map<string, DependencyEdge>();
+  const add = (source: string | undefined, target: string | undefined): void => {
+    if (!source || !target || !nodeIds.has(source) || !nodeIds.has(target)) return;
+    edges.set(`${source}\u0000${target}`, { source, target });
+  };
+
+  for (const node of nodes) {
+    node.dependencies?.forEach((target) => add(node.id, target));
+    node.dependents?.forEach((source) => add(source, node.id));
+  }
+  return [...edges.values()];
+}
+
+function dependencyRelations(nodes: Types.TableNodeView[]): DependencyRelations {
+  const dependencies = new Map<string, string[]>();
+  const dependents = new Map<string, string[]>();
+  for (const edge of collectDependencyEdges(nodes)) {
+    dependencies.set(edge.source, [...(dependencies.get(edge.source) ?? []), edge.target]);
+    dependents.set(edge.target, [...(dependents.get(edge.target) ?? []), edge.source]);
+  }
+  return { dependencies, dependents };
+}
+
+function selectDependencyNodes(nodes: Types.TableNodeView[], count: number): Types.TableNodeView[] {
+  if (count >= nodes.length) return nodes;
+
+  const selected = new Set<Types.TableNodeView>();
+  const datatype = nodes.find(isDatatypeNode);
+  const executable = nodes.find((node) => !isDatatypeNode(node));
+  if (datatype && selected.size < count) selected.add(datatype);
+  if (executable && selected.size < count) selected.add(executable);
+  for (const node of nodes) {
+    if (selected.size >= count) break;
+    selected.add(node);
+  }
+  return nodes.filter((node) => selected.has(node));
+}
+
+const MERMAID_RESERVED_IDENTIFIERS = new Set([
+  "accdescr",
+  "acctitle",
+  "callback",
+  "class",
+  "classdef",
+  "classdiagram",
+  "click",
+  "cssclass",
+  "direction",
+  "end",
+  "erdiagram",
+  "link",
+  "namespace",
+  "note",
+  "style",
+  "title",
+]);
+
+/**
+ * Keep datatype identifiers human-readable and directly usable as entity names.
+ * Do not switch to Mermaid's `id["Display name"]` entity-alias syntax here:
+ * embedded Mermaid versions used by some MCP clients render that syntax literally
+ * in ER diagrams and create a second, disconnected entity when a relationship
+ * references `id`. Sanitize names instead, prefix reserved words, and suffix
+ * collisions so the same compatible identifier is used in declarations and links.
+ */
+function dependencyAliases(nodes: Types.TableNodeView[]): Map<string, string> {
+  const aliases = new Map<string, string>();
+  const datatypeAliases = new Set<string>();
+  let executableIndex = 0;
+  for (const node of nodes) {
+    if (!node.id) continue;
+    if (!isDatatypeNode(node)) {
+      aliases.set(node.id, `e${executableIndex++}`);
+      continue;
+    }
+
+    const normalizedName = normalizeMermaidText(node.name ?? node.id, "Datatype")
+      .replace(/[^A-Za-z0-9_]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+    const safeName = /^[A-Za-z]/.test(normalizedName) && !MERMAID_RESERVED_IDENTIFIERS.has(normalizedName.toLowerCase())
+      ? normalizedName
+      : `Type_${normalizedName || "Datatype"}`;
+    let alias = safeName;
+    let suffix = 2;
+    while (datatypeAliases.has(alias)) alias = `${safeName}_${suffix++}`;
+    datatypeAliases.add(alias);
+    aliases.set(node.id, alias);
+  }
+  return aliases;
+}
+
+/**
+ * Vocabulary value types belong to the whole declaration, so show them once in
+ * the ER entity header rather than repeating them beside every preview value.
+ * These are quoted entity names, not Mermaid's incompatible `id["label"]` ER
+ * alias syntax described above; the exact same name is used for declarations
+ * and relationships so clients cannot create disconnected duplicate entities.
+ */
+function datatypeErEntityNames(
+  nodes: Types.TableNodeView[],
+  aliases: ReadonlyMap<string, string>,
+): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const node of nodes) {
+    if (!isDatatypeNode(node) || !node.id) continue;
+    const alias = aliases.get(node.id);
+    if (!alias) continue;
+    if (!node.vocabulary) {
+      names.set(node.id, alias);
+      continue;
+    }
+
+    const valueType = mermaidErAttribute(node.vocabulary.valueType, "Value", true);
+    names.set(node.id, `"${alias}<${valueType}>"`);
+  }
+  return names;
+}
+
+function formatExecutableDiagram(
+  nodes: Types.TableNodeView[],
+  allEdges: DependencyEdge[],
+  aliases: ReadonlyMap<string, string>,
+): string | undefined {
+  const executableNodes = nodes.filter(
+    (node): node is Types.TableNodeView & { id: string } => !isDatatypeNode(node) && hasDependencyNodeId(node) && aliases.has(node.id),
+  );
+  if (executableNodes.length === 0) return undefined;
+
+  const executableIds = new Set(executableNodes.map((node) => node.id));
+  const lines = ["## Executable call graph", "", "```mermaid", "flowchart LR"];
+  for (const node of executableNodes) {
+    const alias = aliases.get(node.id);
+    if (!alias) continue;
+    const name = escapeMermaidLabel(node.name ?? node.id, "Unnamed table");
+    const kind = escapeMermaidLabel(node.kind ?? node.tableType, "Executable");
+    lines.push(`  ${alias}["${name}<br/>${kind}"]`);
+  }
+  for (const edge of allEdges) {
+    if (!executableIds.has(edge.source) || !executableIds.has(edge.target)) continue;
+    lines.push(`  ${aliases.get(edge.source)} --> ${aliases.get(edge.target)}`);
+  }
+
+  const dispatchers = executableNodes.filter(
+    (node) => node.kind === "Dispatcher" || node.tableType === "Dispatcher",
+  );
+  const ordinary = executableNodes.filter((node) => !dispatchers.includes(node));
+  lines.push("  classDef executable fill:#eef5ff,stroke:#2563eb,color:#172554");
+  lines.push("  classDef dispatcher fill:#fff7ed,stroke:#ea580c,color:#431407,stroke-width:2px");
+  if (ordinary.length > 0) {
+    lines.push(`  class ${ordinary.map((node) => aliases.get(node.id)).join(",")} executable`);
+  }
+  if (dispatchers.length > 0) {
+    lines.push(`  class ${dispatchers.map((node) => aliases.get(node.id)).join(",")} dispatcher`);
+  }
+  lines.push("```", "", "Arrows point from the caller to the dependency. Dispatcher nodes are highlighted.");
+  return lines.join("\n");
+}
+
+function formatDatatypeDiagrams(
+  nodes: Types.TableNodeView[],
+  allEdges: DependencyEdge[],
+  aliases: ReadonlyMap<string, string>,
+): string | undefined {
+  const datatypeNodes = nodes.filter(isDatatypeNode).filter(hasDependencyNodeId).filter((node) => aliases.has(node.id));
+  if (datatypeNodes.length === 0) return undefined;
+
+  const datatypeIds = new Set(datatypeNodes.map((node) => node.id));
+  const entityNames = datatypeErEntityNames(datatypeNodes, aliases);
+  const connectedDatatypeIds = new Set<string>();
+  const representedEdges = new Set<string>();
+  const relationshipLines: string[] = [];
+  const inheritanceLines: string[] = [];
+  const lines = ["## Data model", "", "```mermaid", "erDiagram", "  direction LR"];
+  for (const node of datatypeNodes) {
+    const entityName = entityNames.get(node.id);
+    if (!entityName) continue;
+    const vocabularyItems = node.vocabulary ? vocabularyPreviewItems(node.vocabulary) : [];
+    if ((!node.fields || node.fields.length === 0) && vocabularyItems.length === 0) {
+      lines.push(`  ${entityName}`);
+      continue;
+    }
+
+    const usedMemberNames = new Set<string>();
+    lines.push(`  ${entityName} {`);
+    for (const field of node.fields ?? []) {
+      const type = mermaidErAttribute(field.type, "Type", true);
+      const baseName = mermaidErAttribute(field.name, "field", false);
+      let name = baseName;
+      let suffix = 2;
+      while (usedMemberNames.has(name)) name = `${baseName}_${suffix++}`;
+      usedMemberNames.add(name);
+      lines.push(`    ${type} ${name}`);
+    }
+    for (const item of vocabularyItems) {
+      if (item.omitted !== undefined) {
+        lines.push(`    ${MERMAID_ER_EMPTY_ATTRIBUTE_PART} ${MERMAID_ER_EMPTY_ATTRIBUTE_PART} "+ ${item.omitted} more"`);
+        continue;
+      }
+
+      const baseName = mermaidErAttribute(vocabularyValueText(item.value), "value", false);
+      let name = baseName;
+      let suffix = 2;
+      while (usedMemberNames.has(name)) name = `${baseName}_${suffix++}`;
+      usedMemberNames.add(name);
+      lines.push(`    ${MERMAID_ER_EMPTY_ATTRIBUTE_PART} ${name}`);
+    }
+    lines.push("  }");
+  }
+
+  for (const node of datatypeNodes) {
+    if (node.extends && datatypeIds.has(node.extends)) {
+      inheritanceLines.push(`  ${aliases.get(node.extends)} <|-- ${aliases.get(node.id)}`);
+      connectedDatatypeIds.add(node.id);
+      connectedDatatypeIds.add(node.extends);
+      representedEdges.add(`${node.id}\u0000${node.extends}`);
+    }
+    for (const field of node.fields ?? []) {
+      if (!field.ref || !datatypeIds.has(field.ref)) continue;
+      const cardinality = field.collection ? "o{" : "o|";
+      relationshipLines.push(
+        `  ${entityNames.get(node.id)} ||--${cardinality} ${entityNames.get(field.ref)} : ${escapeMermaidRelationship(field.name, "field")}`,
+      );
+      connectedDatatypeIds.add(node.id);
+      connectedDatatypeIds.add(field.ref);
+      representedEdges.add(`${node.id}\u0000${field.ref}`);
+    }
+  }
+  for (const edge of allEdges) {
+    const edgeKey = `${edge.source}\u0000${edge.target}`;
+    if (
+      datatypeIds.has(edge.source)
+      && datatypeIds.has(edge.target)
+      && !representedEdges.has(edgeKey)
+    ) {
+      relationshipLines.push(`  ${entityNames.get(edge.source)} ||..o{ ${entityNames.get(edge.target)} : depends on`);
+      connectedDatatypeIds.add(edge.source);
+      connectedDatatypeIds.add(edge.target);
+    }
+  }
+  const isolatedDatatypes = datatypeNodes.filter(
+    (node) => !connectedDatatypeIds.has(node.id)
+      && (!node.fields || node.fields.length === 0)
+      && (!node.vocabulary || vocabularyPreviewItems(node.vocabulary).length === 0),
+  );
+  lines.push(
+    ...relationshipLines,
+    "```",
+    "",
+    "Datatype entities list declared fields. Vocabulary headers use `Name<Type>` and their rows list the bounded preview without repeating the shared type; a `+ N more` row marks values omitted between its first and last entries. Reference links point from one source instance to an optional (`0..1`) or collection (`0..*`) target.",
+  );
+  if (isolatedDatatypes.length > 0) {
+    lines.push(
+      "",
+      `Unconnected datatypes/vocabularies without displayable members: ${isolatedDatatypes.map((node) => `\`${node.name ?? node.id}\``).join(", ")}.`,
+    );
+  }
+  if (inheritanceLines.length > 0) {
+    lines.push(
+      "",
+      "## Datatype inheritance",
+      "",
+      "```mermaid",
+      "classDiagram",
+      ...inheritanceLines,
+      "```",
+      "",
+      "Inheritance uses a hollow triangle from the parent to the child datatype.",
+    );
+  }
+  return lines.join("\n");
+}
+
+function formatDependencyOverview(
+  allNodes: Types.TableNodeView[],
+  visibleNodes: Types.TableNodeView[],
+  context?: Record<string, unknown>,
+): string {
+  const lines = ["# Table Dependency Graph"];
+  const query = formatDependencyQuery(context);
+  if (query) lines.push("", query);
+
+  const aliases = dependencyAliases(visibleNodes);
+  const edges = collectDependencyEdges(allNodes);
+  const diagrams = [
+    formatExecutableDiagram(visibleNodes, edges, aliases),
+    formatDatatypeDiagrams(visibleNodes, edges, aliases),
+  ].filter((diagram): diagram is string => Boolean(diagram));
+  if (diagrams.length > 0) lines.push("", diagrams.join("\n\n"));
+  else lines.push("", "No renderable table nodes found.");
+
+  if (visibleNodes.length < allNodes.length) {
+    lines.push("", `Diagram shows ${visibleNodes.length} of ${allNodes.length} nodes; ${allNodes.length - visibleNodes.length} omitted to keep the response within the character limit.`);
+  }
+  return lines.join("\n");
+}
+
+function fitDependencyOverview(
+  nodes: Types.TableNodeView[],
+  context: Record<string, unknown> | undefined,
+  characterLimit: number | undefined,
+): string {
+  if (characterLimit === undefined) return formatDependencyOverview(nodes, nodes, context);
+  let lower = 1;
+  let upper = nodes.length;
+  let best: string | undefined;
+  while (lower <= upper) {
+    const count = Math.floor((lower + upper) / 2);
+    const candidate = formatDependencyOverview(nodes, selectDependencyNodes(nodes, count), context);
+    if (candidate.length <= characterLimit) {
+      best = candidate;
+      lower = count + 1;
+    } else {
+      upper = count - 1;
+    }
+  }
+  if (best) return best;
+
+  const fallback = "# Table Dependency Graph\n\nDiagram omitted because the configured character limit is too small.";
+  return fallback.slice(0, characterLimit);
+}
+
+function formatDependencyNodeDetail(
+  node: Types.TableNodeView,
+  nodesById: ReadonlyMap<string, Types.TableNodeView>,
+  relations: DependencyRelations,
+): string {
+  const name = String(node.name ?? node.id ?? "Unnamed table").replace(/\n/g, " ");
+  const dependencies = (node.id ? relations.dependencies.get(node.id) : node.dependencies)
+    ?.map((id) => dependencyLabel(id, nodesById)).join(", ") || "None";
+  const dependents = (node.id ? relations.dependents.get(node.id) : node.dependents)
+    ?.map((id) => dependencyLabel(id, nodesById)).join(", ") || "None";
+  const lines = [`### ${name}`];
+  if (node.id) lines.push(`- **Table ID:** \`${node.id}\``);
+  if (node.tableType || node.kind) {
+    lines.push(`- **Type:** ${node.tableType ?? "N/A"}${node.kind ? ` (${node.kind})` : ""}`);
+  }
+  if (node.project) lines.push(`- **Project:** ${node.project}`);
+  if (node.file || node.pos) lines.push(`- **Location:** ${node.file ?? "N/A"}${node.pos ? ` at ${node.pos}` : ""}`);
+  if (isDatatypeNode(node)) {
+    if (node.extends) lines.push(`- **Extends:** ${dependencyLabel(node.extends, nodesById)}`);
+    if (node.vocabulary) {
+      const valueCount = node.vocabulary.valueCount ?? node.vocabulary.valuesPreview?.length ?? 0;
+      lines.push(`- **Vocabulary:** ${formatCount(valueCount, `${node.vocabulary.valueType ?? "unknown"} value`)}`);
+      lines.push(`- **Values preview:** ${formatVocabularyPreview(node.vocabulary)}`);
+    } else if (node.fields && node.fields.length > 0) {
+      lines.push("- **Declared fields:**", ...node.fields.map((field) => `  - ${formatDatatypeField(field, nodesById)}`));
+    } else {
+      lines.push("- **Declared fields:** None");
+    }
+  } else {
+    if (node.signature) lines.push(`- **Signature:** \`${node.signature}\``);
+    if (node.returnType) lines.push(`- **Return type:** \`${node.returnType}\``);
+    if (node.dimensionProperties && Object.keys(node.dimensionProperties).length > 0) {
+      lines.push(`- **Dimension properties:** \`${safeStringify(node.dimensionProperties)}\``);
+    }
+  }
+  lines.push(`- **Depends on:** ${dependencies}`, `- **Used by:** ${dependents}`);
+  if (node.properties && Object.keys(node.properties).length > 0) {
+    lines.push(`- **Properties:** \`${safeStringify(node.properties)}\``);
+  }
+  return lines.join("\n");
+}
+
+function appendDependencyDetails(
+  overview: string,
+  nodes: Types.TableNodeView[],
+  characterLimit: number | undefined,
+): string {
+  const nodesById = dependencyNodesById(nodes);
+  const relations = dependencyRelations(nodes);
+  const details = nodes.map((node) => formatDependencyNodeDetail(node, nodesById, relations));
+  const detailsHeader = `${overview}\n\n## Node details\n\nDependencies and reverse uses are derived from the returned graph edges. Executable and datatype layers intentionally do not link to each other.`;
+  const complete = `${detailsHeader}\n\n${details.join("\n\n")}`;
+  if (characterLimit === undefined || complete.length <= characterLimit) return complete;
+
+  let result = detailsHeader;
+  let included = 0;
+  for (const detail of details) {
+    const omittedAfterAppend = nodes.length - included - 1;
+    const omission = omittedAfterAppend > 0
+      ? `\n\n${omittedAfterAppend} node detail${omittedAfterAppend === 1 ? "" : "s"} omitted to keep the response within the character limit.`
+      : "";
+    if (`${result}\n\n${detail}${omission}`.length > characterLimit) break;
+    result += `\n\n${detail}`;
+    included++;
+  }
+  const omitted = nodes.length - included;
+  if (omitted > 0) {
+    const omission = `\n\n${omitted} node detail${omitted === 1 ? "" : "s"} omitted to keep the response within the character limit.`;
+    if ((result + omission).length <= characterLimit) result += omission;
+  }
+  return result.length <= characterLimit ? result : overview;
+}
+
+/** Render dependency layers as complete Mermaid diagrams with an optional metadata appendix. */
 function formatTableDependencies(
   nodes: Types.TableNodeView[],
   context?: Record<string, unknown>,
+  options: DependencyMarkdownOptions = {},
 ): string {
   if (!Array.isArray(nodes) || nodes.length === 0) {
     return "# Table Dependency Graph\n\nNo tables found.";
   }
 
-  const nodesById = new Map(
-    nodes.flatMap((node) => node.id ? [[node.id, node] as const] : []),
-  );
-  const lines = ["# Table Dependency Graph"];
-  const query = formatDependencyQuery(context);
-  if (query) lines.push("", query);
-
-  for (const node of nodes) {
-    const name = String(node.name ?? node.id ?? "Unnamed table").replace(/\n/g, " ");
-    const dependencies = node.dependencies?.map((id) => dependencyLabel(id, nodesById)).join(", ") || "None";
-    const dependents = node.dependents?.map((id) => dependencyLabel(id, nodesById)).join(", ") || "None";
-    lines.push("", `## ${name}`);
-    if (node.id) lines.push(`- **Table ID:** \`${node.id}\``);
-    if (node.tableType || node.kind) {
-      lines.push(`- **Type:** ${node.tableType ?? "N/A"}${node.kind ? ` (${node.kind})` : ""}`);
-    }
-    if (node.project) lines.push(`- **Project:** ${node.project}`);
-    if (node.file || node.pos) lines.push(`- **Location:** ${node.file ?? "N/A"}${node.pos ? ` at ${node.pos}` : ""}`);
-    if (node.signature) lines.push(`- **Signature:** \`${node.signature}\``);
-    if (node.returnType) lines.push(`- **Return type:** \`${node.returnType}\``);
-    lines.push(`- **Depends on:** ${dependencies}`);
-    lines.push(`- **Used by:** ${dependents}`);
-    if (node.dimensionProperties && Object.keys(node.dimensionProperties).length > 0) {
-      lines.push(`- **Dimension properties:** \`${safeStringify(node.dimensionProperties)}\``);
-    }
-    if (node.properties && Object.keys(node.properties).length > 0) {
-      lines.push(`- **Properties:** \`${safeStringify(node.properties)}\``);
-    }
-  }
-
-  return lines.join("\n");
+  const overviewBudget = options.detailed && options.characterLimit !== undefined
+    ? Math.max(Math.floor(options.characterLimit * 0.65), Math.min(options.characterLimit, 800))
+    : options.characterLimit;
+  const overview = fitDependencyOverview(nodes, context, overviewBudget);
+  return options.detailed
+    ? appendDependencyDetails(overview, nodes, options.characterLimit)
+    : overview;
 }
 
 /**

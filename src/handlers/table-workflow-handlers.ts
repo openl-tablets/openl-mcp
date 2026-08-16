@@ -188,7 +188,7 @@ export function registerTableWorkflowHandlers(): void {
     category: "Rules & Tables",
     title: "Get Table Dependencies",
     description:
-      "Get the table dependency graph. Omit tableId for the whole project graph (optionally restricted by module), or provide tableId for its dependency/dependent neighborhood with optional direction and depth. Each node includes both dependencies and dependents plus source location, signature, table type, dimension properties, and owning project. JSON preserves the graph nodes directly; Markdown formats render every relationship explicitly instead of flattening the response into a table inventory.",
+      "Get the table dependency graph as an adjacency list. Omit tableId for the whole project graph, optionally restricted by module and layer (executable, datatype, or all); provide tableId for its dependency/dependent neighborhood with optional direction and depth. Executable nodes include signatures, return types, and dimension properties; datatype nodes include inheritance and declared field references; vocabulary nodes include their value type, total value count, and a bounded first/last values preview. Dispatchers represent versioned executable tables, self-loops represent recursion or self-reference, and cycles are derived from dependency edges. JSON preserves the graph nodes directly. Markdown renders executable calls as a Mermaid flowchart and the data model, including declared fields, vocabulary value previews, and reference cardinalities, as a Mermaid ER diagram; vocabulary headers use Name<Type>, preview rows leave the redundant type column visually empty, and a + N more marker identifies a truncated middle. Inheritance is shown separately when present. Detailed Markdown adds per-node metadata, while concise Markdown stays textual.",
     schema: schemas.getTableDependenciesSchema,
     annotations: {
       readOnlyHint: true,
@@ -200,6 +200,7 @@ export function registerTableWorkflowHandlers(): void {
       const graph = await client.getTableDependencies(args.projectId, {
         tableId: args.tableId,
         module: args.module,
+        layer: args.layer,
         direction: args.direction,
         depth: args.depth,
       });
@@ -212,6 +213,7 @@ export function registerTableWorkflowHandlers(): void {
               scope: args.tableId ? "table neighborhood" : "whole project",
               ...(args.tableId ? { tableId: args.tableId } : {}),
               ...(args.module ? { module: args.module } : {}),
+              ...(args.layer ? { layer: args.layer } : {}),
               ...(args.direction ? { direction: args.direction } : {}),
               ...(args.depth !== undefined ? { depth: args.depth } : {}),
             },

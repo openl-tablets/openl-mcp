@@ -246,11 +246,10 @@ export interface SummaryTableView {
   pos?: string;
 }
 
-/** One node in the Studio table dependency graph. */
-export interface TableNodeView {
+/** Fields shared by executable and datatype nodes in the Studio dependency graph. */
+export interface BaseTableNodeView {
   dependencies?: string[];
   dependents?: string[];
-  dimensionProperties?: Record<string, string>;
   file?: string;
   id?: string;
   kind?: TableKind | "Dispatcher";
@@ -258,10 +257,43 @@ export interface TableNodeView {
   pos?: string;
   project?: string;
   properties?: Record<string, unknown>;
-  returnType?: string;
-  signature?: string;
   tableType?: string;
 }
+
+/** A callable-table node in the Studio dependency graph. */
+export interface ExecutableNodeView extends BaseTableNodeView {
+  kind?: Exclude<TableKind, "Datatype"> | "Dispatcher";
+  dimensionProperties?: Record<string, string>;
+  returnType?: string;
+  signature?: string;
+}
+
+/** One field declared directly by a datatype dependency node. */
+export interface DatatypeNodeFieldView {
+  collection?: boolean;
+  name?: string;
+  ref?: string;
+  type?: string;
+}
+
+/** A bounded preview of the values declared by a vocabulary table. */
+export interface DatatypeNodeVocabularyView {
+  truncated?: boolean;
+  valueCount?: number;
+  valuesPreview?: unknown[];
+  valueType?: string;
+}
+
+/** A datatype or vocabulary node in the Studio dependency graph. */
+export interface DatatypeNodeView extends BaseTableNodeView {
+  kind?: "Datatype";
+  extends?: string;
+  fields?: DatatypeNodeFieldView[];
+  vocabulary?: DatatypeNodeVocabularyView;
+}
+
+/** One OpenAPI-discriminated node in the Studio table dependency graph. */
+export type TableNodeView = ExecutableNodeView | DatatypeNodeView;
 
 /** One allowed value of an enum-backed table property. */
 export interface PropertyValueView {
