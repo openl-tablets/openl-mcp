@@ -231,14 +231,14 @@ describe("table workflow handlers", () => {
     });
 
     await executeTool("get_table_dependencies", {
-      projectId: "p1", module: "Main", response_format: "json",
+      projectId: "p1", module: "Main", layer: "datatype", response_format: "json",
     }, client);
     await executeTool("get_table_dependencies", {
       projectId: "p1", tableId: "Rate #1", direction: "DEPENDENTS", depth: 3, response_format: "json",
     }, client);
 
     expect(seen).toEqual([
-      { url: "/projects/p1/tables/graph", params: { module: "Main" } },
+      { url: "/projects/p1/tables/graph", params: { module: "Main", layer: "datatype" } },
       { url: "/projects/p1/tables/Rate%20%231/graph", params: { direction: "DEPENDENTS", depth: 3 } },
     ]);
   });
@@ -262,19 +262,28 @@ describe("table workflow handlers", () => {
       const text = response.content[0].text;
       expect(text).toContain("Dependency");
       expect(text).toContain("Premium");
-      expect(text).toContain("Base Rate");
       expect(text).toContain("root");
       expect(text).toContain("DEPENDENCIES");
       if (response_format === "markdown_concise") {
         expect(text).not.toContain("…");
+        expect(text).toContain("3 executable nodes with 1 call link");
+      } else {
+        expect(text).toContain("Base Rate");
       }
     }
 
     const markdown = (await executeTool("get_table_dependencies", {
       projectId: "p1", tableId: "root", response_format: "markdown",
     }, client)).content[0].text;
-    expect(markdown).toContain("**Depends on:** Base Rate (`base`)");
-    expect(markdown).toContain("**Used by:** Premium (`root`)");
+    expect(markdown).toContain("flowchart LR");
+    expect(markdown).toContain("e0 --> e1");
+    expect(markdown).not.toContain("## Node details");
+
+    const detailed = (await executeTool("get_table_dependencies", {
+      projectId: "p1", tableId: "root", response_format: "markdown_detailed",
+    }, client)).content[0].text;
+    expect(detailed).toContain("**Depends on:** Base Rate (`base`)");
+    expect(detailed).toContain("**Used by:** Premium (`root`)");
   });
 
   it("discovers modules, worksheets, and allowed property definitions", async () => {

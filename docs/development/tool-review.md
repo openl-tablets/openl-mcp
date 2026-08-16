@@ -571,7 +571,7 @@ The server registers **73 tools**. All are listed below.
 | 58 | `openl_list_guides` | Guidance | ✅ Complete | none (local guides bundle) | Metadata index of the bundled OpenL docs (filterable, paginated) |
 | 59 | `openl_get_guides` | Guidance | ✅ Complete | none (local guides bundle) | Full markdown bodies for requested guide ids |
 | 60 | `openl_run_table` | Rules | ✅ Complete | single-active `POST /projects/{projectId}/run` + bounded `GET /run/result` polling (`DELETE /run` on failure) | Execute a regular table within one session-wide deadline and wait inside one tool call for its result |
-| 61 | `openl_get_table_dependencies` | Rules | ✅ Complete | `GET /projects/{projectId}/tables/graph` or `/tables/{tableId}/graph` | Get the project/module graph or one table's dependency neighborhood |
+| 61 | `openl_get_table_dependencies` | Rules | ✅ Complete | `GET /projects/{projectId}/tables/graph` or `/tables/{tableId}/graph` | Get executable/datatype project or module graphs, or one table's dependency/dependent neighborhood; Markdown renders a Mermaid flowchart and a field/vocabulary-aware ER diagram with `Name<Type>` vocabulary headers |
 | 62 | `openl_list_project_modules` | Project | ✅ Complete | `GET /projects/{projectId}/modules` | List modules declared by a project |
 | 63 | `openl_list_module_sheets` | Project | ✅ Complete | `GET /projects/{projectId}/modules/{moduleName}/sheets` | List worksheet names in a module |
 | 64 | `openl_list_table_property_definitions` | Rules | ✅ Complete | `GET /projects/{projectId}/properties` | List properties allowed for a table context |

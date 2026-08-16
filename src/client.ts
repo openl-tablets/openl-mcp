@@ -1589,6 +1589,7 @@ export class OpenLClient {
     options?: {
       tableId?: string;
       module?: string;
+      layer?: "executable" | "datatype" | "all";
       direction?: "DEPENDENCIES" | "DEPENDENTS" | "BOTH";
       depth?: number;
     }
@@ -1602,8 +1603,11 @@ export class OpenLClient {
           ...(options.direction && { direction: options.direction }),
           ...(options.depth !== undefined && { depth: options.depth }),
         }
-      : options?.module
-        ? { module: options.module }
+      : options?.module || options?.layer
+        ? {
+            ...(options.module && { module: options.module }),
+            ...(options.layer && { layer: options.layer }),
+          }
         : undefined;
     const response = await this.axiosInstance.get<Types.TableNodeView[]>(url, { params });
     return response.data;
