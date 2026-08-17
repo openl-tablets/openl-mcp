@@ -878,6 +878,85 @@ describe("formatters", () => {
     });
   });
 
+  describe("test_results formatting", () => {
+    it("includes failed test-case assertions with expected and actual values in markdown", () => {
+      const results = {
+        testCases: [{
+          name: "policyCommissionTest",
+          tableId: "test-table-1",
+          executionTimeMs: 5.45,
+          numberOfTests: 2,
+          numberOfFailures: 1,
+          testUnits: [{
+            id: "13",
+            description: "policy issued",
+            status: "TR_NEQ" as const,
+            executionTimeMs: 2.17,
+            testAssertions: [
+              { description: "EventType", expectedValue: "policyIssued", actualValue: "policyIssued", status: "TR_OK" as const },
+              { description: "AnnualAmt", expectedValue: 4200, actualValue: null, status: "TR_NEQ" as const },
+              { description: "PremiumCode", expectedValue: "NWT|net", actualValue: "GWT\ngross", status: "TR_NEQ" as const },
+            ],
+          }, {
+            id: "14",
+            status: "TR_OK" as const,
+            executionTimeMs: 1,
+            testAssertions: [
+              { description: "FlatAmount", expectedValue: 0, actualValue: 0, status: "TR_OK" as const },
+            ],
+          }],
+        }],
+        executionTimeMs: 5.45,
+        numberOfTests: 2,
+        numberOfFailures: 1,
+        pageNumber: 0,
+        pageSize: 50,
+        numberOfElements: 1,
+      };
+
+      const markdown = formatResponse(results, "markdown", { dataType: "test_results" });
+
+      expect(markdown).toContain("## Test Units");
+      expect(markdown).toContain("| 13 | policy issued | ❌ FAILED | 3 | 2 | 2.17 |");
+      expect(markdown).toContain("| 14 | N/A | ✅ PASSED | 1 | 0 | 1.00 |");
+      expect(markdown).toContain("#### Failure Details — policyCommissionTest");
+      expect(markdown).toContain("| AnnualAmt | `4200` | `null` | ❌ FAILED |");
+      expect(markdown).toContain('| PremiumCode | `"NWT\\|net"` | `"GWT\\ngross"` | ❌ FAILED |');
+      expect(markdown).not.toContain("| EventType | `\"policyIssued\"`");
+      expect(markdown).not.toContain("| FlatAmount | `0`");
+    });
+
+    it("includes execution errors when a failed unit has no assertion details", () => {
+      const results = {
+        testCases: [{
+          name: "brokenTest",
+          tableId: "test-table-2",
+          executionTimeMs: 1,
+          numberOfTests: 1,
+          numberOfFailures: 1,
+          testUnits: [{
+            id: "7",
+            status: "TR_EXCEPTION" as const,
+            errors: [{ severity: "ERROR" as const, summary: "Rule failed\nwhile executing" }],
+          }],
+        }],
+        executionTimeMs: 1,
+        numberOfTests: 1,
+        numberOfFailures: 1,
+        pageNumber: 0,
+        pageSize: 50,
+        numberOfElements: 1,
+      };
+
+      const markdown = formatResponse(results, "markdown_detailed", { dataType: "test_results" });
+
+      expect(markdown).toContain("##### Test 7");
+      expect(markdown).toContain("- **Status:** ⚠️ ERROR");
+      expect(markdown).toContain("  - ERROR: Rule failed while executing");
+      expect(markdown).toContain("- No assertion-level failure details returned.");
+    });
+  });
+
   describe("edge cases", () => {
     it("should handle circular references in JSON", () => {
       const circular: any = { a: 1 };

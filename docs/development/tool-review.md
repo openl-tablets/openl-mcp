@@ -392,6 +392,7 @@ The old `content` plus `encoding: "base64"` request remains accepted for compati
 - ✅ Use for full test results with pagination
 - ✅ Requires test execution to be started first with `openl_start_project_tests`
 - ✅ Supports pagination options: page-based or offset-based
+- ✅ Markdown includes each returned test unit and assertion-level failure details with expected and actual values
 - ⚠️ **Important**: Understand that pagination controls which test tables are shown, not individual test cases within tables
 - ⚠️ **Note**: The 'unpaged' parameter may not work correctly on the backend - use pagination (page/offset/size) instead
 
@@ -414,6 +415,7 @@ The old `content` plus `encoding: "base64"` request remains accepted for compati
 - ✅ Use for getting results for a specific table
 - ✅ Requires test execution to be started first with `openl_start_project_tests`
 - ✅ Filters results on client side after retrieving from API
+- ✅ Markdown includes each returned test unit and assertion-level failure details with expected and actual values
 
 ---
 
