@@ -1298,8 +1298,40 @@ function formatTestResultsSummary(summary: Types.TestResultsSummary): string {
   return lines.join("\n");
 }
 
+function formatTestStatus(status: Types.TestUnitExecutionResult["status"]): string {
+  switch (status) {
+    case "TR_OK":
+      return "✅ PASSED";
+    case "TR_NEQ":
+      return "❌ FAILED";
+    case "TR_EXCEPTION":
+      return "⚠️ ERROR";
+    default:
+      return "N/A";
+  }
+}
+
+function formatTestResultValue(value: unknown): string {
+  if (value === undefined) return "N/A";
+  const serialized = safeStringify(value) ?? String(value);
+  const escaped = escapeTableCell(serialized).replace(/`/g, "\\`");
+  return `\`${escaped}\``;
+}
+
+function formatTestIdentifier(value: string): string {
+  return `\`${String(value).replace(/`/g, "\\`").replace(/\r?\n/g, " ")}\``;
+}
+
+function failedTestAssertions(
+  testUnit: Types.TestUnitExecutionResult,
+): Types.TestAssertionExecutionResult[] {
+  return (testUnit.testAssertions ?? []).filter(
+    (assertion) => assertion.status === "TR_NEQ" || assertion.status === "TR_EXCEPTION",
+  );
+}
+
 /**
- * Format test results as markdown table
+ * Format test results as a summary followed by test-unit and assertion failures.
  */
 function formatTestResults(summary: Types.TestsExecutionSummary & { totalTestsInAllTables?: number }): string {
   if (!summary || typeof summary !== "object") {
@@ -1364,6 +1396,77 @@ function formatTestResults(summary: Types.TestsExecutionSummary & { totalTestsIn
         : 0).toFixed(2);
 
       lines.push(`| ${name} | ${totalTestsForCase} | ${passed} | ${numberOfFailures} | ${status} | ${execTime} |`);
+    }
+
+    lines.push("", "## Test Units");
+
+    for (const testCase of testCases) {
+      const tableName = escapeTableCell(testCase.name || "N/A");
+      const tableId = formatTestIdentifier(testCase.tableId);
+      const testUnits = testCase.testUnits ?? [];
+      const unitResults = testUnits.map((testUnit) => ({
+        testUnit,
+        failures: failedTestAssertions(testUnit),
+      }));
+
+      lines.push("", `### ${tableName}`, `- **Table ID:** ${tableId}`, "");
+
+      if (testUnits.length === 0) {
+        lines.push("No test-unit details returned.");
+        continue;
+      }
+
+      lines.push("| Test | Description | Status | Assertions | Failed Assertions | Execution Time (ms) |");
+      lines.push("|------|-------------|--------|------------|-------------------|---------------------|");
+
+      for (const { testUnit, failures } of unitResults) {
+        const id = escapeTableCell(testUnit.id || "N/A");
+        const description = escapeTableCell(testUnit.description || "N/A");
+        const assertions = testUnit.testAssertions ?? [];
+        const execTime = typeof testUnit.executionTimeMs === "number" && isFinite(testUnit.executionTimeMs)
+          ? testUnit.executionTimeMs.toFixed(2)
+          : "N/A";
+        lines.push(`| ${id} | ${description} | ${formatTestStatus(testUnit.status)} | ${assertions.length} | ${failures.length} | ${execTime} |`);
+      }
+
+      const failedUnits = unitResults.filter(({ testUnit, failures }) =>
+        testUnit.status === "TR_NEQ"
+        || testUnit.status === "TR_EXCEPTION"
+        || failures.length > 0
+        || (testUnit.errors?.length ?? 0) > 0
+      );
+
+      if (failedUnits.length === 0) continue;
+
+      lines.push("", `#### Failure Details — ${tableName}`);
+
+      for (const { testUnit, failures } of failedUnits) {
+        const id = escapeTableCell(testUnit.id || "N/A");
+        const description = testUnit.description
+          ? ` — ${escapeTableCell(testUnit.description)}`
+          : "";
+
+        lines.push("", `##### Test ${id}${description}`);
+        lines.push(`- **Status:** ${formatTestStatus(testUnit.status)}`);
+
+        if (testUnit.errors && testUnit.errors.length > 0) {
+          lines.push("- **Errors:**");
+          for (const error of testUnit.errors) {
+            lines.push(`  - ${error.severity}: ${String(error.summary).replace(/\r?\n/g, " ")}`);
+          }
+        }
+
+        if (failures.length === 0) {
+          lines.push("- No assertion-level failure details returned.");
+          continue;
+        }
+
+        lines.push("", "| Assertion | Expected | Actual | Status |", "|-----------|----------|--------|--------|");
+        for (const assertion of failures) {
+          const assertionName = escapeTableCell(assertion.description || "N/A");
+          lines.push(`| ${assertionName} | ${formatTestResultValue(assertion.expectedValue)} | ${formatTestResultValue(assertion.actualValue)} | ${formatTestStatus(assertion.status)} |`);
+        }
+      }
     }
   } else {
     lines.push("No test cases found.");

@@ -2007,7 +2007,17 @@ describe("Tool Handler Integration Tests", () => {
               executionTimeMs: 30,
               numberOfTests: 3,
               numberOfFailures: 1,
-              testUnits: [],
+              testUnits: [{
+                id: "discount-case-3",
+                status: "TR_NEQ",
+                executionTimeMs: 10,
+                testAssertions: [{
+                  description: "Discount",
+                  expectedValue: 0.2,
+                  actualValue: 0.1,
+                  status: "TR_NEQ",
+                }],
+              }],
             },
           ],
           executionTimeMs: 80,
@@ -2038,6 +2048,8 @@ describe("Tool Handler Integration Tests", () => {
         expect(text).toContain("Test_calculateDiscount");
         expect(text).toContain("PASSED");
         expect(text).toContain("FAILED");
+        expect(text).toContain("discount-case-3");
+        expect(text).toContain("| Discount | `0.2` | `0.1` | ❌ FAILED |");
       });
 
       it("should error when no test session exists", async () => {
