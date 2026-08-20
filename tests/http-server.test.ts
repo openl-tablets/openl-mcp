@@ -14,6 +14,7 @@ import type { AddressInfo } from "node:net";
 import type { Server as HttpServer } from "node:http";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { OpenLClient } from "../src/client.js";
+import { SERVER_INFO } from "../src/constants.js";
 import {
   createHttpApp,
   createHttpSessionClient,
@@ -81,6 +82,37 @@ describe("resolveHttpBaseUrl (HTTP MCP transport)", () => {
     process.env.OPENL_BASE_URL = "not-a-url";
     expect(resolveHttpBaseUrl()).toBeUndefined();
     expect(errSpy).toHaveBeenCalledWith(expect.stringMatching(/Invalid OpenL base URL/i));
+  });
+});
+
+describe("GET /health", () => {
+  it("reports the running build so a deployed server can be identified, and leaks no configuration", async () => {
+    const { server, url } = await listen(createHttpApp({ baseUrl: "http://studio.internal:8080" }));
+    try {
+      const response = await fetch(new URL("/health", url));
+      expect(response.status).toBe(200);
+
+      const body = await response.json() as {
+        status: string;
+        service: string;
+        version: string;
+        build: { id: string; source: string };
+        runtime: { node: string; platform: string; arch: string };
+      };
+
+      expect(body.status).toBe("ok");
+      expect(body.service).toBe(SERVER_INFO.NAME);
+      expect(body.version).toBe(SERVER_INFO.VERSION);
+      // The build id always starts with the version; the token after it depends
+      // on whether build metadata shipped (CI tests run before the build).
+      expect(body.build.id.startsWith(body.version)).toBe(true);
+      expect(["build-metadata", "unavailable"]).toContain(body.build.source);
+      expect(body.runtime.node).toBe(process.version);
+      // The probe is unauthenticated: it must not expose the configured studio.
+      expect(JSON.stringify(body)).not.toContain("studio.internal");
+    } finally {
+      await closeServer(server);
+    }
   });
 });
 

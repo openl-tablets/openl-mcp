@@ -509,7 +509,7 @@ compilation errors. Saving a project (`openl_save_project`) also validates it.
 
 ### Full Tools Table
 
-The server registers **73 tools**. All are listed below.
+The server registers **74 tools**. All are listed below.
 
 | # | Tool Name | Category | Status | OpenL API Endpoint | Description |
 |---|-----------|----------|--------|-------------------|-------------|
@@ -586,6 +586,7 @@ The server registers **73 tools**. All are listed below.
 | 71 | `openl_cancel_merge_conflicts` | Project | ✅ Complete | `DELETE /projects/{projectId}/merge/conflicts` | Clear pending session-bound conflict state after user handoff or cancellation |
 | 72 | `openl_delete_project` | Project | ✅ Complete | `DELETE /projects/{projectId}?comment=…` | Delete a project after exact-name confirmation |
 | 73 | `openl_delete_project_branch` | Project | ✅ Complete | `DELETE /projects/{projectId}/branches/{branch}?force=…` | Delete a non-base project branch with confirmation/protection guards |
+| 74 | `openl_get_version` | Diagnostics | ✅ Complete | none (local build metadata) | Report the server's version, build id, commit/ref, build time, and Node/platform runtime |
 
 **Legend:**
 - ✅ **Complete**: Tool is fully implemented and working
@@ -600,10 +601,10 @@ The server registers **73 tools**. All are listed below.
 
 | Status | Count | Tools |
 |--------|-------|-------|
-| ✅ Complete | 73 | All registered guidance, repository, project, file, table, raw table-source action, deployment, testing, and trace tools. |
+| ✅ Complete | 74 | All registered guidance, repository, project, file, table, raw table-source action, deployment, testing, trace, and diagnostics tools. |
 | ⚠️ Partial | 0 | None. |
 
-Total registered tools: **73**.
+Total registered tools: **74**.
 
 Conflict resolution is intentionally excluded. Studio's current API is not safe
 enough for an agent to apply BASE/OURS/THEIRS decisions without risking data loss;

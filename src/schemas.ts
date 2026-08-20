@@ -964,6 +964,16 @@ export const getProjectAgentContextSchema = z.object({
 }).strict();
 
 // =============================================================================
+// Diagnostics Schemas
+// =============================================================================
+
+// Only the output format is negotiable: the payload is the server's own version,
+// build, and runtime identity, which take no input.
+export const getVersionSchema = z.object({
+  response_format: ResponseFormat.optional(),
+}).strict();
+
+// =============================================================================
 // Guidance Schemas
 // =============================================================================
 

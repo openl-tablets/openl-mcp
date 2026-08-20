@@ -28,7 +28,7 @@ uses STOMP (`openl_project_status` with `wait: true`), while regular table execu
 is polled internally by `openl_run_table`. STOMP details:
 [docs/development/websockets.md](docs/development/websockets.md).
 
-## Tools (73 Total)
+## Tools (74 Total)
 
 All tools are prefixed with `openl_` and share the server's version.
 
@@ -171,6 +171,9 @@ and walk it level by level with `openl_expand_trace_tree`.
 - `openl_list_deployments` - List active deployments
 - `openl_deploy_project` - Deploy to production
 - `openl_redeploy_project` - Redeploy with new version
+
+### Diagnostics (1)
+- `openl_get_version` - Report this server's own identity for bug reports and environment checks: package version, build id (version + short commit, `.dirty` for a modified working tree), full commit and its date, branch or tag, build timestamp, and the Node.js/platform/architecture it runs on. Local-only — it needs no OpenL Studio connection, so it still answers when the studio is unreachable, and it returns no configuration, credentials, or URLs. Quote `build.id`: nightly builds between two releases share the same version. A `build.source` of `unavailable` means the install shipped without build metadata, so only the version is known. The same identity is printed by `openl-mcp --version`, the stdio startup log, and the HTTP `/health` probe
 
 ## Local projects (repository: local)
 

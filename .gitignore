@@ -12,6 +12,9 @@ dist/
 # OpenL docs bundle fetched at build time by dist/fetch-guides.js — never committed
 # Anchored to the repo root so it does not also match docs/guides/.
 /guides/
+
+# Build identity recorded at build time by dist/generate-build-info.js
+/build-info.json
 *.js
 *.js.map
 *.d.ts

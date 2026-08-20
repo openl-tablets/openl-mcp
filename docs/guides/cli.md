@@ -42,12 +42,30 @@ All three work without config or credentials, and are the source of truth for th
 | `--help` | usage, flags, and a catalog of tool **titles** by category |
 | `<tool> --help` | that tool's full description and argument schema |
 | `--list-tools` | JSON array (`name` / `title` / `description` / `inputSchema`) — the CLI's `tools/list` |
+| `--version` | the installed version and the build it was made from (`-V`) |
 
 ```bash
 npx -y openl-mcp --help
 npx -y openl-mcp update_table --help
 npx -y openl-mcp --list-tools | jq '.[].name'
+npx -y openl-mcp --version
 ```
+
+`--version` prints one line — quote it in bug reports:
+
+```text
+openl-mcp 1.1.0 (build a1b2c3d, built 2026-08-19T07:30:00Z)
+```
+
+The first two fields stay `<name> <version>`, so `--version | awk '{print $2}'`
+keeps working. The parenthetical names the **build**: the commit the package was
+built from, suffixed `.dirty` when it was built from a modified working tree, plus
+the build timestamp. It is what tells two nightly builds of the same version apart;
+it is omitted only when the install shipped without build metadata. For the same
+information as structured data — including the full commit, its date, the branch or
+tag, and the Node.js/platform it runs on — call the `get_version` tool. That tool
+never contacts OpenL Studio, but on the CLI it still needs a base URL like every
+other tool, so `--version` is the config-free way to identify a build.
 
 `--list-tools` reports **bare** names, so filter on the bare name:
 

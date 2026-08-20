@@ -69,7 +69,7 @@ export function stripToolPrefix(name: string): string {
  * for reads and diagnostics can put that in its own configuration, where a
  * reviewer can see it, and be certain the write tools are not merely unused but
  * unreachable. It also cuts what a client has to carry: measured on this build,
- * the full surface is 73 tools and ~169 KB of tool schemas, and a 39-tool
+ * the full surface is 74 tools and ~169 KB of tool schemas, and a 39-tool
  * read-and-diagnostics subset is ~85 KB — half of it.
  *
  * Names may be given bare (`get_table`) or prefixed (`openl_get_table`); both
@@ -121,6 +121,7 @@ export const TOOL_CATEGORIES = [
   "Project Files",
   "Trace",
   "Deployment",
+  "Diagnostics",
 ] as const;
 
 /** A tool's display category — one of {@link TOOL_CATEGORIES}. */

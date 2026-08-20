@@ -98,8 +98,16 @@ jobs:
 
       # README swap is done after the push so the npm-specific README is
       # not committed to main. It only ends up in the npm tarball.
+      #
+      # `assume-unchanged` hides this deliberate swap from `git status`, which
+      # `npm publish` → `prepublishOnly` → `npm run build` inspects to record
+      # whether the build came from a modified tree (src/generate-build-info.ts).
+      # Without it, every published release would be stamped
+      # `<version>+<commit>.dirty`. The swapped file still ships in the tarball.
       - name: Use npm-specific README for the package tarball
-        run: cp README.npm.md README.md
+        run: |
+          cp README.npm.md README.md
+          git update-index --assume-unchanged README.md
 
       # LAST irreversible step. Everything before it is recoverable; this
       # is not. By the time we get here, git has the consistent state

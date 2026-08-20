@@ -1,6 +1,6 @@
 # OpenL MCP Server - Implementation Plan
 
-> **Status**: Active (v1.1.0) - 73 tools
+> **Status**: Active (v1.1.0) - 74 tools
 > **Last Updated**: 2026-08-07
 > **Major Milestone**: Completed architectural refactoring from monolithic to modular design
 
@@ -15,7 +15,7 @@ The OpenL MCP Server underwent a **major architectural refactoring** in November
 - ✅ **Response Formatting**: Unified JSON/Markdown formatting with pagination support
 - ✅ **Structured Logging**: stderr-only logging with credential sanitization
 - ✅ **MCP Annotations**: First-class support for readOnlyHint, idempotentHint, destructiveHint, openWorldHint
-- ✅ **Tool Prefix**: All 73 tools use the `openl_` prefix for namespacing
+- ✅ **Tool Prefix**: All 74 tools use the `openl_` prefix for namespacing
 - ✅ **Character Limits**: Automatic truncation at 25,000 characters
 - ✅ **Pagination**: Built-in pagination (limit: 50, max: 200) for all list operations
 
@@ -103,7 +103,7 @@ The OpenL MCP Server underwent a **major architectural refactoring** in November
 ┌───────────────────▼─────────────────────────────┐
 │            MCP Server (index.ts)                │
 │  ┌──────────────────────────────────────────┐   │
-│  │  Tool Handlers (73 tools)                │   │
+│  │  Tool Handlers (74 tools)                │   │
 │  ├──────────────────────────────────────────┤   │
 │  │  Prompt Registry (14 prompts)            │   │
 │  └──────────────────────────────────────────┘   │
@@ -203,7 +203,7 @@ The MCP server has been **refactored from a 766-line monolithic index.ts to a mo
 #### Layer 6: Definitions
 - `src/schemas.ts` (270 lines, **ENHANCED**)
   - Zod schemas with .strict() mode
-- Input validation (73 tool schemas)
+- Input validation (74 tool schemas)
   - Type inference
   - Runtime safety
 
@@ -422,7 +422,7 @@ const toolHandlers = new Map<string, ToolDefinition>();
 export function registerAllTools(server: Server, client: OpenLClient): void {
   registerTool({ /* tool 1 */ });
   registerTool({ /* tool 2 */ });
-  // ... 73 tools total
+  // ... 74 tools total
 }
 
 // Execute tool by name

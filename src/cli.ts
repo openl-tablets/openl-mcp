@@ -20,6 +20,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 
 import { OpenLClient } from "./client.js";
+import { versionLine } from "./build-info.js";
 import { SERVER_INFO, TOOL_CATEGORIES } from "./constants.js";
 import { executeTool, getAllTools, registerAllTools } from "./handlers/index.js";
 import { hashFingerprint, sanitizeError, normalizeToken } from "./utils.js";
@@ -618,7 +619,7 @@ function renderHelp(): string {
     `  openl-mcp <tool-name> --help                     detailed help for a tool`,
     `  openl-mcp --list-tools                           JSON schemas of all tools`,
     `  openl-mcp --help                                 this message`,
-    `  openl-mcp --version                              print version (-V)`,
+    `  openl-mcp --version                              print version and build id (-V)`,
     ``,
     `Server URL (required — unless OPENL_BASE_URL is set):`,
     `  <url>    OpenL Studio base URL, e.g. http://localhost:8080. Pass it as the`,
@@ -701,11 +702,13 @@ export async function runCli(options: RunCliOptions): Promise<number> {
     return EXIT_CODES.USAGE;
   }
 
-  // --version — single line, parseable, no config needed. SERVER_INFO is read
-  // from package.json, so this matches what `npm view openl-mcp version` and
-  // the installed tarball report.
+  // --version — single line, parseable, no config needed. The first two fields
+  // stay `<name> <version>`, read from package.json, so this matches what
+  // `npm view openl-mcp version` and the installed tarball report; the build id
+  // and timestamp follow in a parenthetical, and identify WHICH build of that
+  // version is installed (nightlies between two releases share the version).
   if (parsed.showVersion) {
-    stdout.write(`${SERVER_INFO.NAME} ${SERVER_INFO.VERSION}\n`);
+    stdout.write(`${versionLine()}\n`);
     return EXIT_CODES.OK;
   }
 

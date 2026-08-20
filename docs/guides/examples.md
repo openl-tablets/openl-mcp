@@ -4,7 +4,7 @@ Once your client is connected (see [Quick Start](quick-start.md)), you work with
 language. Your AI assistant calls the right OpenL tools for you. Below are things you can ask, grouped by task.
 
 <details>
-<summary><strong>What the tools cover</strong> (73 tools, all prefixed <code>openl_</code>)</summary>
+<summary><strong>What the tools cover</strong> (74 tools, all prefixed <code>openl_</code>)</summary>
 
 - **Guidance** — agent onboarding (`openl_get_started`), per-project AGENTS.md context, and the official OpenL reference documentation embedded at build time
 - **Repository management** — list repositories, branches, features, and revisions
@@ -14,6 +14,7 @@ language. Your AI assistant calls the right OpenL tools for you. Below are thing
 - **Tests** — start tests and retrieve results (full, summary, or by table)
 - **Tracing** — interactive rule debugger: breakpoints, stepping, live variables, decision-table outcomes, profiling
 - **Deployment** — list deploy repositories and deployments; deploy and redeploy projects
+- **Diagnostics** — report the running server's version and build (`openl_get_version`)
 
 </details>
 

@@ -45,6 +45,8 @@ src/
 ├── utils.ts             # Utility functions
 ├── types.ts             # TypeScript types
 ├── constants.ts         # Configuration constants
+├── build-info.ts        # Runtime version/build identity (reads build-info.json)
+├── generate-build-info.ts  # Build step that records the build identity
 ├── prompts.ts           # Prompt definitions
 └── prompts-registry.ts  # Prompt management
 ```
