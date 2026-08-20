@@ -1,6 +1,6 @@
 import { Server, ProtocolError, ProtocolErrorCode } from "@modelcontextprotocol/server";
 import type { Tool } from "@modelcontextprotocol/server";
-import { SERVER_INFO, mcpToolName, stripToolPrefix } from "./constants.js";
+import { SERVER_INFO, mcpToolName, stripToolPrefix, toolAllowList } from "./constants.js";
 import { PROMPTS, loadPromptContent, getPromptDefinition } from "./prompts-registry.js";
 import { registerAllTools, getAllTools, executeTool, hasTool } from "./handlers/index.js";
 import { sanitizeError } from "./utils.js";
@@ -12,21 +12,33 @@ import type { OpenLClient } from "./client.js";
 export function registerMcpHandlers(server: Server, client: OpenLClient): void {
   // List available tools. The registry holds bare names; the `openl_`
   // namespace prefix is a protocol concern applied only here, on the wire.
-  server.setRequestHandler('tools/list', async () => ({
-    tools: getAllTools().map(({ name, title, description, inputSchema, annotations }) => ({
-      name: mcpToolName(name),
-      title,
-      description,
-      inputSchema: inputSchema as Tool["inputSchema"],
-      ...(annotations && { annotations }),
-    })),
-  }));
+  server.setRequestHandler('tools/list', async () => {
+    const allowed = toolAllowList();
+    const tools = allowed ? getAllTools().filter((t) => allowed.has(t.name)) : getAllTools();
+    return {
+      tools: tools.map(({ name, title, description, inputSchema, annotations }) => ({
+        name: mcpToolName(name),
+        title,
+        description,
+        inputSchema: inputSchema as Tool["inputSchema"],
+        ...(annotations && { annotations }),
+      })),
+    };
+  });
 
   // Handle tool execution. Adapt the SDK v2 context into the small stable shape
   // the tool handlers need (progress token, notification sender, AbortSignal).
   // Strip the wire prefix back to the bare registry name before dispatching.
   server.setRequestHandler('tools/call', async (request, ctx) => {
     const toolName = stripToolPrefix(request.params.name);
+    // Filtering tools/list alone would be decoration: a client that already knows a
+    // name can still call it. The allow-list has to gate execution, and it has to do
+    // so with the SAME error an unregistered name gets, so a withheld tool is
+    // indistinguishable from one this build never had.
+    const allowed = toolAllowList();
+    if (allowed && !allowed.has(toolName)) {
+      throw new ProtocolError(ProtocolErrorCode.MethodNotFound, `Unknown tool: ${request.params.name}`);
+    }
     try {
       const result = await executeTool(toolName, request.params.arguments, client, {
         signal: ctx.mcpReq.signal,

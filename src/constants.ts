@@ -56,6 +56,43 @@ export function stripToolPrefix(name: string): string {
 }
 
 /**
+ * Optional server-side tool allow-list (`OPENL_MCP_TOOLS`).
+ *
+ * Unset — the default — means every registered tool is served, so no existing
+ * deployment changes. Set to a comma-separated list, only those tools are
+ * listed AND only those can be called; anything else is `MethodNotFound`, as if
+ * the server had never had it.
+ *
+ * Why a server-side list when the client already chooses which tools to expose:
+ * a client-side selection is a convention, and conventions are the wrong place
+ * for "this deployment must never write". A deployment that mounts this server
+ * for reads and diagnostics can put that in its own configuration, where a
+ * reviewer can see it, and be certain the write tools are not merely unused but
+ * unreachable. It also cuts what a client has to carry — the full surface is
+ * ~150 KB of tool schemas, and a read-only subset is under a third of that.
+ *
+ * Names may be given bare (`get_table`) or prefixed (`openl_get_table`); both
+ * are normalized, because the prefix is a wire concern and asking a deployment
+ * to know that is a trap.
+ */
+export function parseToolAllowList(raw: string | undefined): ReadonlySet<string> | null {
+  if (raw === undefined) return null;
+  const names = raw
+    .split(",")
+    .map((n) => stripToolPrefix(n.trim()))
+    .filter((n) => n.length > 0);
+  // An explicitly empty value is a configuration mistake, not a request to serve
+  // nothing: a server with no tools is indistinguishable from a broken one, and
+  // failing closed here would strand a deployment on a stray trailing comma.
+  return names.length > 0 ? new Set(names) : null;
+}
+
+/** The allow-list for this process, or null when every tool is served. */
+export function toolAllowList(): ReadonlySet<string> | null {
+  return parseToolAllowList(process.env.OPENL_MCP_TOOLS);
+}
+
+/**
  * Display categories for grouping tools in the CLI `--help` catalog, in the
  * order they should appear. Each tool declares its category directly on its
  * ToolDefinition, so the CLI groups by that field rather than guessing from
