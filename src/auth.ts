@@ -1,7 +1,9 @@
 /**
  * Authentication module for OpenL MCP Server
  *
- * Authenticates with a Personal Access Token (PAT). When no token is
+ * Authenticates with a Personal Access Token (PAT) under the `Token` scheme by
+ * default, or with a `Bearer` credential when the config asks for it (a Studio
+ * in oauth2 mode accepts an IdP access token that way). When no token is
  * configured, requests are sent without an Authorization header (OpenL Studio
  * single-user mode).
  */
@@ -143,17 +145,23 @@ export class AuthenticationManager {
     if (this.config.personalAccessToken) {
       // Build authorization header
       const pat = this.config.personalAccessToken;
-      const authHeaderValue = `Token ${pat}`;
-      config.headers[HEADERS.AUTHORIZATION] = authHeaderValue;
+      const scheme = this.scheme();
+      config.headers[HEADERS.AUTHORIZATION] = `${scheme} ${pat}`;
 
       // Log only once per unique config (to avoid duplicate logging)
       if (shouldLogAuth) {
         loggedAuthConfigs.add(authConfigKey);
-        // Simplified logging - only essential info; explicitly state we use "Token" (not Bearer) for OpenL API
-        const isValidFormat = pat.startsWith('openl_pat_');
-        console.error(`[Auth] 🔐 PAT Authentication (${isValidFormat ? 'valid format' : '⚠️  invalid format'}) | Header: Authorization: Token <PAT>`);
-        if (!isValidFormat) {
-          console.error(`[Auth]   ⚠️  WARNING: PAT should start with 'openl_pat_'`);
+        // The `openl_pat_` shape check applies to PATs only. A Bearer credential
+        // is an IdP access token and never carries that prefix, so warning about
+        // it there would fire on every correctly-configured OAuth session.
+        if (scheme === "Bearer") {
+          console.error(`[Auth] 🔐 Bearer Authentication | Header: Authorization: Bearer <token>`);
+        } else {
+          const isValidFormat = pat.startsWith('openl_pat_');
+          console.error(`[Auth] 🔐 PAT Authentication (${isValidFormat ? 'valid format' : '⚠️  invalid format'}) | Header: Authorization: Token <PAT>`);
+          if (!isValidFormat) {
+            console.error(`[Auth]   ⚠️  WARNING: PAT should start with 'openl_pat_'`);
+          }
         }
       }
     }
@@ -174,9 +182,22 @@ export class AuthenticationManager {
    */
   public getAuthorizationHeader(): string | undefined {
     if (this.config.personalAccessToken) {
-      return `Token ${this.config.personalAccessToken}`;
+      return `${this.scheme()} ${this.config.personalAccessToken}`;
     }
     return undefined;
+  }
+
+  /**
+   * The scheme to present, defaulting to `Token`.
+   *
+   * Deliberately read here rather than at construction: this is the ONLY place
+   * the outgoing scheme is decided, and both emit sites — the REST interceptor
+   * and {@link getAuthorizationHeader}, which is what the STOMP WebSocket
+   * handshake sends — go through it. Splitting the decision is how the two ended
+   * up able to disagree.
+   */
+  private scheme(): Types.OpenLAuthScheme {
+    return this.config.authScheme ?? "Token";
   }
 
   /**
@@ -186,7 +207,7 @@ export class AuthenticationManager {
    */
   public getAuthMethod(): string {
     if (this.config.personalAccessToken) {
-      return "Personal Access Token";
+      return this.scheme() === "Bearer" ? "Bearer token" : "Personal Access Token";
     } else {
       return "No Auth";
     }

@@ -2,10 +2,25 @@
  * TypeScript types for OpenL Studio REST API
  */
 
+/**
+ * HTTP authentication scheme presented to the OpenL Studio REST API.
+ *
+ * `Token` is the OpenL Personal Access Token scheme and stays the default. A
+ * Studio running in oauth2 mode also accepts `Bearer <IdP access token>` — the
+ * scheme an OAuth-capable MCP client sends — and the two are not
+ * interchangeable: a JWT presented as `Token` does not authenticate.
+ */
+export type OpenLAuthScheme = "Token" | "Bearer";
+
 export interface OpenLConfig {
   baseUrl: string;
   // Personal Access Token Authentication
   personalAccessToken?: string;
+  /**
+   * Scheme for the credential above. Defaults to `Token` when omitted, so every
+   * existing caller (env PAT, CLI `--token`, stdio) is unaffected.
+   */
+  authScheme?: OpenLAuthScheme;
   // Request timeout in milliseconds
   timeout?: number;
 }

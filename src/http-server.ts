@@ -21,7 +21,8 @@ import {
 } from "@modelcontextprotocol/node";
 import { OpenLClient } from "./client.js";
 import { createConfiguredServer } from "./mcp-core.js";
-import { sanitizeError } from "./utils.js";
+import { parseBoolEnv, sanitizeError } from "./utils.js";
+import type * as Types from "./types.js";
 import { SERVER_INFO } from "./constants.js";
 
 const DEFAULT_PORT = "3000";
@@ -132,17 +133,50 @@ function mcpCorsMiddleware(allowedOrigins: ReadonlySet<string>) {
   };
 }
 
-function tokenFromAuthorizationHeader(authHeader: string | string[] | undefined): string | undefined {
-  if (typeof authHeader !== "string") return undefined;
-  const match = /^(?:Token|Bearer)\s+(.+)$/i.exec(authHeader.trim());
-  return match?.[1] || undefined;
+/**
+ * Opt-in: present an inbound `Bearer` credential to Studio as `Bearer` instead of
+ * rewriting it to `Token`.
+ *
+ * OFF BY DEFAULT, and the default is byte-identical to the previous behaviour —
+ * both schemes are accepted on the way in and `Token` is what goes out. That
+ * matters because forwarding a client-supplied credential to an upstream API is
+ * token passthrough, which the MCP specification forbids
+ * ("MCP servers MUST NOT accept any tokens that were not explicitly issued for
+ * the MCP server"). Until this server can validate an inbound IdP token itself
+ * — `iss`/`aud`/`exp` against the IdP's JWKS, plus RFC 9728 resource metadata,
+ * the plan's P2.1 — a deployment that wants the passthrough should have to say
+ * so, in a setting a reviewer can see.
+ *
+ * Why it is needed at all: a Studio in oauth2 mode accepts an IdP access token
+ * as `Bearer`, and the same token presented as `Token` does not authenticate. So
+ * an OAuth-capable MCP client can reach this server today but cannot reach
+ * Studio through it.
+ */
+function preserveInboundAuthScheme(): boolean {
+  return parseBoolEnv(process.env.OPENL_MCP_PRESERVE_AUTH_SCHEME);
+}
+
+/** The credential and the scheme it arrived under; `Token` unless told otherwise. */
+function credentialFromAuthorizationHeader(
+  authHeader: string | string[] | undefined,
+): { token?: string; scheme: Types.OpenLAuthScheme } {
+  if (typeof authHeader !== "string") return { scheme: "Token" };
+  const match = /^(Token|Bearer)\s+(.+)$/i.exec(authHeader.trim());
+  const token = match?.[2] || undefined;
+  const inbound = match?.[1]?.toLowerCase() === "bearer" ? "Bearer" : "Token";
+  // Rewriting to Token is the historical behaviour and stays the default.
+  const scheme: Types.OpenLAuthScheme =
+    inbound === "Bearer" && preserveInboundAuthScheme() ? "Bearer" : "Token";
+  return { token, scheme };
 }
 
 /** Construct a new Studio HTTP session; never share anonymous mutable state. */
 export function createHttpSessionClient(baseUrl: string, authHeader?: string | string[]): OpenLClient {
+  const { token, scheme } = credentialFromAuthorizationHeader(authHeader);
   return new OpenLClient({
     baseUrl,
-    personalAccessToken: tokenFromAuthorizationHeader(authHeader),
+    personalAccessToken: token,
+    authScheme: scheme,
   });
 }
 

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `OPENL_MCP_PRESERVE_AUTH_SCHEME` (HTTP transport, off by default): present an inbound `Bearer` credential to OpenL Studio as `Bearer` instead of rewriting it to `Token`. A Studio in oauth2 mode accepts an IdP access token as `Bearer`, and the same token presented as `Token` does not authenticate — so an OAuth-capable MCP client could reach the server but not Studio through it. The scheme now travels on the client config and is applied at both emit sites, the REST interceptor and the `Authorization` header used for the STOMP handshake behind `openl_project_status(wait: true)`, which previously could not disagree only because both hardcoded `Token`. Default behaviour is unchanged: both schemes are still accepted inbound and `Token` still goes out, because forwarding a client-supplied credential upstream is token passthrough and stays opt-in until the server validates an inbound IdP token itself (`iss`/`aud`/`exp` against the IdP JWKS, plus RFC 9728 resource metadata).
 - Studio workflow coverage for running and copying tables, dependency/property/module discovery, project-aware branches, branch merging with read-only conflict inspection, and confirmed project/branch deletion (EPBDS-16385).
 
 ### Changed
