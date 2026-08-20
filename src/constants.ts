@@ -68,8 +68,9 @@ export function stripToolPrefix(name: string): string {
  * for "this deployment must never write". A deployment that mounts this server
  * for reads and diagnostics can put that in its own configuration, where a
  * reviewer can see it, and be certain the write tools are not merely unused but
- * unreachable. It also cuts what a client has to carry — the full surface is
- * ~150 KB of tool schemas, and a read-only subset is under a third of that.
+ * unreachable. It also cuts what a client has to carry: measured on this build,
+ * the full surface is 73 tools and ~169 KB of tool schemas, and a 39-tool
+ * read-and-diagnostics subset is ~85 KB — half of it.
  *
  * Names may be given bare (`get_table`) or prefixed (`openl_get_table`); both
  * are normalized, because the prefix is a wire concern and asking a deployment
