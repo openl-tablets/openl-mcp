@@ -31,7 +31,6 @@ This document outlines all the best practices implemented in the OpenL MCP Serve
 - `formatters.ts` - Response formatting
 - `utils.ts` - Security and utility functions
 - `logger.ts` - Logging utilities
-- `prompts.ts` - Prompt definitions
 - `prompts-registry.ts` - Prompt registry
 - `constants.ts` - Configuration constants
 
@@ -222,7 +221,6 @@ types.ts            Low
 formatters.ts       Low
 utils.ts            Low
 logger.ts           Low
-prompts.ts          Low
 prompts-registry.ts Low
 constants.ts        Low
 ```
