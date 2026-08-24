@@ -419,7 +419,7 @@ registerTool({
 const toolHandlers = new Map<string, ToolDefinition>();
 
 // Register all tools at startup
-export function registerAllTools(server: Server, client: OpenLClient): void {
+export function registerAllTools(): void {
   registerTool({ /* tool 1 */ });
   registerTool({ /* tool 2 */ });
   // ... 74 tools total

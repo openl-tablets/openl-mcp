@@ -30,7 +30,7 @@ npm run lint:fix       # Fix linting issues
 
 ## Code Structure
 
-```
+```text
 src/
 ├── index.ts                # Binary entry point / transport dispatcher
 ├── stdio-server.ts         # stdio transport (Claude Desktop / Cursor)
@@ -60,7 +60,7 @@ src/
 
 Tools live in one module per category, all registering into the same registry:
 
-```
+```text
 src/handlers/
 ├── index.ts                    # Registry entry point (registerAllTools / getAllTools / executeTool)
 ├── common.ts                   # Registry core (registerTool, ToolDefinition) and shared error handling
