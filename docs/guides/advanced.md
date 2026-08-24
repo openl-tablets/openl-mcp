@@ -29,6 +29,8 @@ Most environment variables have a matching flag that overrides them, and are rea
 | `PORT`                        | `--http <port>`              | HTTP port, `3000` by default                         |
 | `MCP_MAX_BODY_SIZE`           | —                            | Max HTTP request-body size, `5mb` by default (HTTP transport only; e.g. a large trace `inputJson`) |
 | `MCP_ALLOWED_ORIGINS`         | —                            | Exact comma-separated browser origins allowed to call `/mcp`; defaults to the HTTP server's loopback origins |
+| `OPENL_MCP_PRESERVE_AUTH_SCHEME` | —                         | Present an inbound `Bearer` credential to Studio as `Bearer` instead of rewriting it to `Token`; off by default (HTTP transport only) |
+| `OPENL_MCP_TOOLS`             | —                            | Comma-separated allow-list of tools to serve (bare or `openl_`-prefixed). **Unset** serves every tool; **set but naming none** serves none. Gates `tools/list` **and** `tools/call` |
 
 ### Transports
 

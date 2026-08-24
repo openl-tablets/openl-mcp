@@ -56,6 +56,58 @@ export function stripToolPrefix(name: string): string {
 }
 
 /**
+ * Optional server-side tool allow-list (`OPENL_MCP_TOOLS`).
+ *
+ * Unset — the default — means every registered tool is served, so no existing
+ * deployment changes. Set to a comma-separated list, only those tools are
+ * listed AND only those can be called; anything else is `MethodNotFound`, as if
+ * the server had never had it.
+ *
+ * Why a server-side list when the client already chooses which tools to expose:
+ * a client-side selection is a convention, and conventions are the wrong place
+ * for "this deployment must never write". A deployment that mounts this server
+ * for reads and diagnostics can put that in its own configuration, where a
+ * reviewer can see it, and be certain the write tools are not merely unused but
+ * unreachable. It also cuts what a client has to carry: measured on this build,
+ * the full surface is 73 tools and ~169 KB of tool schemas, and a 39-tool
+ * read-and-diagnostics subset is ~85 KB — half of it.
+ *
+ * Names may be given bare (`get_table`) or prefixed (`openl_get_table`); both
+ * are normalized, because the prefix is a wire concern and asking a deployment
+ * to know that is a trap.
+ *
+ * ONLY an unset variable means "serve everything". A variable that is SET but
+ * yields no usable name — `""`, whitespace, a lone comma — serves NOTHING, and
+ * says so loudly on stderr.
+ *
+ * The two failure modes are not symmetric. Treating an empty value as "unset"
+ * hands an operator who wrote `OPENL_MCP_TOOLS=` intending maximum restriction
+ * the exact opposite — every tool, including every write tool, served silently.
+ * Failing closed instead produces a server with no tools: useless, but visibly
+ * so, and the log line names the cause. A restriction feature must never fail
+ * towards less restriction.
+ */
+export function parseToolAllowList(raw: string | undefined): ReadonlySet<string> | null {
+  if (raw === undefined) return null;
+  const names = raw
+    .split(",")
+    .map((n) => stripToolPrefix(n.trim()))
+    .filter((n) => n.length > 0);
+  if (names.length === 0) {
+    console.error(
+      "[Tools] OPENL_MCP_TOOLS is set but names no tools, so NO tool will be served. " +
+        "Unset the variable to serve every tool; list names to serve those.",
+    );
+  }
+  return new Set(names);
+}
+
+/** The allow-list for this process, or null when every tool is served. */
+export function toolAllowList(): ReadonlySet<string> | null {
+  return parseToolAllowList(process.env.OPENL_MCP_TOOLS);
+}
+
+/**
  * Display categories for grouping tools in the CLI `--help` catalog, in the
  * order they should appear. Each tool declares its category directly on its
  * ToolDefinition, so the CLI groups by that field rather than guessing from

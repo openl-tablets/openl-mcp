@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import MockAdapter from "axios-mock-adapter";
 import { OpenLClient } from "../src/client.js";
-import type { OpenLConfig, RepositoryInfo, ProjectViewModel, SummaryTableView, TestsExecutionSummary, TestCaseExecutionResult } from "../src/types.js";
+import type { OpenLConfig, ProjectViewModel, SummaryTableView } from "../src/types.js";
 import type * as Types from "../src/types.js";
 
 describe("OpenLClient", () => {

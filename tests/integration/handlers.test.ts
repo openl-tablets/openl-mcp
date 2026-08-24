@@ -7,7 +7,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from
 import MockAdapter from "axios-mock-adapter";
 import { OpenLClient } from "../../src/client.js";
 import { executeTool, getAllTools, registerAllTools } from "../../src/handlers/index.js";
-import type { OpenLConfig, ProjectStatusView, ProjectViewModel, RepositoryInfo, SummaryTableView, TestsExecutionSummary } from "../../src/types.js";
+import type { OpenLConfig, ProjectStatusView, ProjectViewModel, RepositoryInfo, SummaryTableView } from "../../src/types.js";
 import * as Types from "../../src/types.js";
 import { mockRepositories, mockDeployments } from "../mocks/openl-api-mocks.js";
 import { FIXTURE_IDS, writeGuidesFixture } from "../mocks/guides-bundle-fixture.js";
