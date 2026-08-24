@@ -1169,13 +1169,21 @@ describe("Tool Handler Integration Tests", () => {
       expect(mockAxios.history.post).toHaveLength(0);
     });
 
-    it("openl_get_version exposes no configuration, credentials, or studio URL", async () => {
+    it("openl_get_version exposes only build identity — no configuration or credentials", async () => {
       const text = (await executeTool("get_version", {}, client)).content[0].text;
+      const { data } = JSON.parse(text) as { data: Record<string, unknown> };
 
+      // Assert the payload's exact shape rather than banning substrings: a
+      // legitimate branch name (`feature/token-diagnostics`) would trip a
+      // "must not contain 'token'" check while the payload is perfectly clean.
+      expect(Object.keys(data).sort()).toEqual(["build", "name", "runtime", "version"]);
+      const buildKeys = Object.keys(data.build as Record<string, unknown>);
+      const allowedBuildKeys = ["builtAt", "commit", "commitDate", "commitShort", "dirty", "id", "ref", "source"];
+      expect(buildKeys.filter((key) => !allowedBuildKeys.includes(key))).toEqual([]);
+      expect(Object.keys(data.runtime as Record<string, unknown>).sort()).toEqual(["arch", "node", "platform"]);
+      // ...and none of THIS client's configured values can appear anywhere in it.
       expect(text).not.toContain("localhost:8080");
       expect(text).not.toContain("openl_pat_test");
-      expect(text.toLowerCase()).not.toContain("token");
-      expect(text.toLowerCase()).not.toContain("baseurl");
     });
   });
 
