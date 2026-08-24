@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- CLI output piped into another command (`openl-mcp --list-tools | jq …`) is no longer cut off after the first ~64 KB: the process exited before stdout had drained.
 - Markdown test-result responses now identify each returned test unit and show failed assertions with expected and actual values (EPBDS-16134).
 - Updated the transitive `@hono/node-server` dependency to a patched release for the Windows `serve-static` path-traversal advisory GHSA-frvp-7c67-39w9.
 - `openl_list_project_branches` now supports repository-wide merge-target discovery, so projects created on isolated branches can be merged into a base branch that does not hold the project yet (EPBDS-16410).

@@ -118,6 +118,41 @@ describe("built binary (dist/index.js)", () => {
       expect(stdout).toContain("OPENL_BASE_URL");
     });
 
+    it("--list-tools reaches a slow pipe reader whole, past the 64 KB pipe buffer", async () => {
+      // Regression: the CLI exited with `process.exit()` while stdout writes to
+      // a PIPE were still queued, so everything past the first pipe buffer was
+      // discarded — `--list-tools | jq` saw truncated, unparseable JSON. The
+      // reader below deliberately stalls before consuming, which fills the
+      // buffer and forces the child to wait for it.
+      const child = spawn(process.execPath, [distEntry, "--list-tools"], {
+        cwd: root,
+        env: envWithoutOpenl(),
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+
+      const chunks: Buffer[] = [];
+      const payload = new Promise<Buffer>((resolve, reject) => {
+        child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+        child.stdout.on("end", () => resolve(Buffer.concat(chunks)));
+        child.stdout.on("error", reject);
+      });
+      // Attaching 'data' starts the flow, so pause right after to stall it.
+      child.stdout.pause();
+      const exitCode = new Promise<number | null>((resolve) => child.on("close", resolve));
+
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      child.stdout.resume();
+
+      const [output, code] = await Promise.all([payload, exitCode]);
+      expect(code).toBe(0);
+      // A truncated payload cannot parse — that is the real assertion.
+      const tools = JSON.parse(output.toString("utf-8")) as Array<{ name: string }>;
+      expect(tools.length).toBeGreaterThan(60);
+      expect(tools.map((tool) => tool.name)).toContain("get_version");
+      // ...and it must be the whole thing, well past one 64 KB pipe buffer.
+      expect(output.length).toBeGreaterThan(65536);
+    });
+
     it("a typo'd tool with no config exits EX_USAGE (64)", async () => {
       const { code, stderr } = await run(["typo_tool"], envWithoutOpenl());
       expect(code).toBe(64);

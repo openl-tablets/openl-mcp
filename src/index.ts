@@ -22,6 +22,32 @@ import { fileURLToPath } from "node:url";
 import { sanitizeError } from "./utils.js";
 
 /**
+ * Wait until everything already written to `stream` has left the process.
+ *
+ * `process.exit()` abandons whatever is still queued. That is invisible when
+ * output goes to a terminal or a file (those writes complete synchronously),
+ * but a PIPE (`openl-mcp --list-tools | jq …`) is asynchronous: only the first
+ * ~64 KB fits in the pipe buffer, so a larger payload used to be cut off
+ * mid-JSON with a successful exit code.
+ *
+ * Queueing an empty chunk and awaiting its callback is enough to drain: a
+ * stream serves its queue in order, so this callback cannot run before the
+ * earlier chunks have been handed to the OS. Backpressure from a slow reader is
+ * therefore honoured rather than truncated — the same as any well-behaved CLI.
+ * A stream already finished or destroyed can never drain, so it resolves at once
+ * (a reader that went away is the EPIPE handler's business, not this one's).
+ */
+function flushStream(stream: NodeJS.WriteStream): Promise<void> {
+  return new Promise((resolve) => {
+    if (stream.writableEnded || stream.destroyed) {
+      resolve();
+      return;
+    }
+    stream.write("", () => resolve());
+  });
+}
+
+/**
  * Main entry point.
  *
  * Dispatches based on how the binary was invoked:
@@ -71,6 +97,10 @@ async function main(): Promise<void> {
       });
 
       const code = await runCli({ argv: cliArgs });
+      // Drain before exiting: `process.exit` would discard output still queued
+      // in a pipe. Exiting explicitly (rather than letting the loop empty) keeps
+      // the exit deterministic even if a tool leaves a handle open.
+      await Promise.all([flushStream(process.stdout), flushStream(process.stderr)]);
       process.exit(code);
     }
 
