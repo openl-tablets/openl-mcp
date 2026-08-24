@@ -181,7 +181,8 @@ the token isn't sent in the clear.
 
 In `--http` mode the server uses MCP **Streamable HTTP** and serves both the modern
 `2026-07-28` protocol and legacy 2025 clients. It does not support the deprecated
-HTTP+SSE transport.
+HTTP+SSE transport. Remaining alignment work with the `2026-07-28` revision is
+tracked in the [MCP Spec Alignment](../development/mcp-spec-alignment.md) plan.
 
 Browser calls are rejected unless their exact `Origin` is allowlisted. The default
 allows only `http://localhost:<PORT>`, `http://127.0.0.1:<PORT>`, and

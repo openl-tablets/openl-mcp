@@ -12,6 +12,7 @@ Documentation for developers contributing to the OpenL MCP Server.
 - **[Testing Guide](testing.md)** - Testing strategy and how to run tests
 - **[Code Standards](code-standards.md)** - Best practices and coding standards
 - **[Tool Review](tool-review.md)** - Technical review of MCP tools vs OpenL API
+- **[MCP Spec Alignment](mcp-spec-alignment.md)** - State of alignment with the MCP 2026-07-28 revision and the remaining work
 
 ## Quick Start for Developers
 
