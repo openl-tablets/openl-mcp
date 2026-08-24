@@ -163,7 +163,23 @@ describe("built binary (dist/index.js)", () => {
       child.stdout.pause();
       const exitCode = new Promise<number | null>((resolve) => child.on("close", resolve));
 
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      // Wait for the read buffer to actually fill instead of guessing a delay:
+      // the child needs a few hundred ms to start up and register its tools, so
+      // a fixed timeout could resume the reader before anything was queued —
+      // and the truncation this test guards against would slip through.
+      const saturated = await new Promise<boolean>((resolve) => {
+        // Generous bound: a loaded CI runner needs a while to start the child
+        // and render 200 KB of schemas. The per-test timeout below covers it.
+        const deadline = Date.now() + 15000;
+        const poll = setInterval(() => {
+          const full = child.stdout.readableLength >= child.stdout.readableHighWaterMark;
+          if (full || Date.now() > deadline) {
+            clearInterval(poll);
+            resolve(full);
+          }
+        }, 10);
+      });
+      expect(saturated).toBe(true);
       child.stdout.resume();
 
       const [output, code] = await Promise.all([payload, exitCode]);
@@ -174,7 +190,7 @@ describe("built binary (dist/index.js)", () => {
       expect(tools.map((tool) => tool.name)).toContain("get_version");
       // ...and it must be the whole thing, well past one 64 KB pipe buffer.
       expect(output.length).toBeGreaterThan(65536);
-    });
+    }, 30000);
 
     it("keeps the tool's exit code when the reader of an unused stream is gone", async () => {
       // Regression: draining before exit wrote a sentinel chunk into BOTH
