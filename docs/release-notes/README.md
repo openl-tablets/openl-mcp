@@ -11,6 +11,7 @@ release-notes/
 ├── README.md                    # This file
 ├── v1.0.0.md                    # Release notes for 1.0.0
 ├── v1.1.0.md                    # Release notes for 1.1.0
+├── v1.2.0.md                    # Release notes for 1.2.0
 └── ...
 ```
 
@@ -152,6 +153,7 @@ Links to relevant documentation...
 
 | Version | Release Date | Highlights |
 |---------|--------------|------------|
+| [1.2.0](v1.2.0.md) | August 24, 2026 | Interactive rule debugger, branch/merge management, table dependency graph, structured JSON by default (breaking) |
 | [1.1.0](v1.1.0.md) | July 6, 2026 | Surgical table edits, smarter traces, clearer errors, simpler IT setup |
 | [1.0.0](v1.0.0.md) | February 23, 2026 | Initial stable release with 40 tools, multi-client support |
 
@@ -159,7 +161,7 @@ Links to relevant documentation...
 
 | Version | Planned Date | Expected Features |
 |---------|--------------|-------------------|
-| 1.2.0 | Q3 2026 | Table dependencies, branch management, batch operations |
+| Next (tracking [EPBDS-16132](https://jira.eisgroup.com/browse/EPBDS-16132)) | TBD | Installable plugin packaging for AI coding agents, auto-generated AGENTS.md, tracing skill packaging |
 
 ## Contributing
 

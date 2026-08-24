@@ -6,47 +6,51 @@ This document provides an overview of all OpenL MCP Server releases. For detaile
 
 ## Latest Release
 
-### [Version 1.1.0](docs/release-notes/v1.1.0.md) - July 6, 2026
+### [Version 1.2.0](docs/release-notes/v1.2.0.md) - August 24, 2026
 
 **Highlights:**
-- 🚀 52 production-ready tools (up from 40) with 11 new raw table-source action tools
-- 🖥️ CLI mode for direct tool execution from shell without MCP client
-- 📦 Simplified deployment via `npx` - no custom Docker image required
-- 🔄 Streamable HTTP transport (MCP spec 2025-11-25) replaces legacy HTTP+SSE
-- 🎯 Automatic table ID resolution after relocating edits
-- ⏱️ Server-side trace waiting eliminates polling in agent workflows
-- 🛡️ Pre-write validation and detailed error messages for better agent recovery
-- 🔐 Removed Basic Auth and query-parameter credentials (PAT only)
-- 📊 Enhanced project creation with atomic clone mode
-- 🐛 Zero npm audit vulnerabilities
+- 🧩 Interactive rule debugger replaces the old trace tools: breakpoints, step in/out/over, live frame inspection, and cell watching across a whole run
+- 🌿 Branch and merge management: repository-wide merge-target discovery, read-only BASE/OURS/THEIRS conflict inspection, and confirmed branch/project deletion
+- 🔗 Table dependency graph with datatype/vocabulary relationships, filterable by project layer
+- ▶️ Run a table directly with a bounded, deduplicated workflow (`openl_run_table`)
+- ✅ Markdown test results now identify the failing test unit with expected vs. actual values
+- ⚠️ **Breaking**: tool responses default to structured JSON instead of Markdown; tables are exposed only as `RawSource`; two tool signatures require a stable `projectId`; `openl_resolve_merge_conflicts` is removed; browser-based login/logout and the credential cache are removed (PAT-only auth)
+- 🔐 Optional server-side tool allow-list (`OPENL_MCP_TOOLS`) and OAuth2 Bearer-scheme passthrough (`OPENL_MCP_PRESERVE_AUTH_SCHEME`)
+- 🏷️ `openl_get_version` ties a running server to its exact build (commit, branch/tag, build time)
 
-Built on Model Context Protocol v1.29.0, this release focuses on improving the agent experience with automatic error recovery, seamless multi-step operations, and comprehensive table manipulation capabilities.
+Built on MCP TypeScript SDK v2.0.0 with negotiation for the modern 2026-07-28 protocol (legacy 2025-06-18 retained). 74 tools, up from 56 in v1.1.0 — 23 added, 5 removed.
 
-[Read Full Release Notes →](docs/release-notes/v1.1.0.md)
+**Upgrading from v1.1.0 requires code changes** — see the [Breaking Changes and Migration Notes](docs/release-notes/v1.2.0.md#breaking-changes--read-first) before you upgrade.
+
+[Read Full Release Notes →](docs/release-notes/v1.2.0.md)
 
 ---
 
 ## All Releases
 
+### Version 1.2.0 - August 24, 2026
+Interactive rule debugger, branch/merge management, table dependency graph, and several breaking changes (structured JSON by default, RawSource-only tables, PAT-only auth).
+[View Details →](docs/release-notes/v1.2.0.md)
+
 ### Version 1.1.0 - July 6, 2026
-Major update with 52 tools, CLI mode, simplified deployment, Streamable HTTP transport, and automatic table ID resolution.  
+Major update with 52 tools, CLI mode, simplified deployment, Streamable HTTP transport, and automatic table ID resolution.
 [View Details →](docs/release-notes/v1.1.0.md)
 
 ### Version 1.0.0 - February 23, 2026
-Initial stable release with complete MCP integration, 40 tools, and multi-client support.  
+Initial stable release with complete MCP integration, 40 tools, and multi-client support.
 [View Details →](docs/release-notes/v1.0.0.md)
 
 ---
 
 ## Upcoming Releases
 
-### Planned for v1.2.0 (Q3 2026)
+### Next release (tracking [EPBDS-16132](https://jira.eisgroup.com/browse/EPBDS-16132))
 
-**New Capabilities:**
-1. **Table Dependencies** (`openl_get_table_dependencies`) - Visualize relationships and impact analysis
-2. **Branch Management** (`openl_delete_project_branch`) - Clean up obsolete branches safely
-3. **Project Dependencies** - Enhanced `openl_list_projects` with dependency graph
-4. **Batch Operations** - Multi-table edits in single transaction
+v1.2.0 delivered most of this epic's scope. What's left:
+
+1. **Installable plugin packaging** - agent onboarding, skills, and MCP server configuration bundled as a single distributable unit for AI coding agents (Claude Code, Microsoft 365 Copilot, and others)
+2. **Auto-generated `AGENTS.md`** - generate project guidance from project structure instead of writing it by hand
+3. **Tracing skill packaging** - package the new interactive debugger workflow as a bundled skill
 
 ---
 
