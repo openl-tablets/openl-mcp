@@ -118,6 +118,11 @@ build metadata captured from git at build time.
   `npm run fetch:guides` regenerates it: an incremental rebuild must never leave
   a previous commit's identity — least of all a `dirty: false` one — attached to
   changed code.
+- `npm run verify:package` packs the package and reads `build-info.json` back out
+  of the tarball, failing when it is absent, malformed, or names another
+  revision. The workflows run it after every build: the runtime and the tests
+  both tolerate missing metadata by design, so nothing else would notice a
+  package shipped unable to identify itself.
 - Only the package version, public repository coordinates, and the Node/OS
   identity are reported — never configuration, credentials, base URLs, or build
   paths. A missing or malformed artifact degrades to "unavailable" and never

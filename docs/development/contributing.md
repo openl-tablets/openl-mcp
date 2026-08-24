@@ -50,6 +50,7 @@ src/
 ├── fetch-guides.ts         # Build step that downloads and bundles that documentation
 ├── build-info.ts           # Runtime version/build identity (reads build-info.json)
 ├── generate-build-info.ts  # Build step that records the build identity
+├── verify-package.ts       # Release gate: the tarball must carry that identity
 ├── project-templates.ts    # Bundled project skeletons used by openl_create_project
 ├── logger.ts               # Structured stderr logging with credential sanitization
 ├── utils.ts                # Shared helpers (error extraction, sanitization, hashing)

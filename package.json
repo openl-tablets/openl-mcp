@@ -37,6 +37,7 @@
     "prepublishOnly": "npm run build",
     "clean:build-info": "node -e \"require('fs').rmSync('build-info.json',{force:true})\"",
     "fetch:guides": "tsc && node dist/fetch-guides.js --force && node dist/generate-build-info.js",
+    "verify:package": "node dist/verify-package.js",
     "start": "node dist/index.js",
     "start:http": "node dist/index.js --http",
     "dev": "npm run build && node dist/index.js",
