@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 import { sanitizeError } from "./utils.js";
 
 /**
- * Wait until everything already written to `stream` has left the process.
+ * Wait until data already queued on `stream` has left the process.
  *
  * `process.exit()` abandons whatever is still queued. That is invisible when
  * output goes to a terminal or a file (those writes complete synchronously),
@@ -30,19 +30,23 @@ import { sanitizeError } from "./utils.js";
  * ~64 KB fits in the pipe buffer, so a larger payload used to be cut off
  * mid-JSON with a successful exit code.
  *
- * Queueing an empty chunk and awaiting its callback is enough to drain: a
- * stream serves its queue in order, so this callback cannot run before the
- * earlier chunks have been handed to the OS. Backpressure from a slow reader is
- * therefore honoured rather than truncated — the same as any well-behaved CLI.
- * A stream already finished or destroyed can never drain, so it resolves at once
- * (a reader that went away is the EPIPE handler's business, not this one's).
+ * Queueing an empty chunk and awaiting its callback is enough to drain what IS
+ * queued: a stream serves its queue in order, so this callback cannot run before
+ * the earlier chunks have been handed to the OS. Backpressure from a slow reader
+ * is therefore honoured rather than truncated — the same as any well-behaved CLI.
+ *
+ * A stream with an EMPTY queue is left strictly alone. Writing a sentinel chunk
+ * into it would manufacture an `EPIPE` on a stream the command never used but
+ * whose reader is already gone (`openl-mcp typo_tool | head -1` closes stdout
+ * while the diagnostics go to stderr) — turning an untouched stream into a
+ * fabricated I/O failure that replaces the command's real exit code. Same for a
+ * stream already finished or destroyed: it can never drain.
  */
 function flushStream(stream: NodeJS.WriteStream): Promise<void> {
+  if (stream.writableLength === 0 || stream.writableEnded || stream.destroyed) {
+    return Promise.resolve();
+  }
   return new Promise((resolve) => {
-    if (stream.writableEnded || stream.destroyed) {
-      resolve();
-      return;
-    }
     stream.write("", () => resolve());
   });
 }
@@ -87,21 +91,33 @@ async function main(): Promise<void> {
       // CLI/tool mode: a tool name, a discovery flag (--help/--list-tools/
       // --version), a tool-argument source, or a parse error.
       //
+      // The exit code the CLI settled on, once it is known. The stdout handler
+      // below reports it instead of a bare 0: a reader that closed the pipe
+      // early must not turn a failed command into a success.
+      let cliExitCode: number | undefined;
+
       // EPIPE handling: when our stdout is piped into something that exits
       // early (`npx … | head -1`), the next write would throw EPIPE and crash
-      // the process. Treat it as a successful early termination — exit 0.
+      // the process. Treat it as an early termination that keeps the command's
+      // own verdict — 0 while the CLI has not reached one yet.
       // See https://github.com/nodejs/node-v0.x-archive/issues/3211
       process.stdout.on("error", (err: NodeJS.ErrnoException) => {
-        if (err.code === "EPIPE") process.exit(0);
+        if (err.code === "EPIPE") process.exit(cliExitCode ?? 0);
         throw err;
       });
 
-      const code = await runCli({ argv: cliArgs });
+      // stderr carries diagnostics, never results. Losing it (`2>&-`, a closed
+      // pipe) must not crash the process on an unhandled 'error' — which exits
+      // 1 and masks the real code — nor make a failure look successful. Swallow
+      // every write failure here: the exit code below still tells the truth.
+      process.stderr.on("error", () => { /* diagnostics channel gone */ });
+
+      cliExitCode = await runCli({ argv: cliArgs });
       // Drain before exiting: `process.exit` would discard output still queued
       // in a pipe. Exiting explicitly (rather than letting the loop empty) keeps
       // the exit deterministic even if a tool leaves a handle open.
       await Promise.all([flushStream(process.stdout), flushStream(process.stderr)]);
-      process.exit(code);
+      process.exit(cliExitCode);
     }
 
     // Default: launch the MCP server on the stdio transport.

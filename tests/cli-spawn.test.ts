@@ -49,6 +49,29 @@ function run(
   });
 }
 
+/**
+ * Run the built binary with both stdio ends piped and the read end of
+ * `closed` destroyed immediately, mimicking a consumer that went away
+ * (`… | head -1`, `2>&-`). Resolves with the exit code.
+ */
+function runWithClosedStream(
+  args: string[],
+  closed: "stdout" | "stderr",
+): Promise<number | null> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [distEntry, ...args], {
+      cwd: root,
+      env: envWithoutOpenl(),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    if (closed === "stdout") child.stdout.destroy();
+    else child.stdout.resume();
+    if (closed === "stderr") child.stderr.destroy();
+    else child.stderr.resume();
+    child.on("close", (code) => resolve(code));
+  });
+}
+
 /** Env with all OPENL_* keys stripped, so config comes only from args. */
 function envWithoutOpenl(): NodeJS.ProcessEnv {
   const env = { ...process.env };
@@ -151,6 +174,25 @@ describe("built binary (dist/index.js)", () => {
       expect(tools.map((tool) => tool.name)).toContain("get_version");
       // ...and it must be the whole thing, well past one 64 KB pipe buffer.
       expect(output.length).toBeGreaterThan(65536);
+    });
+
+    it("keeps the tool's exit code when the reader of an unused stream is gone", async () => {
+      // Regression: draining before exit wrote a sentinel chunk into BOTH
+      // streams, so a closed reader on a stream the command never used raised a
+      // manufactured EPIPE — stdout's handler exited 0 (a failed tool looked
+      // successful) and stderr's unhandled 'error' exited 1 (a successful
+      // command looked failed). A stream with nothing queued is now left alone.
+      expect(await runWithClosedStream(["typo_tool"], "stdout")).toBe(64);
+      expect(await runWithClosedStream(["--version"], "stderr")).toBe(0);
+      // Diagnostics that cannot be delivered must not change the verdict either.
+      expect(await runWithClosedStream(["typo_tool"], "stderr")).toBe(64);
+    });
+
+    it("exits 0 when the reader of its actual output goes away", async () => {
+      // The `… | head -1` case: output the command really produced cannot be
+      // delivered, which stays a successful early termination.
+      expect(await runWithClosedStream(["--version"], "stdout")).toBe(0);
+      expect(await runWithClosedStream(["--list-tools"], "stdout")).toBe(0);
     });
 
     it("a typo'd tool with no config exits EX_USAGE (64)", async () => {
