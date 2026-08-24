@@ -17,13 +17,21 @@ describe("parseToolAllowList", () => {
   });
 
   it.each(["", "   ", ",", " , , "])(
-    "treats %p as unset rather than as 'serve nothing'",
+    "fails CLOSED on %p — set but naming nothing serves nothing",
     (raw) => {
-      // A server with no tools is indistinguishable from a broken one, and failing
-      // closed here would strand a deployment on a stray trailing comma.
-      expect(parseToolAllowList(raw)).toBeNull();
+      // The two failure modes are not symmetric. Reading an empty value as "unset"
+      // would hand an operator who wrote OPENL_MCP_TOOLS= intending maximum
+      // restriction every tool instead, silently. Serving nothing is useless but
+      // visible, and the server says why on stderr.
+      const set = parseToolAllowList(raw);
+      expect(set).not.toBeNull();
+      expect(set!.size).toBe(0);
     },
   );
+
+  it("still serves everything only when the variable is genuinely unset", () => {
+    expect(parseToolAllowList(undefined)).toBeNull();
+  });
 
   it("accepts bare names", () => {
     const set = parseToolAllowList("get_table,list_tables");

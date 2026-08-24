@@ -75,6 +75,17 @@ export function stripToolPrefix(name: string): string {
  * Names may be given bare (`get_table`) or prefixed (`openl_get_table`); both
  * are normalized, because the prefix is a wire concern and asking a deployment
  * to know that is a trap.
+ *
+ * ONLY an unset variable means "serve everything". A variable that is SET but
+ * yields no usable name — `""`, whitespace, a lone comma — serves NOTHING, and
+ * says so loudly on stderr.
+ *
+ * The two failure modes are not symmetric. Treating an empty value as "unset"
+ * hands an operator who wrote `OPENL_MCP_TOOLS=` intending maximum restriction
+ * the exact opposite — every tool, including every write tool, served silently.
+ * Failing closed instead produces a server with no tools: useless, but visibly
+ * so, and the log line names the cause. A restriction feature must never fail
+ * towards less restriction.
  */
 export function parseToolAllowList(raw: string | undefined): ReadonlySet<string> | null {
   if (raw === undefined) return null;
@@ -82,10 +93,13 @@ export function parseToolAllowList(raw: string | undefined): ReadonlySet<string>
     .split(",")
     .map((n) => stripToolPrefix(n.trim()))
     .filter((n) => n.length > 0);
-  // An explicitly empty value is a configuration mistake, not a request to serve
-  // nothing: a server with no tools is indistinguishable from a broken one, and
-  // failing closed here would strand a deployment on a stray trailing comma.
-  return names.length > 0 ? new Set(names) : null;
+  if (names.length === 0) {
+    console.error(
+      "[Tools] OPENL_MCP_TOOLS is set but names no tools, so NO tool will be served. " +
+        "Unset the variable to serve every tool; list names to serve those.",
+    );
+  }
+  return new Set(names);
 }
 
 /** The allow-list for this process, or null when every tool is served. */

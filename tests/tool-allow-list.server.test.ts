@@ -77,6 +77,18 @@ describe("MCP core — server-side tool allow-list", () => {
     expect(withheld.replace("update_table", "X")).toBe(nonexistent.replace("no_such_tool_at_all", "X"));
   });
 
+  it("serves NOTHING when the variable is set but names nothing", async () => {
+    // The dangerous reading of an empty value is "no restriction". A feature whose
+    // whole job is restriction must not fail towards less of it.
+    process.env.OPENL_MCP_TOOLS = "";
+    await connect();
+    const { tools } = await client.listTools();
+    expect(tools).toEqual([]);
+    await expect(
+      client.callTool({ name: "openl_get_started", arguments: {} }),
+    ).rejects.toThrow(/Unknown tool/);
+  });
+
   it("still allows a tool that IS on the list", async () => {
     process.env.OPENL_MCP_TOOLS = "openl_get_started";
     await connect();

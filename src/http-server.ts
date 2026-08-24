@@ -152,8 +152,27 @@ function mcpCorsMiddleware(allowedOrigins: ReadonlySet<string>) {
  * an OAuth-capable MCP client can reach this server today but cannot reach
  * Studio through it.
  */
+let passthroughAnnounced = false;
+
 function preserveInboundAuthScheme(): boolean {
-  return parseBoolEnv(process.env.OPENL_MCP_PRESERVE_AUTH_SCHEME);
+  const on = parseBoolEnv(process.env.OPENL_MCP_PRESERVE_AUTH_SCHEME);
+  // Say it out loud, once. This server does NOT validate the credential it is
+  // handed — it has no issuer, no audience and no JWKS to check against — so with
+  // the flag on it forwards a caller-supplied token to Studio unexamined. That is
+  // token passthrough, which the MCP specification forbids, and it is a deliberate
+  // deployment choice rather than a default. A choice that only ever appears in a
+  // config file is one nobody revisits; in the log it is at least visible to
+  // whoever is looking at the server.
+  if (on && !passthroughAnnounced) {
+    passthroughAnnounced = true;
+    console.error(
+      "[Auth] OPENL_MCP_PRESERVE_AUTH_SCHEME is ON: an inbound Bearer credential is " +
+        "forwarded to OpenL Studio AS RECEIVED and is NOT validated here (no issuer/" +
+        "audience/JWKS check). This is token passthrough — keep this server reachable " +
+        "only from callers you trust.",
+    );
+  }
+  return on;
 }
 
 /** The credential and the scheme it arrived under; `Token` unless told otherwise. */
