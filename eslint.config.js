@@ -9,7 +9,9 @@ export default [
       parserOptions: {
         ecmaVersion: 2022,
         sourceType: 'module',
-        project: './tsconfig.json',
+        // Lint-only project: the build's tsconfig excludes `tests`, and type-aware
+        // rules need every linted file to belong to a project. See tsconfig.eslint.json.
+        project: './tsconfig.eslint.json',
       },
     },
     plugins: {
@@ -28,6 +30,17 @@ export default [
       ],
       '@typescript-eslint/no-non-null-assertion': 'warn',
       'no-console': ['warn', { allow: ['error', 'warn'] }],
+    },
+  },
+  {
+    // Test files exercise edge shapes on purpose: casting a malformed payload,
+    // asserting a value the type system cannot know is present. Enforcing the
+    // production rules here would trade real coverage for ceremony.
+    files: ['tests/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-non-null-assertion': 'off',
+      '@typescript-eslint/explicit-function-return-type': 'off',
     },
   },
   {

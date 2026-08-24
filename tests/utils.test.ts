@@ -16,7 +16,6 @@ import {
   createProjectId,
   parseBoolEnv,
 } from "../src/utils.js";
-import { AxiosError } from "axios";
 
 describe("utils", () => {
   describe("sanitizeError", () => {

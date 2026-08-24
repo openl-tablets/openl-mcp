@@ -306,7 +306,7 @@ describe("CLI", () => {
           stdin: h.stdin,
           stdout: h.stdout,
           stderr: h.stderr,
-          clientFactory: (config) => {
+          clientFactory: (_config) => {
             seenAtRun = process.env.OPENL_CLI_QUIET;
             return client;
           },

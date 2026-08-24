@@ -45,8 +45,8 @@
     "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand tests/integration",
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
     "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage --runInBand",
-    "lint": "eslint src --ext .ts",
-    "lint:fix": "eslint src --ext .ts --fix"
+    "lint": "eslint src tests --ext .ts",
+    "lint:fix": "eslint src tests --ext .ts --fix"
   },
   "keywords": [
     "mcp",
