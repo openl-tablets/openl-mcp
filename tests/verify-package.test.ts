@@ -45,6 +45,16 @@ describe("findPackagingProblems", () => {
     expect(problems[0]).toContain("not valid JSON");
   });
 
+  it.each([
+    ["null", "null"],
+    ["an array", "[]"],
+    ["a scalar", '"1.1.0"'],
+  ])("reports metadata that is %s rather than an object", (_label, raw) => {
+    expect(findPackagingProblems(packedWithMetadata, raw, HEAD)).toEqual([
+      expect.stringContaining("not a JSON object"),
+    ]);
+  });
+
   it("rejects a published build that names no commit", () => {
     const raw = JSON.stringify({ schemaVersion: 1, builtAt: "2026-08-19T07:30:00Z" });
     expect(findPackagingProblems(packedWithMetadata, raw, HEAD)).toEqual([
