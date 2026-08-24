@@ -53,7 +53,7 @@ XLSX and ZIP are sent to an image decoder and rejected.
 - **Where:** Standalone repository (separate from OpenL Studio project)
 - **Role:** 
   - Converts Claude commands to API requests to OpenL
-  - Provides 73 tools for working with OpenL
+  - Provides 74 tools for working with OpenL
   - Manages authentication
 
 ### 3. OpenL Studio
@@ -94,6 +94,39 @@ Studio's raw table API exposes cell styles only on reads (`styles=true`). Its
 write endpoints ignore style fields, so MCP write schemas intentionally reject
 `style` instead of reporting a formatting change that did not happen. Full-table
 updates must start from a raw read without styles.
+
+## Build identity
+
+The package version alone cannot identify a running server: every nightly tarball
+built between two releases carries the same `package.json` version, and a locally
+built tree may add uncommitted changes on top of it. So the version is paired with
+build metadata captured from git at build time.
+
+- `npm run build` ends with `dist/generate-build-info.js`, which writes
+  `build-info.json` at the package root: commit, commit date, branch or tag,
+  whether the tree was modified, and the build timestamp.
+- Like the `guides/` bundle it is a build artifact — git-ignored in this
+  repository, listed in `package.json` `files` so it ships in the npm package.
+- `src/build-info.ts` reads it once per process and derives the **build id**:
+  `<version>+<short-commit>`, suffixed `.dirty` for a modified tree,
+  `<version>+unknown` when the build could not read git, and the bare version when
+  no metadata shipped at all (`build.source: "unavailable"`).
+- Every diagnostics surface reports that one identity: the `openl_get_version`
+  tool, `openl-mcp --version`, the stdio startup log line, the HTTP `/health`
+  probe, and the HTTP startup log line.
+- `npm run watch` deletes the artifact before starting `tsc --watch`, and
+  `npm run fetch:guides` regenerates it: an incremental rebuild must never leave
+  a previous commit's identity — least of all a `dirty: false` one — attached to
+  changed code.
+- `npm run verify:package` packs the package and reads `build-info.json` back out
+  of the tarball, failing when it is absent, malformed, or names another
+  revision. The workflows run it after every build: the runtime and the tests
+  both tolerate missing metadata by design, so nothing else would notice a
+  package shipped unable to identify itself.
+- Only the package version, public repository coordinates, and the Node/OS
+  identity are reported — never configuration, credentials, base URLs, or build
+  paths. A missing or malformed artifact degrades to "unavailable" and never
+  blocks startup, so an unbuilt source checkout still runs.
 
 ## Configuration Files
 
@@ -146,6 +179,15 @@ OPENL_PERSONAL_ACCESS_TOKEN=<your-token>
 ```
 
 ## Health Check
+
+### Level 0: Which build is running?
+```bash
+npx -y openl-mcp --version    # openl-mcp 1.1.0 (build a1b2c3d, built 2026-08-19T07:30:00Z)
+```
+The build id — version plus the commit the package was built from — identifies the
+exact running code; quote it in bug reports. `openl_get_version` returns the same
+identity through MCP, `/health` over the HTTP transport, and the stdio server logs
+it at startup. See [Build identity](#build-identity).
 
 ### Level 1: Is OpenL accessible?
 ```bash

@@ -35,6 +35,12 @@ deployments — see [Usage Examples](docs/guides/examples.md). It also ships 14
 expert guidance prompts for complex workflows (e.g. `create_rule`,
 `deploy_project`) — see [prompts/](./prompts/).
 
+Reporting a problem? Include the running build:
+
+```bash
+npx -y openl-mcp --version
+```
+
 ## Configuration
 
 End users: the [Quick Start](docs/guides/quick-start.md) covers everything.

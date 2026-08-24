@@ -35,3 +35,9 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # The runtime tolerates missing build metadata (and the test suite must,
+      # since tests run before the build), so only this check can catch a
+      # package that would ship unable to identify itself.
+      - name: Verify packaged build metadata
+        run: npm run verify:package

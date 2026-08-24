@@ -45,6 +45,12 @@ jobs:
       - name: Build TypeScript
         run: npm run build
 
+      # A nightly is identified only by its build metadata — every one carries
+      # the same package version as the last release — so refuse to publish a
+      # tarball that cannot say which commit it came from.
+      - name: Verify packaged build metadata
+        run: npm run verify:package
+
       # npm pack names the tarball openl-mcp-<version>.tgz; rename it to a
       # fixed, version-free name so the release download URL stays stable.
       - name: Generate Tarball

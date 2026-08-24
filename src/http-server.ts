@@ -23,7 +23,7 @@ import { OpenLClient } from "./client.js";
 import { createConfiguredServer } from "./mcp-core.js";
 import { parseBoolEnv, sanitizeError } from "./utils.js";
 import type * as Types from "./types.js";
-import { SERVER_INFO } from "./constants.js";
+import { versionInfo, versionLine } from "./build-info.js";
 
 const DEFAULT_PORT = "3000";
 const DEFAULT_MAX_BODY_SIZE = "5mb";
@@ -302,12 +302,19 @@ export function createHttpApp(overrides: HttpServerOverrides = {}): Express {
     await modernNodeHandler(req, res, req.body);
   });
 
+  // Liveness probe, and the diagnostics endpoint for a deployed HTTP server:
+  // `version` alone cannot identify a nightly build, so the build id and its
+  // git/timestamp coordinates ride along. All of it is build-time metadata —
+  // no configuration, credentials, or studio URL is exposed on this open route.
   app.get("/health", (_req: Request, res: Response) => {
+    const info = versionInfo();
     res.json({
       status: "ok",
       timestamp: new Date().toISOString(),
-      service: SERVER_INFO.NAME,
-      version: SERVER_INFO.VERSION,
+      service: info.name,
+      version: info.version,
+      build: info.build,
+      runtime: info.runtime,
     });
   });
 
@@ -328,6 +335,8 @@ export async function startHttpServer(overrides: HttpServerOverrides = {}): Prom
   const port = process.env.PORT || DEFAULT_PORT;
   const app = createHttpApp(overrides);
   app.listen(port, () => {
-    console.log(`OpenL MCP Server listening on port ${port}`);
+    // Name the exact build in the startup line: container logs are often the
+    // only record of which nightly a deployment is running.
+    console.log(`${versionLine()} listening on port ${port}`);
   });
 }

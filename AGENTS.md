@@ -28,7 +28,7 @@ uses STOMP (`openl_project_status` with `wait: true`), while regular table execu
 is polled internally by `openl_run_table`. STOMP details:
 [docs/development/websockets.md](docs/development/websockets.md).
 
-## Tools (73 Total)
+## Tools (74 Total)
 
 All tools are prefixed with `openl_` and share the server's version.
 
@@ -172,6 +172,9 @@ and walk it level by level with `openl_expand_trace_tree`.
 - `openl_deploy_project` - Deploy to production
 - `openl_redeploy_project` - Redeploy with new version
 
+### Diagnostics (1)
+- `openl_get_version` - Report this server's own identity for bug reports and environment checks: package version, build id (version + short commit, `.dirty` for a modified working tree), full commit and its date, branch or tag, build timestamp, and the Node.js/platform/architecture it runs on. Local-only — it needs no OpenL Studio connection, so it still answers when the studio is unreachable, and it returns no configuration, credentials, or URLs. Quote `build.id`: nightly builds between two releases share the same version. A `build.source` of `unavailable` means the install shipped without build metadata, so only the version is known. The same identity is printed by `openl-mcp --version`, the stdio startup log, and the HTTP `/health` probe
+
 ## Local projects (repository: local)
 
 Projects with `repository: 'local'` are stored on disk without Git; **OPENED/EDITING status is not checked or required** for them — local projects are always considered editable.
@@ -281,7 +284,7 @@ These conventions are mandatory for anyone — human or AI agent — changing th
 - Do not duplicate tests: cover each behavior once. Before adding a test, check whether an existing one already exercises that path — if so, strengthen it instead of adding a near-copy. A consistency check that cross-validates two independent sources (e.g. code vs. data files) is not a duplicate; it earns its place by catching drift.
 - Keep test location and names predictable and meaningful: a unit's tests live in the conventional, obvious place for that unit, and each test name states the behavior it verifies so a failure reads as a plain statement of what broke.
 - Follow the file-naming convention so the test layout mirrors `src/`: a unit test for `src/<module>.ts` lives in `tests/<module>.test.ts`, and integration tests (those that drive the MCP surface through the client's mocked HTTP layer) live under `tests/integration/`. Name every test file for the unit it actually exercises.
-- A test's scope must match the file it lives in. Do not test one unit's behavior from inside another unit's test file — e.g. `constants.ts`'s `mcpToolName`/`stripToolPrefix` or the `tool-handlers.ts` registry returned by `getAllTools()` do not belong in a server test. Put each test with the code it exercises.
+- A test's scope must match the file it lives in. Do not test one unit's behavior from inside another unit's test file — e.g. `constants.ts`'s `mcpToolName`/`stripToolPrefix` or the `src/handlers/` registry returned by `getAllTools()` do not belong in a server test. Put each test with the code it exercises.
 - When code is moved or renamed, move or rename its test file (and update any references to it) in the same change, so the convention above never drifts.
 
 ### Documentation

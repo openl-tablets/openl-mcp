@@ -7,6 +7,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from
 import MockAdapter from "axios-mock-adapter";
 import { OpenLClient } from "../../src/client.js";
 import { executeTool, getAllTools, registerAllTools } from "../../src/handlers/index.js";
+import { SERVER_INFO } from "../../src/constants.js";
 import type { OpenLConfig, ProjectStatusView, ProjectViewModel, RepositoryInfo, SummaryTableView } from "../../src/types.js";
 import * as Types from "../../src/types.js";
 import { mockRepositories, mockDeployments } from "../mocks/openl-api-mocks.js";
@@ -1138,6 +1139,51 @@ describe("Tool Handler Integration Tests", () => {
       }, client);
 
       expect(result.content[0].text).toBe("No AGENTS.md files apply to this project.");
+    });
+  });
+
+  describe("Diagnostics Tools", () => {
+    it("openl_get_version reports the running version, build identity, and runtime without calling Studio", async () => {
+      const result = await executeTool("get_version", {}, client);
+
+      const payload = JSON.parse(result.content[0].text) as {
+        data: {
+          name: string;
+          version: string;
+          build: { id: string; source: string };
+          runtime: { node: string; platform: string; arch: string };
+        };
+      };
+      const { name, version, build, runtime } = payload.data;
+
+      expect(name).toBe(SERVER_INFO.NAME);
+      expect(version).toBe(SERVER_INFO.VERSION);
+      // The build id always starts with the version; what follows identifies the
+      // build within it and depends on whether build metadata shipped (CI runs
+      // `npm test` before `npm run build`, so both cases are legitimate here).
+      expect(build.id.startsWith(version)).toBe(true);
+      expect(["build-metadata", "unavailable"]).toContain(build.source);
+      expect(runtime).toEqual({ node: process.version, platform: process.platform, arch: process.arch });
+      // Diagnostics must work when the studio is unreachable — no request at all.
+      expect(mockAxios.history.get).toHaveLength(0);
+      expect(mockAxios.history.post).toHaveLength(0);
+    });
+
+    it("openl_get_version exposes only build identity — no configuration or credentials", async () => {
+      const text = (await executeTool("get_version", {}, client)).content[0].text;
+      const { data } = JSON.parse(text) as { data: Record<string, unknown> };
+
+      // Assert the payload's exact shape rather than banning substrings: a
+      // legitimate branch name (`feature/token-diagnostics`) would trip a
+      // "must not contain 'token'" check while the payload is perfectly clean.
+      expect(Object.keys(data).sort()).toEqual(["build", "name", "runtime", "version"]);
+      const buildKeys = Object.keys(data.build as Record<string, unknown>);
+      const allowedBuildKeys = ["builtAt", "commit", "commitDate", "commitShort", "dirty", "id", "ref", "source"];
+      expect(buildKeys.filter((key) => !allowedBuildKeys.includes(key))).toEqual([]);
+      expect(Object.keys(data.runtime as Record<string, unknown>).sort()).toEqual(["arch", "node", "platform"]);
+      // ...and none of THIS client's configured values can appear anywhere in it.
+      expect(text).not.toContain("localhost:8080");
+      expect(text).not.toContain("openl_pat_test");
     });
   });
 

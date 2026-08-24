@@ -2,6 +2,35 @@
 
 Common problems and how to fix them.
 
+## Report the exact build
+
+Start any bug report with the build that misbehaved — nightly builds between two
+releases all carry the same version number, so the version alone cannot say
+whether an environment already has a given fix:
+
+```bash
+npx -y openl-mcp --version
+```
+
+```text
+openl-mcp 1.1.0 (build a1b2c3d, built 2026-08-19T07:30:00Z)
+```
+
+Other ways to the same identity:
+
+- ask your AI client to call `openl_get_version` — the full detail (commit, its
+  date, branch or tag, build time, Node.js and platform) as structured data, and it
+  works even when OpenL Studio is unreachable;
+- read the `[Server] …` line the stdio server logs at startup (see
+  [the server's logs](#see-the-servers-logs));
+- `curl http://localhost:3000/health` for a server running the HTTP transport.
+
+None of these expose your configuration, token, or Studio URL.
+
+> [!Note]
+> `build` missing from the output means the install shipped without build
+> metadata; only the version is known for that install.
+
 ## Common issues
 
 ### Client doesn't list the server / "not connected"
@@ -51,6 +80,7 @@ A healthy start logs:
 [Config] Resolving configuration (positional <url> / flags / environment)...
 [Config] Authentication:
 [Config]   - Personal Access Token: configured (hidden)
+[Server] openl-mcp 1.1.0 (build a1b2c3d, built 2026-08-19T07:30:00Z)
 ```
 
 ## See the server's logs

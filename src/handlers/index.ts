@@ -10,6 +10,7 @@
  */
 
 import { registerGuideHandlers } from "./guide-handlers.js";
+import { registerDiagnosticsHandlers } from "./diagnostics-handlers.js";
 import { registerDeploymentHandlers } from "./deployment-handlers.js";
 import { registerRepositoryHandlers } from "./repository-handlers.js";
 import { registerTestingHandlers } from "./testing-handlers.js";
@@ -32,6 +33,7 @@ export { getAllTools, executeTool, hasTool } from "./common.js";
  */
 export function registerAllTools(): void {
   registerGuideHandlers();
+  registerDiagnosticsHandlers();
   registerDeploymentHandlers();
   registerRepositoryHandlers();
   registerTestingHandlers();

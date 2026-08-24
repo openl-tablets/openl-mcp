@@ -2,7 +2,7 @@
 
 ## Status Overview
 
-**Current State**: v1.1.0 - 73 tools
+**Current State**: v1.1.0 - 74 tools
 **Test Coverage**: Maintained by the current Jest suite
 **Last Updated**: 2026-08-07
 **Major Milestone**: MCP Refactoring Complete ✅
@@ -92,7 +92,7 @@
 
 #### T-004: Implement index.ts Test Coverage (>80%)
 - [ ] Test MCP server initialization
-- [ ] Test tool routing for all 73 openl_* tools
+- [ ] Test tool routing for all 74 openl_* tools
 - [ ] Test prompt integration (14 prompts)
 - [ ] Test error handling at server level
 - [ ] Test configuration validation
@@ -117,7 +117,7 @@
 **Acceptance Criteria**: >95% coverage, 100% branches
 
 #### T-006: Verify Tool Registry Coverage (>90%)
-- [ ] Verify all 73 openl_* tool definitions are properly structured in tool-handlers.ts
+- [ ] Verify all 74 openl_* tool definitions are properly structured in tool-handlers.ts
 - [ ] Test registration of every tool by name
 - [ ] Validate input schemas are valid JSON Schema
 - [ ] Validate metadata completeness
@@ -143,7 +143,7 @@
 - [ ] Test parameter validation
 - [ ] Test response formatting integration
 - [ ] Test pagination integration
-- [ ] Verify all 73 openl_* tools are registered
+- [ ] Verify all 74 openl_* tools are registered
 
 **Acceptance Criteria**: >85% coverage on tool-handlers.ts
 
@@ -181,7 +181,7 @@
 #### T-012: Test Response Formatting Features
 - [ ] Test markdown formatting end-to-end
 - [ ] Test JSON formatting end-to-end
-- [ ] Test format parameter in all 73 tools
+- [ ] Test format parameter in all 74 tools
 - [ ] Test format fallback behavior
 - [ ] Test character limit enforcement across formats
 
@@ -445,7 +445,7 @@
 **Completed**: 2024-Q4
 
 #### T-103: Implement Tool Definitions
-- [x] 73 openl_* tools
+- [x] 74 openl_* tools
 - [x] Tool metadata and categorization
 - [x] Helper functions
 - [x] MCP compliance and annotations

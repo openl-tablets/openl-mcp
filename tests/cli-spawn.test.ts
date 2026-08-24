@@ -49,6 +49,29 @@ function run(
   });
 }
 
+/**
+ * Run the built binary with both stdio ends piped and the read end of
+ * `closed` destroyed immediately, mimicking a consumer that went away
+ * (`… | head -1`, `2>&-`). Resolves with the exit code.
+ */
+function runWithClosedStream(
+  args: string[],
+  closed: "stdout" | "stderr",
+): Promise<number | null> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [distEntry, ...args], {
+      cwd: root,
+      env: envWithoutOpenl(),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    if (closed === "stdout") child.stdout.destroy();
+    else child.stdout.resume();
+    if (closed === "stderr") child.stderr.destroy();
+    else child.stderr.resume();
+    child.on("close", (code) => resolve(code));
+  });
+}
+
 /** Env with all OPENL_* keys stripped, so config comes only from args. */
 function envWithoutOpenl(): NodeJS.ProcessEnv {
   const env = { ...process.env };
@@ -116,6 +139,76 @@ describe("built binary (dist/index.js)", () => {
       // The positional <url> form and the env-var fallback must be documented.
       expect(stdout).toContain("openl-mcp <url>");
       expect(stdout).toContain("OPENL_BASE_URL");
+    });
+
+    it("--list-tools reaches a slow pipe reader whole, past the 64 KB pipe buffer", async () => {
+      // Regression: the CLI exited with `process.exit()` while stdout writes to
+      // a PIPE were still queued, so everything past the first pipe buffer was
+      // discarded — `--list-tools | jq` saw truncated, unparseable JSON. The
+      // reader below deliberately stalls before consuming, which fills the
+      // buffer and forces the child to wait for it.
+      const child = spawn(process.execPath, [distEntry, "--list-tools"], {
+        cwd: root,
+        env: envWithoutOpenl(),
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+
+      const chunks: Buffer[] = [];
+      const payload = new Promise<Buffer>((resolve, reject) => {
+        child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+        child.stdout.on("end", () => resolve(Buffer.concat(chunks)));
+        child.stdout.on("error", reject);
+      });
+      // Attaching 'data' starts the flow, so pause right after to stall it.
+      child.stdout.pause();
+      const exitCode = new Promise<number | null>((resolve) => child.on("close", resolve));
+
+      // Wait for the read buffer to actually fill instead of guessing a delay:
+      // the child needs a few hundred ms to start up and register its tools, so
+      // a fixed timeout could resume the reader before anything was queued —
+      // and the truncation this test guards against would slip through.
+      const saturated = await new Promise<boolean>((resolve) => {
+        // Generous bound: a loaded CI runner needs a while to start the child
+        // and render 200 KB of schemas. The per-test timeout below covers it.
+        const deadline = Date.now() + 15000;
+        const poll = setInterval(() => {
+          const full = child.stdout.readableLength >= child.stdout.readableHighWaterMark;
+          if (full || Date.now() > deadline) {
+            clearInterval(poll);
+            resolve(full);
+          }
+        }, 10);
+      });
+      expect(saturated).toBe(true);
+      child.stdout.resume();
+
+      const [output, code] = await Promise.all([payload, exitCode]);
+      expect(code).toBe(0);
+      // A truncated payload cannot parse — that is the real assertion.
+      const tools = JSON.parse(output.toString("utf-8")) as Array<{ name: string }>;
+      expect(tools.length).toBeGreaterThan(60);
+      expect(tools.map((tool) => tool.name)).toContain("get_version");
+      // ...and it must be the whole thing, well past one 64 KB pipe buffer.
+      expect(output.length).toBeGreaterThan(65536);
+    }, 30000);
+
+    it("keeps the tool's exit code when the reader of an unused stream is gone", async () => {
+      // Regression: draining before exit wrote a sentinel chunk into BOTH
+      // streams, so a closed reader on a stream the command never used raised a
+      // manufactured EPIPE — stdout's handler exited 0 (a failed tool looked
+      // successful) and stderr's unhandled 'error' exited 1 (a successful
+      // command looked failed). A stream with nothing queued is now left alone.
+      expect(await runWithClosedStream(["typo_tool"], "stdout")).toBe(64);
+      expect(await runWithClosedStream(["--version"], "stderr")).toBe(0);
+      // Diagnostics that cannot be delivered must not change the verdict either.
+      expect(await runWithClosedStream(["typo_tool"], "stderr")).toBe(64);
+    });
+
+    it("exits 0 when the reader of its actual output goes away", async () => {
+      // The `… | head -1` case: output the command really produced cannot be
+      // delivered, which stays a successful early termination.
+      expect(await runWithClosedStream(["--version"], "stdout")).toBe(0);
+      expect(await runWithClosedStream(["--list-tools"], "stdout")).toBe(0);
     });
 
     it("a typo'd tool with no config exits EX_USAGE (64)", async () => {

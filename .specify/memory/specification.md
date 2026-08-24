@@ -205,7 +205,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 
 ### FR-1: Tool Execution
 
-**Requirement**: MCP server provides 73 tools.
+**Requirement**: MCP server provides 74 tools.
 
 **Guidance Tools**:
 - `openl_get_started` - Read-only onboarding bootstrap: workflow protocol + workspace orientation (call first, once per session)
@@ -304,6 +304,9 @@ them through image rendering and reject them as unsupported images.
 - `openl_list_deployments` - List all deployments (supports pagination)
 - `openl_deploy_project` - Deploy project to production
 - `openl_redeploy_project` - Redeploy with new version
+
+**Diagnostics Tools**:
+- `openl_get_version` - Report the server's version, build id, commit/ref, build time, and Node/platform runtime (local build metadata; no Studio call)
 
 **Note**: All tools support `response_format`: `json` (default), `markdown`,
 `markdown_concise`, and `markdown_detailed`. All list operations support
@@ -586,7 +589,7 @@ pagination via `limit` and `offset` parameters.
 
 The MCP server is considered successful when:
 
-1. ✅ All 73 tools execute successfully
+1. ✅ All 74 tools execute successfully
 2. ✅ All tools support response_format parameter
 3. ✅ All list operations support pagination
 4. ✅ Character limits enforced on all responses
@@ -628,4 +631,4 @@ Potential enhancements for future versions:
 
 ---
 
-*Status: Active development (73 tools, 14 prompts)*
+*Status: Active development (74 tools, 14 prompts)*

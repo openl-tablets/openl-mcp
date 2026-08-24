@@ -74,6 +74,7 @@ scripting, CI, and ad-hoc debugging:
 
 ```bash
 npx -y openl-mcp --help                              # tool catalog, no config needed
+npx -y openl-mcp --version                           # version + the build it came from
 npx -y openl-mcp <url> list_repositories --token <pat>   # one direct call
 ```
 

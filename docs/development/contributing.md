@@ -30,23 +30,54 @@ npm run lint:fix       # Fix linting issues
 
 ## Code Structure
 
-```
+```text
 src/
-├── index.ts             # Binary entry point / transport dispatcher
-├── stdio-server.ts      # stdio transport (Claude Desktop / Cursor)
-├── http-server.ts       # HTTP server (Streamable HTTP transport at /mcp)
-├── mcp-core.ts          # Shared MCP core (handlers) for both transports
-├── client.ts            # OpenL Studio API client
-├── auth.ts              # Authentication (Personal Access Token)
-├── handlers/            # Per-category tool registry (registerTool, executeTool, register*Handlers)
-├── tools.ts             # Tool metadata definitions
-├── schemas.ts           # Zod validation schemas
-├── formatters.ts        # Response formatting
-├── utils.ts             # Utility functions
-├── types.ts             # TypeScript types
-├── constants.ts         # Configuration constants
-├── prompts.ts           # Prompt definitions
-└── prompts-registry.ts  # Prompt management
+├── index.ts                # Binary entry point / transport dispatcher
+├── stdio-server.ts         # stdio transport (Claude Desktop / Cursor)
+├── http-server.ts          # Streamable HTTP transport (/mcp) and the /health probe
+├── cli.ts                  # CLI mode — run any registered tool straight from the shell
+├── mcp-core.ts             # Shared MCP core (tool/prompt request handlers) for both transports
+├── client.ts               # OpenL Studio REST API client
+├── auth.ts                 # Authentication (Personal Access Token)
+├── stomp-client.ts         # Minimal STOMP client for Studio's websocket topics
+├── stomp-waits.ts          # Awaits async Studio compilation over STOMP inside one tool call
+├── handlers/               # Tool registry and per-category tool handlers (see below)
+├── schemas.ts              # Zod input schemas, one per tool
+├── formatters.ts           # JSON/Markdown formatting, pagination, response size limits
+├── content-utils.ts        # Text/binary detection and encoding for file content over MCP
+├── prompts-registry.ts     # Loads and renders the prompt templates in prompts/
+├── guides-registry.ts      # Runtime reader of the bundled OpenL documentation (guides/)
+├── fetch-guides.ts         # Build step that downloads and bundles that documentation
+├── build-info.ts           # Runtime version/build identity (reads build-info.json)
+├── generate-build-info.ts  # Build step that records the build identity
+├── verify-package.ts       # Release gate: the tarball must carry that identity
+├── project-templates.ts    # Bundled project skeletons used by openl_create_project
+├── logger.ts               # Structured stderr logging with credential sanitization
+├── utils.ts                # Shared helpers (error extraction, sanitization, hashing)
+├── types.ts                # TypeScript types for the OpenL Studio API
+└── constants.ts            # Defaults, tool namespace prefix, categories, server identity
+```
+
+Tools live in one module per category, all registering into the same registry:
+
+```text
+src/handlers/
+├── index.ts                    # Registry entry point (registerAllTools / getAllTools / executeTool)
+├── common.ts                   # Registry core (registerTool, ToolDefinition) and shared error handling
+├── guide-handlers.ts           # Onboarding, bundled documentation, per-project AGENTS.md context
+├── repository-handlers.ts      # Design and deploy repositories, branches, project revisions
+├── project-handlers.ts         # Project list/get/status, open/save/close, creation
+├── project-merge-handlers.ts   # Project branches, merging, read-only conflict inspection
+├── local-change-handlers.ts    # Uncommitted local changes and restore
+├── file-handlers.ts            # Project files: read, write, delete, search, copy, move
+├── table-handlers.ts           # List/get tables and update/append/create them
+├── table-action-handlers.ts    # Raw-source edits: rows, columns, cells, merge/unmerge
+├── table-workflow-handlers.ts  # Table execution, dependency and module/sheet/property discovery
+├── table-id-tracking.ts        # Old→new table-id aliasing after an edit relocates a table
+├── testing-handlers.ts         # Start project tests and read their results
+├── trace-handlers.ts           # Interactive rule debugger (breakpoints, stepping, inspection)
+├── deployment-handlers.ts      # Deploy/redeploy projects and list deployments
+└── diagnostics-handlers.ts     # Server version and build identity
 ```
 
 ## Adding a New Tool

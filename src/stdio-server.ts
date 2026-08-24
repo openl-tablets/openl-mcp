@@ -12,6 +12,7 @@
  * stdio server.
  */
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
+import { versionLine } from "./build-info.js";
 import { OpenLClient } from "./client.js";
 import { createConfiguredServer } from "./mcp-core.js";
 import { normalizeToken, sanitizeError } from "./utils.js";
@@ -165,6 +166,11 @@ export async function startStdioServer(parsed: ParsedArgs): Promise<void> {
     console.error("OPENL_BASE_URL environment variable. Run `openl-mcp --help` for full usage.");
     process.exit(1);
   }
+
+  // Announce the exact build before serving. stderr is the MCP client's log
+  // channel for a stdio server, so this line is what a user or support engineer
+  // can read back from the client's logs to identify what actually ran.
+  console.error(`[Server] ${versionLine()}`);
 
   const server = new OpenLMCPServer(config);
   await server.start();

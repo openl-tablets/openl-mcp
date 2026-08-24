@@ -149,7 +149,7 @@ docker compose up -d
 - MCP server → `http://localhost:3000/mcp` (HTTP transport)
 
 ```bash
-curl http://localhost:3000/health    # {"status":"ok",...}
+curl http://localhost:3000/health    # {"status":"ok","version":…,"build":{"id":…},…}
 docker compose logs -f openl-mcp      # follow the MCP server logs
 docker compose down                   # stop everything
 ```
