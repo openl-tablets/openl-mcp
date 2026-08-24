@@ -16,11 +16,13 @@
  *
  * Missing git coordinates never fail the build: a checkout without git, or an
  * exported source tree with no history, still gets an artifact carrying the
- * fields that could be determined.
+ * fields that could be determined. Coordinates are recorded only when git
+ * resolves to this package's own checkout, so a copy built inside an unrelated
+ * repository reports no revision rather than that repository's.
  */
 
 import { execFileSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -32,6 +34,9 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+/** The package root — parent of both `dist/` (production) and `src/` (ts-node). */
+const PACKAGE_ROOT = join(__dirname, "..");
+
 /**
  * Runs one git command in the package directory and returns its trimmed stdout.
  * Throws when git is absent, the directory is not a repository, or the command
@@ -42,7 +47,7 @@ export type GitRunner = (args: string[]) => string;
 
 const runGit: GitRunner = (args) =>
   execFileSync("git", args, {
-    cwd: join(__dirname, ".."),
+    cwd: PACKAGE_ROOT,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"],
   }).trim();
@@ -101,6 +106,35 @@ function resolveRef(git: GitRunner): string | undefined {
 }
 
 /**
+ * Whether the repository git resolves from the package directory is this
+ * package's OWN checkout.
+ *
+ * Git searches upwards for `.git`, so a source export unpacked inside an
+ * unrelated repository — vendored into a monorepo, or simply extracted into an
+ * ignored subdirectory — otherwise gets THAT project's commit, branch and dirty
+ * state recorded as this build's identity: confidently wrong diagnostics, and it
+ * publishes a foreign branch name through `/health` and `openl_get_version`.
+ *
+ * Comparing git's work-tree root with the package root, both canonicalized
+ * (symlinked checkouts, macOS `/tmp` → `/private/tmp`), keeps only a real
+ * checkout of this package. An environment pointing git elsewhere via
+ * `GIT_DIR`/`GIT_WORK_TREE` is covered by the same comparison.
+ *
+ * @param git - Git command runner (injected in tests).
+ * @param packageRoot - Directory the package was built from.
+ */
+function isOwnCheckout(git: GitRunner, packageRoot: string): boolean {
+  const workTree = gitValue(git, ["rev-parse", "--show-toplevel"]);
+  if (!workTree) return false;
+  try {
+    return realpathSync(workTree) === realpathSync(packageRoot);
+  } catch {
+    // A path that cannot be resolved cannot be proven to be ours.
+    return false;
+  }
+}
+
+/**
  * Collect the build metadata to record. Each git fact is optional and resolved
  * independently, so a partial answer (e.g. a repository with no tags) still
  * yields everything else.
@@ -115,11 +149,23 @@ function resolveRef(git: GitRunner): string | undefined {
  * report status at all the field is left unset, so "not modified" stays
  * distinguishable from "unknown".
  *
+ * Git is consulted only when it resolves to this package's own checkout (see
+ * {@link isOwnCheckout}); otherwise the build is recorded as having no git
+ * coordinates at all, exactly like a build with no git available.
+ *
  * @param git - Git command runner (injected in tests).
  * @param builtAt - ISO-8601 build timestamp.
+ * @param packageRoot - Directory the package is built from; git metadata is used
+ *   only when git's work tree is this same directory.
  */
-export function collectBuildMetadata(git: GitRunner, builtAt: string): BuildMetadata {
-  const commit = gitValue(git, ["rev-parse", "HEAD"]);
+export function collectBuildMetadata(
+  git: GitRunner,
+  builtAt: string,
+  packageRoot: string,
+): BuildMetadata {
+  const commit = isOwnCheckout(git, packageRoot)
+    ? gitValue(git, ["rev-parse", "HEAD"])
+    : undefined;
   const localCommitDate = commit ? gitValue(git, ["log", "-1", "--format=%cI", commit]) : undefined;
   const commitDate = localCommitDate ? toUtcIso(localCommitDate) : undefined;
   const ref = commit ? resolveRef(git) : undefined;
@@ -136,8 +182,8 @@ export function collectBuildMetadata(git: GitRunner, builtAt: string): BuildMeta
 }
 
 function main(): void {
-  const file = join(__dirname, "..", BUILD_METADATA_FILENAME);
-  const metadata = collectBuildMetadata(runGit, utcNow());
+  const file = join(PACKAGE_ROOT, BUILD_METADATA_FILENAME);
+  const metadata = collectBuildMetadata(runGit, utcNow(), PACKAGE_ROOT);
 
   writeFileSync(file, `${JSON.stringify(metadata, null, 2)}\n`, "utf-8");
 

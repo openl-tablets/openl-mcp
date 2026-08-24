@@ -7,6 +7,9 @@
  */
 
 import { describe, it, expect } from "@jest/globals";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { collectBuildMetadata, toUtcIso, type GitRunner } from "../src/generate-build-info.js";
 import { BUILD_METADATA_SCHEMA_VERSION } from "../src/build-info.js";
@@ -15,21 +18,40 @@ const BUILT_AT = "2026-08-19T07:30:00.000Z";
 const COMMIT = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
 
 /**
- * Git runner answering from `answers`, keyed by the git subcommand. A missing
- * key throws, standing in for a query git cannot answer (no tags, not a
- * repository, git absent).
+ * The directory the package is "built from". A real path, because the collector
+ * canonicalizes it to compare with git's work tree.
  */
-function fakeGit(answers: Record<string, string>): GitRunner {
+const packageRoot = mkdtempSync(join(tmpdir(), "openl-pkg-root-"));
+
+/** One git query, identified by intent rather than by raw argv. */
+type GitQuery = "toplevel" | "head" | "branch" | "log" | "describe" | "status";
+
+/** Classify the argv the collector passes to git. */
+function queryOf(args: string[]): GitQuery {
+  if (args[0] === "rev-parse") {
+    if (args.includes("--show-toplevel")) return "toplevel";
+    return args.includes("--abbrev-ref") ? "branch" : "head";
+  }
+  if (args[0] === "describe") return "describe";
+  return args[0] as GitQuery;
+}
+
+/**
+ * Git runner answering from `answers`, keyed by query intent. A missing key
+ * throws, standing in for a query git cannot answer (no tags, not a repository,
+ * git absent).
+ */
+function fakeGit(answers: Partial<Record<GitQuery, string>>): GitRunner {
   return (args) => {
-    const key = args[0] === "describe" ? "describe" : args[0];
-    const answer = answers[key];
+    const answer = answers[queryOf(args)];
     if (answer === undefined) throw new Error(`fatal: cannot answer 'git ${args.join(" ")}'`);
     return answer;
   };
 }
 
-const cleanRelease = {
-  "rev-parse": COMMIT,
+const cleanRelease: Partial<Record<GitQuery, string>> = {
+  toplevel: packageRoot,
+  head: COMMIT,
   log: "2026-08-18T11:04:51+03:00",
   describe: "1.2.0",
   status: "",
@@ -37,7 +59,7 @@ const cleanRelease = {
 
 describe("collectBuildMetadata", () => {
   it("records the commit, its date, the exact release tag, a clean tree, and the build time", () => {
-    expect(collectBuildMetadata(fakeGit(cleanRelease), BUILT_AT)).toEqual({
+    expect(collectBuildMetadata(fakeGit(cleanRelease), BUILT_AT, packageRoot)).toEqual({
       schemaVersion: BUILD_METADATA_SCHEMA_VERSION,
       commit: COMMIT,
       // git reported +03:00; both recorded timestamps are UTC.
@@ -50,39 +72,29 @@ describe("collectBuildMetadata", () => {
 
   it("omits an unparseable committer date rather than recording a non-UTC value", () => {
     const git = fakeGit({ ...cleanRelease, log: "not a date" });
-    expect(collectBuildMetadata(git, BUILT_AT).commitDate).toBeUndefined();
+    expect(collectBuildMetadata(git, BUILT_AT, packageRoot).commitDate).toBeUndefined();
   });
 
   it("names the branch when HEAD carries no exact tag", () => {
     // `git describe --tags --exact-match` fails on an untagged commit; the
     // branch name comes from the same rev-parse the commit did.
-    const git: GitRunner = (args) => {
-      if (args[0] === "rev-parse") return args.includes("--abbrev-ref") ? "main" : COMMIT;
-      if (args[0] === "log") return "2026-08-18T11:04:51+03:00";
-      if (args[0] === "status") return "";
-      throw new Error("fatal: no tag");
-    };
-    expect(collectBuildMetadata(git, BUILT_AT).ref).toBe("main");
+    const git = fakeGit({ ...cleanRelease, describe: undefined, branch: "main" });
+    expect(collectBuildMetadata(git, BUILT_AT, packageRoot).ref).toBe("main");
   });
 
   it("omits the ref for a detached, untagged checkout instead of recording the literal 'HEAD'", () => {
-    const git: GitRunner = (args) => {
-      if (args[0] === "rev-parse") return args.includes("--abbrev-ref") ? "HEAD" : COMMIT;
-      if (args[0] === "log") return "2026-08-18T11:04:51+03:00";
-      if (args[0] === "status") return "";
-      throw new Error("fatal: no tag");
-    };
-    expect(collectBuildMetadata(git, BUILT_AT).ref).toBeUndefined();
+    const git = fakeGit({ ...cleanRelease, describe: undefined, branch: "HEAD" });
+    expect(collectBuildMetadata(git, BUILT_AT, packageRoot).ref).toBeUndefined();
   });
 
   it("flags a build made from a modified working tree", () => {
     const git = fakeGit({ ...cleanRelease, status: " M src/client.ts\n?? notes.txt" });
-    expect(collectBuildMetadata(git, BUILT_AT).dirty).toBe(true);
+    expect(collectBuildMetadata(git, BUILT_AT, packageRoot).dirty).toBe(true);
   });
 
   it("leaves dirty unset when git cannot report status, so 'unknown' stays distinct from 'clean'", () => {
-    const git = fakeGit({ "rev-parse": COMMIT, log: "2026-08-18T11:04:51+03:00", describe: "1.2.0" });
-    const metadata = collectBuildMetadata(git, BUILT_AT);
+    const git = fakeGit({ ...cleanRelease, status: undefined });
+    const metadata = collectBuildMetadata(git, BUILT_AT, packageRoot);
     expect(metadata.dirty).toBeUndefined();
     expect(metadata.commit).toBe(COMMIT);
   });
@@ -91,25 +103,44 @@ describe("collectBuildMetadata", () => {
     const unavailable: GitRunner = () => {
       throw new Error("spawn git ENOENT");
     };
-    expect(collectBuildMetadata(unavailable, BUILT_AT)).toEqual({
+    expect(collectBuildMetadata(unavailable, BUILT_AT, packageRoot)).toEqual({
       schemaVersion: BUILD_METADATA_SCHEMA_VERSION,
       builtAt: BUILT_AT,
     });
   });
 
-  it("skips the commit-derived queries entirely when HEAD cannot be resolved", () => {
+  it("asks git nothing else once the work tree is not this package", () => {
     const calls: string[] = [];
     const git: GitRunner = (args) => {
-      calls.push(args[0]);
+      calls.push(args.join(" "));
       throw new Error("fatal: not a git repository");
     };
-    collectBuildMetadata(git, BUILT_AT);
-    expect(calls).toEqual(["rev-parse"]);
+    collectBuildMetadata(git, BUILT_AT, packageRoot);
+    expect(calls).toEqual(["rev-parse --show-toplevel"]);
   });
+
+  it("ignores the coordinates of an enclosing, unrelated repository", () => {
+    // A source export unpacked inside another project: git answers from THAT
+    // repository, whose commit and branch are not this build's identity.
+    const enclosing = mkdtempSync(join(tmpdir(), "openl-enclosing-repo-"));
+    const git = fakeGit({
+      ...cleanRelease,
+      toplevel: enclosing,
+      head: "0000000000000000000000000000000000000000",
+      describe: "customer-acme-incident-4471",
+      status: " M README.md",
+    });
+
+    expect(collectBuildMetadata(git, BUILT_AT, packageRoot)).toEqual({
+      schemaVersion: BUILD_METADATA_SCHEMA_VERSION,
+      builtAt: BUILT_AT,
+    });
+  });
+
 
   it("records an empty-output commit date as absent rather than blank", () => {
     const git = fakeGit({ ...cleanRelease, log: "" });
-    expect(collectBuildMetadata(git, BUILT_AT).commitDate).toBeUndefined();
+    expect(collectBuildMetadata(git, BUILT_AT, packageRoot).commitDate).toBeUndefined();
   });
 });
 
