@@ -18,7 +18,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -60,13 +60,20 @@ export function findPackagingProblems(
     return problems;
   }
 
-  let metadata: BuildMetadata;
+  let parsed: unknown;
   try {
-    metadata = JSON.parse(rawMetadata) as BuildMetadata;
+    parsed = JSON.parse(rawMetadata);
   } catch (error) {
     problems.push(`${TARBALL_ENTRY} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
     return problems;
   }
+  // `null`, an array or a scalar all parse successfully; reading fields off them
+  // would throw or produce a misleading list of "missing field" problems.
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    problems.push(`${TARBALL_ENTRY} is not a JSON object.`);
+    return problems;
+  }
+  const metadata = parsed as BuildMetadata;
 
   if (typeof metadata.schemaVersion !== "number") {
     problems.push(`${TARBALL_ENTRY} has no numeric schemaVersion.`);
@@ -88,11 +95,12 @@ export function findPackagingProblems(
 }
 
 /** Run one command in the package root, returning trimmed stdout. */
-function run(command: string, args: string[]): string {
+function run(command: string, args: string[], env?: NodeJS.ProcessEnv): string {
   return execFileSync(command, args, {
     cwd: PACKAGE_ROOT,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "inherit"],
+    ...(env && { env }),
   }).trim();
 }
 
@@ -104,12 +112,25 @@ function print(message: string): void {
 function main(): void {
   const outDir = mkdtempSync(join(tmpdir(), "openl-verify-package-"));
   try {
-    // `--ignore-scripts` keeps the pack from re-running the build we are checking.
+    // `--ignore-scripts` keeps the pack from re-running the build being checked.
+    // `npm_config_dry_run` is cleared because this also runs from
+    // `prepublishOnly`: under `npm publish --dry-run` the nested pack would
+    // inherit that flag, print a file list and write no tarball at all.
     const packed = JSON.parse(
-      run("npm", ["pack", "--json", "--ignore-scripts", "--pack-destination", outDir]),
+      run(
+        "npm",
+        ["pack", "--json", "--ignore-scripts", "--pack-destination", outDir],
+        { ...process.env, npm_config_dry_run: "false" },
+      ),
     ) as Array<{ filename: string; files: Array<{ path: string }> }>;
     const tarball = join(outDir, packed[0].filename);
     const paths = packed[0].files.map((entry) => entry.path);
+
+    if (!existsSync(tarball)) {
+      console.error(`verify-package: npm pack wrote no tarball at ${tarball}; cannot verify the package.`);
+      process.exitCode = 1;
+      return;
+    }
 
     let rawMetadata: string | undefined;
     try {
