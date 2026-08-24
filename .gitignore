@@ -15,6 +15,10 @@ dist/
 
 # Build identity recorded at build time by dist/generate-build-info.js
 /build-info.json
+
+# `npm pack` output. Left untracked it would count as a modified working tree
+# and mark an otherwise pristine build as dirty.
+/*.tgz
 *.js
 *.js.map
 *.d.ts

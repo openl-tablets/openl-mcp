@@ -114,6 +114,10 @@ build metadata captured from git at build time.
 - Every diagnostics surface reports that one identity: the `openl_get_version`
   tool, `openl-mcp --version`, the stdio startup log line, the HTTP `/health`
   probe, and the HTTP startup log line.
+- `npm run watch` deletes the artifact before starting `tsc --watch`, and
+  `npm run fetch:guides` regenerates it: an incremental rebuild must never leave
+  a previous commit's identity — least of all a `dirty: false` one — attached to
+  changed code.
 - Only the package version, public repository coordinates, and the Node/OS
   identity are reported — never configuration, credentials, base URLs, or build
   paths. A missing or malformed artifact degrades to "unavailable" and never
@@ -173,7 +177,7 @@ OPENL_PERSONAL_ACCESS_TOKEN=<your-token>
 
 ### Level 0: Which build is running?
 ```bash
-npx -y openl-mcp --version    # openl-mcp 1.1.0 (build a1b2c3d, built 2026-08-19T07:30:00.000Z)
+npx -y openl-mcp --version    # openl-mcp 1.1.0 (build a1b2c3d, built 2026-08-19T07:30:00Z)
 ```
 The build id — version plus the commit the package was built from — identifies the
 exact running code; quote it in bug reports. `openl_get_version` returns the same
