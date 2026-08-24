@@ -1,9 +1,20 @@
 # MCP Specification Alignment
 
 How the current MCP specification revision, `2026-07-28`, affects this server,
-what has already landed, and what is left. Sources: the
-[release-candidate announcement](https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/)
-and the [specification changelog](https://modelcontextprotocol.io/specification/draft/changelog).
+what has already landed, and what is left.
+
+Normative sources — cite these, not the draft:
+
+- [the `2026-07-28` specification](https://modelcontextprotocol.io/specification/2026-07-28)
+  and its [changelog](https://modelcontextprotocol.io/specification/2026-07-28/changelog)
+- [Security Best Practices](https://modelcontextprotocol.io/specification/2026-07-28/basic/security_best_practices)
+  for the authorization rules P2.1 has to satisfy
+- [Caching](https://modelcontextprotocol.io/specification/2026-07-28/server/utilities/caching)
+  for the `ttlMs`/`cacheScope` obligation in P1.3
+
+Historical context only: the
+[release announcement](https://blog.modelcontextprotocol.io/posts/2026-07-28/) and
+the [release-candidate announcement](https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/).
 
 **Status.** The `2026-07-28` specification is published, the TypeScript SDK
 shipped v2 support, and this server **already negotiates and serves it** —
@@ -61,10 +72,14 @@ Verified against `main` (`@modelcontextprotocol/node` and
 - **Error codes:** the MCP-custom `-32002` is not emitted anywhere; the
   transport-level `-32000` responses sit in the range the new error-code policy
   grandfathers as implementation-defined.
-- **Authentication is explicit-token-only.** `OPENL_PERSONAL_ACCESS_TOKEN` /
-  `--token`, or anonymous (single-user Studio). The browser sign-in flow and the
-  credential cache were **removed** (CHANGELOG, Unreleased → Removed), so
-  this server holds no OAuth client and mints nothing.
+- **Authentication is explicit-token-only by default.**
+  `OPENL_PERSONAL_ACCESS_TOKEN` / `--token`, or anonymous (single-user Studio).
+  The browser sign-in flow and the credential cache were **removed** (CHANGELOG,
+  Unreleased → Removed), so this server holds no OAuth client and mints nothing.
+  It does, however, take the **caller's** credential per request on the HTTP
+  transport, and `OPENL_MCP_PRESERVE_AUTH_SCHEME` (off by default) forwards an
+  inbound `Bearer` to Studio as received — the documented exception, and the
+  subject of [P2.1](#p21-standard-mcp-oauth-for-the-http-transport).
 
 ## What does NOT affect us
 
@@ -80,7 +95,7 @@ Recorded so future readers don't re-derive it:
 | Deterministic `tools/list` ordering (SHOULD) | Already deterministic |
 | `subscriptions/listen` for unsolicited notifications | We emit none; opt-in, so not implemented |
 | `server/discover` (server MUST) | Provided by the SDK's serving entry; we register nothing |
-| Required `Mcp-Method` / `Mcp-Name` headers | Already in the CORS request-header allowlist |
+| Required `Mcp-Method` / `Mcp-Name` headers | Validated by the SDK (presence and header/body consistency) before dispatch; nothing to add |
 | JSON Schema 2020-12 `$ref`/composition bounds | Schemas are flat; nothing to bound |
 
 ## Closed without implementing
@@ -109,17 +124,25 @@ Recorded so future readers don't re-derive it:
 ### P1.3 Emit `ttlMs`/`cacheScope` on list results (SEP-2549)
 
 **Open — the only known conformance gap, and the cheapest item here.** The
-revision *requires* both fields on `tools/list` and `prompts/list` results, and
-we serve the revision today; the handlers in `src/mcp-core.ts` return neither.
+revision *requires* caching hints on every `resultType: "complete"` list
+result, and we serve the revision today; the handlers in `src/mcp-core.ts`
+return neither field.
 
 - Both lists are static per build, so a generous `ttlMs` (order of an hour) and
   `cacheScope: "private"` (responses ride authenticated requests) fit.
+- The obligation also covers **`server/discover`**, which the SDK generates
+  rather than us. Verify whether the SDK already emits the hints there; if it
+  does not, the gap is not closable from `mcp-core.ts` alone and belongs
+  upstream.
 - `OPENL_MCP_TOOLS` narrows the list per deployment, not per caller, so it stays
-  cacheable. Keep it that way: the revision's premise is that list results no
-  longer vary per connection, which puts any future per-caller tool shaping off
-  the table. Per-deployment shaping — including
+  cacheable. **Keeping shaping deployment-only is our decision, not a protocol
+  constraint:** the revision removes connection-scoped variation, but
+  `cacheScope: "private"` explicitly allows a result to vary by authorization
+  context ("MUST NOT be shared across authorization contexts"). We prefer one
+  list per deployment because it keeps the list auditable and cacheable at the
+  gateway. Per-deployment shaping — including
   [improvement-plans F6](improvement-plans.md) (version-aware tool
-  availability) — remains fine, but pick the TTL with F6 in mind.
+  availability) — fits that choice; pick the TTL with F6 in mind.
 
 ### P1.1 Stateless HTTP: landed — and why *not* a client pool
 
@@ -189,12 +212,27 @@ because this item is what retires it.
 
 - Return `401` with `WWW-Authenticate` and serve RFC 9728
   `/.well-known/oauth-protected-resource` pointing at the deployment's IdP.
-- Accept `Bearer <IdP access token>`: validate `iss` / `aud` / `exp` against the
-  IdP's JWKS (this is where the former P0.1 requirement now lives), then present
-  it upstream — a Studio in oauth2 mode accepts it. The explicit-PAT path stays
-  for CI and non-OAuth deployments.
-- Once validation exists, `OPENL_MCP_PRESERVE_AUTH_SCHEME` becomes redundant and
-  should be removed with a deprecation note.
+- Accept `Bearer <IdP access token>` and validate `iss` / `aud` / `exp` against
+  the IdP's JWKS — this is where the former P0.1 requirement now lives. The
+  explicit-PAT path stays for CI and non-OAuth deployments.
+- **Open design decision — how the upstream call is authenticated.** Validating
+  the inbound token and then forwarding *that same token* to Studio is not a
+  fix: the specification's passthrough rule has two halves, accepting a token
+  not issued for this server **and** forwarding an unmodified token downstream
+  (the confused-deputy case). Validating `aud` closes only the first. Three
+  candidates, to be decided before implementation:
+  - a **separate upstream credential** the deployment gives this server (a
+    service-account PAT), so the inbound token authenticates the caller and
+    never leaves;
+  - **token exchange** (RFC 8693) at the IdP: trade the inbound token for one
+    whose audience is Studio;
+  - declare Studio and this server **one resource** with a shared audience,
+    which makes the forward legitimate by definition — cheapest, but it has to
+    be an explicit, written decision with the IdP configured to match, not an
+    accident of deployment.
+- `OPENL_MCP_PRESERVE_AUTH_SCHEME` is retired only once that decision lands and
+  is implemented; until then it stays opt-in and self-announcing. Validation
+  alone does **not** make it redundant.
 - Testing needs an IdP: add Keycloak to `compose.yaml` (absent today) for
   authorization integration tests.
 - Result: OAuth-capable clients (claude.ai connectors among them) connect with
@@ -204,7 +242,7 @@ because this item is what retires it.
 
 **Open, docs-only by design.** The revision deprecates Dynamic Client
 Registration in favour of
-[Client ID Metadata Documents](https://modelcontextprotocol.io/specification/draft/basic/authorization/client-registration#client-id-metadata-documents).
+[Client ID Metadata Documents](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/client-registration#client-id-metadata-documents).
 Build nothing that assumes DCR; for P2.1, document how a deployment registers
 its OAuth client in its IdP today, and track Keycloak's CIMD support.
 
@@ -260,9 +298,11 @@ deliberately rather than by omission.
 
 ### Risks and fallbacks
 
-- **The SDK gate is closed** — the long pole of the previous revision of this
-  plan (a TypeScript SDK shipping `2026-07-28`) resolved with v2, and the
-  protocol switch already landed. No remaining item is SDK-blocked.
+- **The SDK gate is closed for core `2026-07-28` conformance** — the long pole
+  of the previous revision of this plan (a TypeScript SDK shipping
+  `2026-07-28`) resolved with v2, and the protocol switch already landed. The
+  extensions remain SDK-gated: P3.1 waits on Tasks support, and P1.3's
+  `server/discover` half may too.
 - **Statelessness versus session-bound Studio flows** is the live architectural
   tension. The mitigation is documentation plus handles, never a shared client
   pool ([P1.1](#p11-stateless-http-landed--and-why-not-a-client-pool)).
@@ -284,7 +324,7 @@ deliberately rather than by omission.
 | P1.2 | Trace-session affinity via handles | 2, 6 | High | Medium | Documented limitation; API request open |
 | P1.3 | `ttlMs`/`cacheScope` on list results | 1 | **High** | Low | Open — conformance gap |
 | P1.4 | JSON Schema 2020-12 audit | 5 | Low | Low | Open |
-| P2.1 | Standard OAuth on the HTTP transport | 3, 4 | High | High | Open — retires the passthrough flag |
+| P2.1 | Standard OAuth on the HTTP transport | 3, 4 | High | High | Open — upstream-credential decision first |
 | P2.2 | CIMD-ready client registration story | 5 | Medium | Low | Open (docs-only) |
 | P2.3 | Silent credential renewal | — | Low | Medium | Moot while auth is token-only |
 | P3.1 | Tasks extension design + spike | 7 | Medium | Medium | Open |
