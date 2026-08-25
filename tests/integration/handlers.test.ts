@@ -557,6 +557,48 @@ describe("Tool Handler Integration Tests", () => {
       expect(mockAxios.history.put).toHaveLength(0);
     });
 
+    it("openl_update_table rejects an incomplete view after totalRows was removed", async () => {
+      mockAxios.onGet(/\/tables\/t1$/).reply(200, {
+        id: "t1",
+        tableType: "RawSource",
+        source: [[{ value: "Rules void calc()" }]],
+        totalRows: 359,
+      });
+
+      await expect(executeTool("update_table", {
+        projectId: "p1",
+        tableId: "t1",
+        view: {
+          id: "t1",
+          tableType: "RawSource",
+          source: Array.from({ length: 5 }, () => [{ value: null }]),
+        },
+      }, client)).rejects.toThrow(/current table has 359 row\(s\)/);
+      expect(mockAxios.history.get[0].params).toMatchObject({ startRow: 0, maxRows: 1 });
+      expect(mockAxios.history.put).toHaveLength(0);
+    });
+
+    it("openl_update_table rejects mismatched table ids before probing the live table", async () => {
+      mockAxios.onGet(/\/tables\/t1$/).reply(200, {
+        id: "t1",
+        tableType: "RawSource",
+        source: [[{ value: "Rules void calc()" }]],
+        totalRows: 359,
+      });
+
+      await expect(executeTool("update_table", {
+        projectId: "p1",
+        tableId: "t1",
+        view: {
+          id: "other-table",
+          tableType: "RawSource",
+          source: [[{ value: "Rules void calc()" }]],
+        },
+      }, client)).rejects.toThrow(/Table ID mismatch.*t1.*other-table/);
+      expect(mockAxios.history.get).toHaveLength(0);
+      expect(mockAxios.history.put).toHaveLength(0);
+    });
+
     it("openl_update_table rejects read-only styles instead of silently ignoring them", async () => {
       await expect(executeTool("update_table", {
         projectId: "p1",
@@ -3588,6 +3630,7 @@ describe("Tool Handler Integration Tests — status, edits, creation & trace", (
 
       // before-snapshot / would-be heuristic input: only the OLD id (→ "unchanged" if it ran)
       mockAxios.onGet(`/projects/${encoded}/tables`).reply(200, [{ id: oldId, ...tableMeta }]);
+      mockAxios.onGet(`/projects/${encoded}/tables/${oldId}`).reply(200, { id: oldId, ...tableMeta });
       // 200 with EMPTY body but a Location header pointing at the new id.
       mockAxios
         .onPut(`/projects/${encoded}/tables/${oldId}`)

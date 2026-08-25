@@ -16,6 +16,16 @@ import {
   normalizeOpenLBaseUrl,
 } from "./utils.js";
 
+/** Validate that an optional table id in a replacement body matches the path id. */
+export function validateTableIdMatch(tableId: string, viewId: string | undefined): void {
+  if (viewId !== undefined && viewId !== tableId) {
+    throw new Error(
+      `Table ID mismatch: tableId parameter is "${tableId}" but view.id is "${viewId}". ` +
+      `These must match. Use the same ID from get_table() for both parameters.`
+    );
+  }
+}
+
 /**
  * Client for OpenL Studio REST API
  *
@@ -1752,14 +1762,7 @@ export class OpenLClient {
     tableId: string,
     view: Types.RawTableView
   ): Promise<string | undefined> {
-    // When the optional body id is present, it must identify the same table as
-    // the path. The raw table contract does not require id.
-    if (view.id !== undefined && view.id !== tableId) {
-      throw new Error(
-        `Table ID mismatch: tableId parameter is "${tableId}" but view.id is "${view.id}". ` +
-        `These must match. Use the same ID from get_table() for both parameters.`
-      );
-    }
+    validateTableIdMatch(tableId, view.id);
 
     const projectPath = this.buildProjectPath(projectId);
     // Studio accepts RawTableView directly as the request body.

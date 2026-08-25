@@ -107,7 +107,7 @@ See **AGENTS.md** § "Local projects (repository: local)" for agent-facing summa
 
 **Recommendations**:
 - Do not expose Studio's typed/parsed table views. They are incomplete and lossy.
-- Never pass a window carrying `totalRows` to `openl_update_table`; read the complete matrix first or use a narrow raw action.
+- Never pass a window carrying `totalRows` to `openl_update_table`. Removing that marker does not make a window complete: the tool reads one live row and rejects a shorter source. Use narrow raw actions for large-table edits and `openl_delete_table_rows` for explicit row removal.
 - Read with `styles=true` only for inspection; read without styles before a full update.
 
 ---

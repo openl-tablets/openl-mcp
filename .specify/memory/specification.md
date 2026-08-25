@@ -264,7 +264,7 @@ them through image rendering and reject them as unsupported images.
 **Rules / Table Tools**:
 - `openl_list_tables` - List tables/rules with filters (supports pagination)
 - `openl_get_table` - Get the authoritative RawSource cell matrix; sliced responses carry `totalRows`
-- `openl_update_table` - Replace a complete RawSource matrix; reject sliced views carrying `totalRows` to prevent deletion of omitted rows; reject read-only cell `style` fields because Studio cannot write formatting
+- `openl_update_table` - Replace a complete RawSource matrix while preserving or adding rows; reject sliced views carrying `totalRows` and any source shorter than the live table, even when the marker was removed, to prevent deletion of omitted rows; remove rows explicitly with `openl_delete_table_rows`; reject read-only cell `style` fields because Studio cannot write formatting
 - `openl_append_table` - Append full-width RawSource rows
 - `openl_create_project_table` - Create a table/rule from a complete RawSource matrix
 - `openl_delete_table` - Delete an entire table from the project
