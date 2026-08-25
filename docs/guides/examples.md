@@ -128,8 +128,10 @@ choose a side: Studio does not expose a sufficiently safe resolution API, and an
 automatic OURS/THEIRS choice can discard valid work. The assistant presents the
 evidence to you for manual resolution in Studio, then clears the pending MCP
 session state when you take over or abandon the merge. Project and branch deletion
-require exact-name confirmation; protected-branch force also requires a separate
-explicit confirmation.
+require exact-name confirmation. Branch deletion also checks whether the current
+branch is merged into the repository base; deleting unmerged commits, unsaved
+changes, or any branch whose divergence cannot be verified requires a separate
+data-loss confirmation. Protected-branch force has its own explicit confirmation.
 
 ## Deploy
 

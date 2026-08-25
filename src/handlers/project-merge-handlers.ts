@@ -15,6 +15,16 @@ import { registerTool, type ToolResponse } from "./common.js";
 
 const CONFLICT_FILE_CHUNK_SIZE = 16_000;
 
+interface BranchDeletionSafety {
+  baseBranch?: string;
+  currentBranch?: string;
+  divergenceStatus: "not-checked" | "unmerged" | "up-to-date";
+  mergeCheck?: Types.CheckMergeResult;
+  projectStatus?: Types.ProjectStatus;
+  reason?: string;
+  unsavedChanges: boolean;
+}
+
 function isUtf8ContinuationByte(byte: number | undefined): boolean {
   return byte !== undefined && (byte & 0xc0) === 0x80;
 }
@@ -269,7 +279,7 @@ export function registerProjectMergeHandlers(): void {
     category: "Project",
     title: "Delete Project Branch",
     description:
-      "Delete a branch from the repository hosting a project. The tool first reads project-aware branch metadata: a base branch is always rejected, and a protected branch requires force=true plus confirmForce=true (and eligible Studio permissions). confirmBranchName must exactly equal branch. If the project is open on the deleted branch, Studio closes it first. Branch names containing '/' are supported.",
+      "Delete a branch from the repository hosting a project. The tool first reads project-aware branch metadata: a base branch is always rejected, and a protected branch requires force=true plus confirmForce=true (and eligible Studio permissions). It then performs a safe-delete preflight against the repository base branch when the target is the project's current branch. A branch with commits absent from base, unsaved changes, or no authoritative divergence check is rejected unless confirmDataLoss=true explicitly acknowledges the reported risk. confirmBranchName must exactly equal branch. If the project is open on the deleted branch, Studio closes it first. Branch names containing '/' are supported.",
     schema: schemas.deleteProjectBranchSchema,
     annotations: {
       destructiveHint: true,
@@ -297,6 +307,70 @@ export function registerProjectMergeHandlers(): void {
           `Branch '${args.branch}' is protected. If an eligible manager explicitly approves the bypass, call again with force=true and confirmForce=true.`,
         );
       }
+
+      const project = await client.getProject(args.projectId);
+      const safety: BranchDeletionSafety = {
+        currentBranch: project.branch,
+        divergenceStatus: "not-checked",
+        projectStatus: project.status,
+        unsavedChanges: project.branch === branch.name && project.status === "EDITING",
+      };
+
+      if (project.branch !== branch.name) {
+        safety.reason = project.branch
+          ? `Studio can only compare the project's current branch '${project.branch}', not deletion target '${branch.name}'. ` +
+            `Open '${branch.name}' with openl_open_project and retry to obtain an authoritative divergence check.`
+          : `Studio did not report a current branch for deletion target '${branch.name}', so divergence cannot be checked.`;
+      } else if (safety.unsavedChanges) {
+        safety.reason = `Branch '${branch.name}' has unsaved working-copy changes that deletion will discard.`;
+      } else {
+        let baseBranch = branches.find((candidate) => candidate.base)?.name;
+        if (!baseBranch) {
+          try {
+            const repositoryBranches = await client.listProjectBranches(args.projectId, "repository");
+            baseBranch = repositoryBranches.find((candidate) => candidate.base)?.name;
+          } catch {
+            // A failed safety probe must become an explicit-risk confirmation,
+            // not an accidental unguarded delete or an inescapable hard failure.
+          }
+        }
+        safety.baseBranch = baseBranch;
+
+        if (!baseBranch) {
+          safety.reason = "Studio did not identify the repository base branch, so divergence cannot be checked.";
+        } else {
+          try {
+            const mergeCheck = await client.checkProjectMerge(args.projectId, {
+              mode: "send",
+              otherBranch: baseBranch,
+            });
+            safety.mergeCheck = mergeCheck;
+            if (mergeCheck.sourceBranch !== branch.name || mergeCheck.targetBranch !== baseBranch) {
+              safety.reason =
+                `Studio checked branch '${mergeCheck.sourceBranch}' into '${mergeCheck.targetBranch}' instead of ` +
+                `'${branch.name}' into '${baseBranch}', so deletion-target divergence was not verified.`;
+            } else {
+              safety.divergenceStatus = mergeCheck.status === "up-to-date" ? "up-to-date" : "unmerged";
+            }
+            if (!safety.reason && safety.divergenceStatus === "unmerged") {
+              safety.reason =
+                `Branch '${branch.name}' has commits that are not merged into base branch '${baseBranch}'.`;
+            }
+          } catch {
+            safety.reason =
+              `Studio could not verify whether branch '${branch.name}' is merged into base branch '${baseBranch}'.`;
+          }
+        }
+      }
+
+      if (safety.reason && args.confirmDataLoss !== true) {
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidRequest,
+          `${safety.reason} No branch was deleted. Review the risk, then either make the branch safe ` +
+            "or call again with confirmDataLoss=true to explicitly accept possible data loss.",
+        );
+      }
+
       await client.deleteProjectBranch(args.projectId, args.branch, args.force === true);
       return {
         content: [{
@@ -305,6 +379,8 @@ export function registerProjectMergeHandlers(): void {
             success: true,
             branch: args.branch,
             forced: args.force === true,
+            safety,
+            dataLossConfirmed: safety.reason ? args.confirmDataLoss === true : false,
             message: `Deleted branch '${args.branch}'.`,
           }, format),
         }],

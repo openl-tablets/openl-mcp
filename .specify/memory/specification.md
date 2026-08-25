@@ -239,7 +239,7 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - `openl_read_merge_conflict_file` - Read bounded BASE/OURS/THEIRS file content
 - `openl_cancel_merge_conflicts` - Clear pending merge conflict state
 - `openl_delete_project` - Delete a project with exact-name confirmation
-- `openl_delete_project_branch` - Delete a non-base branch with confirmation/protection guards
+- `openl_delete_project_branch` - Delete a non-base branch after a base-branch divergence preflight; unmerged commits, unsaved changes, or unverifiable divergence require explicit data-loss confirmation, and protected branches retain separate force confirmation
 
 Merge-conflict resolution is deliberately not exposed through MCP. Studio does
 not provide a sufficiently safe API for an agent to resolve every conflict, and

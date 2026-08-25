@@ -87,7 +87,7 @@ branch; `send` merges the current branch into the other branch.
 - `openl_read_merge_conflict_file` - Read a bounded UTF-8 or base64 binary chunk for one BASE/OURS/THEIRS file version
 - `openl_cancel_merge_conflicts` - Clear the pending conflict session without modifying files or branches
 - `openl_delete_project` - Delete a project after exact current-name confirmation
-- `openl_delete_project_branch` - Delete a non-base branch after exact branch confirmation; protected bypass requires explicit force confirmation
+- `openl_delete_project_branch` - Delete a non-base branch after exact branch confirmation and a safe-delete preflight against the repository base; unmerged commits, unsaved changes, or unverifiable divergence require explicit data-loss confirmation, while protected bypass also requires force confirmation
 
 ### Rules/Tables Tools (10)
 - `openl_list_tables` - List project tables with pagination; follow `has_more` / `next_offset` until `has_more` is false when a complete inventory is required

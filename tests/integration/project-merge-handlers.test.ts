@@ -320,6 +320,12 @@ describe("project branch and merge handlers", () => {
       expect(config.params).toBeUndefined();
       return [200, branches];
     });
+    mockAxios.onGet("/projects/p1").reply(200, {
+      id: "p1", name: "Rating", branch: "feature/rates 2026", status: "OPENED",
+    });
+    mockAxios.onPost("/projects/p1/merge/check").reply(200, {
+      sourceBranch: "feature/rates 2026", targetBranch: "main", status: "up-to-date", canMerge: true,
+    });
     mockAxios.onDelete(/\/projects\/p1\/branches\//).reply((config) => {
       deletions.push({ url: config.url ?? "", params: config.params });
       return [204];
@@ -338,6 +344,7 @@ describe("project branch and merge handlers", () => {
       confirmBranchName: "release",
       force: true,
       confirmForce: true,
+      confirmDataLoss: true,
     }, client);
 
     await executeTool("delete_project_branch", {
@@ -349,5 +356,111 @@ describe("project branch and merge handlers", () => {
       { url: "/projects/p1/branches/release", params: { force: true } },
       { url: "/projects/p1/branches/feature/rates%202026", params: { force: false } },
     ]);
+  });
+
+  it("refuses an unmerged current branch until data loss is explicitly confirmed", async () => {
+    const branches = [
+      { name: "main", base: true },
+      { name: "feature/rates" },
+    ];
+    mockAxios.onGet("/projects/p1/branches").reply(200, branches);
+    mockAxios.onGet("/projects/p1").reply(200, {
+      id: "p1", name: "Rating", branch: "feature/rates", status: "OPENED",
+    });
+    mockAxios.onPost("/projects/p1/merge/check").reply(200, {
+      sourceBranch: "feature/rates", targetBranch: "main", status: "mergeable", canMerge: true,
+    });
+    mockAxios.onDelete("/projects/p1/branches/feature/rates").reply(204);
+
+    const request = {
+      projectId: "p1", branch: "feature/rates", confirmBranchName: "feature/rates",
+    };
+    await expect(executeTool("delete_project_branch", request, client)).rejects.toThrow(
+      /not merged into base branch 'main'.*confirmDataLoss=true/,
+    );
+    expect(mockAxios.history.delete).toHaveLength(0);
+
+    const response = await executeTool("delete_project_branch", {
+      ...request,
+      confirmDataLoss: true,
+      response_format: "json",
+    }, client);
+
+    expect(mockAxios.history.post.map((call) => JSON.parse(call.data))).toEqual([
+      { mode: "send", otherBranch: "main" },
+      { mode: "send", otherBranch: "main" },
+    ]);
+    expect(jsonResult<Record<string, unknown>>(response.content[0].text)).toMatchObject({
+      success: true,
+      dataLossConfirmed: true,
+      safety: {
+        baseBranch: "main",
+        currentBranch: "feature/rates",
+        divergenceStatus: "unmerged",
+        unsavedChanges: false,
+      },
+    });
+  });
+
+  it("does not run a misleading divergence check for a non-current deletion target", async () => {
+    const branches = [
+      { name: "main", base: true },
+      { name: "feature/other" },
+    ];
+    mockAxios.onGet("/projects/p1/branches").reply(200, branches);
+    mockAxios.onGet("/projects/p1").reply(200, {
+      id: "p1", name: "Rating", branch: "main", status: "OPENED",
+    });
+
+    await expect(executeTool("delete_project_branch", {
+      projectId: "p1", branch: "feature/other", confirmBranchName: "feature/other",
+    }, client)).rejects.toThrow(/current branch 'main'.*Open 'feature\/other'/);
+
+    expect(mockAxios.history.post).toHaveLength(0);
+    expect(mockAxios.history.delete).toHaveLength(0);
+  });
+
+  it.each([
+    ["feature/concurrent", "main"],
+    ["feature/rates", "develop"],
+  ])("rejects an up-to-date check for unexpected branches (%s -> %s)", async (sourceBranch, targetBranch) => {
+    const branches = [
+      { name: "main", base: true },
+      { name: "feature/rates" },
+    ];
+    mockAxios.onGet("/projects/p1/branches").reply(200, branches);
+    mockAxios.onGet("/projects/p1").reply(200, {
+      id: "p1", name: "Rating", branch: "feature/rates", status: "OPENED",
+    });
+    mockAxios.onPost("/projects/p1/merge/check").reply(200, {
+      sourceBranch, targetBranch, status: "up-to-date", canMerge: true,
+    });
+
+    await expect(executeTool("delete_project_branch", {
+      projectId: "p1", branch: "feature/rates", confirmBranchName: "feature/rates",
+    }, client)).rejects.toThrow(
+      `Studio checked branch '${sourceBranch}' into '${targetBranch}' instead of ` +
+        "'feature/rates' into 'main', so deletion-target divergence was not verified.",
+    );
+
+    expect(mockAxios.history.delete).toHaveLength(0);
+  });
+
+  it("requires data-loss confirmation for unsaved changes without running merge check", async () => {
+    const branches = [
+      { name: "main", base: true },
+      { name: "feature/rates" },
+    ];
+    mockAxios.onGet("/projects/p1/branches").reply(200, branches);
+    mockAxios.onGet("/projects/p1").reply(200, {
+      id: "p1", name: "Rating", branch: "feature/rates", status: "EDITING",
+    });
+
+    await expect(executeTool("delete_project_branch", {
+      projectId: "p1", branch: "feature/rates", confirmBranchName: "feature/rates",
+    }, client)).rejects.toThrow(/unsaved working-copy changes.*confirmDataLoss=true/);
+
+    expect(mockAxios.history.post).toHaveLength(0);
+    expect(mockAxios.history.delete).toHaveLength(0);
   });
 });

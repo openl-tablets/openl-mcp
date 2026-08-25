@@ -440,6 +440,9 @@ export const deleteProjectBranchSchema = z.object({
   projectId: projectIdSchema,
   branch: z.string().trim().min(1).describe("Exact branch name from openl_list_project_branches(). The repository base branch cannot be deleted."),
   confirmBranchName: z.string().trim().min(1).describe("Required safety confirmation; must exactly equal branch."),
+  confirmDataLoss: z.boolean().optional().describe(
+    "Explicitly allow deletion after the tool reports that the branch has commits absent from the base branch, has unsaved working-copy changes, or its divergence from base cannot be verified (for example, the base is unknown, the merge check fails or checks different branches, or the target is not current). Omit for the initial safe-delete attempt.",
+  ),
   force: z.boolean().optional().describe("Bypass protected-branch restrictions for eligible managers. Default false."),
   confirmForce: z.boolean().optional().describe("Must be true when force=true, confirming the protected-branch bypass."),
   response_format: ResponseFormat.optional(),
