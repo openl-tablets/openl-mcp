@@ -81,8 +81,8 @@ merge is abandoned. `receive` merges the other branch into the project's current
 branch; `send` merges the current branch into the other branch.
 
 - `openl_list_project_branches` - List branches with base/protected flags: `scope: "project"` (default) returns branches that hold the project for switching/deletion; `scope: "repository"` returns every repository branch for merge-target discovery, including branches that do not hold the project yet
-- `openl_check_project_merge` - Preview merge direction, status, permissions, and blockers without changing Git
-- `openl_merge_project_branches` - Recheck and merge branches; creates session-bound conflict state when needed
+- `openl_check_project_merge` - Check merge direction, branch relationship, permissions, and blockers without changing Git; `mergeable`/`canMerge` permits an attempt but does not predict conflicts
+- `openl_merge_project_branches` - Recheck and attempt the merge, where conflicts are first discovered; creates session-bound conflict state when needed
 - `openl_get_merge_conflicts` - Get grouped conflicted paths, BASE/OURS/THEIRS revisions, and the default message
 - `openl_read_merge_conflict_file` - Read a bounded UTF-8 or base64 binary chunk for one BASE/OURS/THEIRS file version
 - `openl_cancel_merge_conflicts` - Clear the pending conflict session without modifying files or branches

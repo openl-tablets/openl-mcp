@@ -70,7 +70,7 @@ export function registerProjectMergeHandlers(): void {
     category: "Project",
     title: "Check Project Merge",
     description:
-      "Preview whether two project branches can be merged without changing them. mode='receive' merges otherBranch into the project's current branch; mode='send' merges the current branch into otherBranch. Discover merge targets with openl_list_project_branches(scope='repository'), because a valid target may not hold the project yet. Returns source/target, mergeable or up-to-date status, canMerge, and blockedBy (bypass-required/protected-branch/locked). Run this before openl_merge_project_branches.",
+      "Check merge direction, branch relationship, permissions, and blockers without changing Git. This is not a conflict preview: status='mergeable' means the source has changes absent from the target, not that the merge is conflict-free; conflicts are discovered only by openl_merge_project_branches. status='up-to-date' means the target already contains the source. canMerge reports whether Studio permits the attempt after permission, protection, and lock checks. mode='receive' merges otherBranch into the project's current branch; mode='send' merges the current branch into otherBranch. Discover merge targets with openl_list_project_branches(scope='repository'), because a valid target may not hold the project yet.",
     schema: schemas.checkProjectMergeSchema,
     annotations: {
       readOnlyHint: true,
@@ -89,7 +89,7 @@ export function registerProjectMergeHandlers(): void {
     category: "Project",
     title: "Merge Project Branches",
     description:
-      "Merge project branches after checking feasibility. The tool repeats the check immediately before changing Git: up-to-date returns without a write, and permission/lock blockers fail before merge. mode='receive' merges otherBranch into the current branch; mode='send' merges the current branch into otherBranch. A conflict result creates read-only, session-bound conflict state: inspect it on this same MCP server, then hand resolution to the user in Studio or cancel the pending state. Never choose OURS or THEIRS automatically. force is only for an eligible protected-target bypass and requires confirmForce=true.",
+      "Attempt to merge project branches. The tool first repeats the relationship and permission precheck: up-to-date returns without a write, and permission/lock blockers fail before merge. The precheck does not predict conflicts, so an allowed attempt can still return status='conflicts'. mode='receive' merges otherBranch into the current branch; mode='send' merges the current branch into otherBranch. A conflict result creates read-only, session-bound conflict state: inspect it on this same MCP server, then hand resolution to the user in Studio or cancel the pending state. Never choose OURS or THEIRS automatically. force is only for an eligible protected-target bypass and requires confirmForce=true.",
     schema: schemas.mergeProjectBranchesSchema,
     annotations: {
       destructiveHint: true,
@@ -127,13 +127,12 @@ export function registerProjectMergeHandlers(): void {
       const response = {
         success: result.status === "success",
         ...result,
-        check,
         ...(result.status === "conflicts"
           ? {
               nextAction:
-                "Merge conflicts are stored in this Studio HTTP session. Call openl_get_merge_conflicts on this same MCP server and inspect BASE/OURS/THEIRS with openl_read_merge_conflict_file. Do not choose a side automatically: present the conflicts to the user for manual resolution in Studio, then call openl_cancel_merge_conflicts to clear this pending MCP session state.",
+                "The relationship precheck does not predict conflicts; the actual merge found conflicts stored in this Studio HTTP session. Call openl_get_merge_conflicts on this same MCP server and inspect BASE/OURS/THEIRS with openl_read_merge_conflict_file. Do not choose a side automatically: present the conflicts to the user for manual resolution in Studio, then call openl_cancel_merge_conflicts to clear this pending MCP session state.",
             }
-          : {}),
+          : { check }),
       };
       return { content: [{ type: "text", text: formatResponse(response, format) }] };
     },

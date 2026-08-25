@@ -1421,7 +1421,7 @@ export class OpenLClient {
     );
   }
 
-  /** Preview merge feasibility and permissions without changing either branch. */
+  /** Check branch relationship and attempt blockers; conflicts are discovered only by the merge. */
   async checkProjectMerge(
     projectId: string,
     request: Types.MergeRequest,

@@ -370,8 +370,10 @@ export interface MergeRequest {
 
 export interface CheckMergeResult {
   blockedBy?: "bypass-required" | "protected-branch" | "locked";
+  /** Whether Studio permits a merge attempt after permission, protection, and lock checks. */
   canMerge?: boolean;
   sourceBranch: string;
+  /** `mergeable` means the source has pending changes; it does not predict a conflict-free merge. */
   status: "mergeable" | "up-to-date";
   targetBranch: string;
 }

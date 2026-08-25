@@ -92,7 +92,7 @@ describe("project branch and merge handlers", () => {
     });
   });
 
-  it("performs a checked merge and returns the conflict recovery path", async () => {
+  it("returns the conflict recovery path without the superseded relationship check", async () => {
     let mergeBody: unknown;
     let mergeParams: Record<string, unknown> | undefined;
     mockAxios.onPost("/projects/p1/merge/check").reply(200, {
@@ -119,6 +119,8 @@ describe("project branch and merge handlers", () => {
       status: "conflicts",
       nextAction: expect.stringContaining("openl_get_merge_conflicts"),
     });
+    expect(result).not.toHaveProperty("check");
+    expect(result.nextAction).toEqual(expect.stringContaining("does not predict conflicts"));
     expect(result.nextAction).toEqual(expect.stringContaining("manual resolution in Studio"));
     expect(result.nextAction).not.toEqual(expect.stringContaining("openl_resolve_merge_conflicts"));
   });

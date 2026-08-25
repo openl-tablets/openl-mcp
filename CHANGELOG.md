@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Merge tools now state that the precheck covers branch relationship and attempt blockers rather than conflicts, and conflict responses no longer repeat the superseded `mergeable` verdict (EPBDS-16489).
 - `openl_delete_project_branch` now checks whether the current branch is merged into the repository base and requires explicit data-loss confirmation before deleting unmerged commits, unsaved changes, or a branch whose divergence cannot be verified (EPBDS-16488).
 - `openl_update_table` now checks the submitted row count against the live table before writing, so removing `totalRows` from a sliced view cannot silently delete unseen rows (EPBDS-16486).
 - Paginated list responses now advance `next_offset` by the rows actually delivered after size truncation, preventing agents from silently skipping results (EPBDS-16483).
