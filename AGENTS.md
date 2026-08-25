@@ -92,7 +92,7 @@ branch; `send` merges the current branch into the other branch.
 ### Rules/Tables Tools (10)
 - `openl_list_tables` - List project tables with pagination; follow `has_more` / `next_offset` until `has_more` is false when a complete inventory is required
 - `openl_get_table` - Get the authoritative `RawSource` 2D cell matrix; `startRow`/`maxRows` read a large table in row slices and `styles=true` includes read-only Excel cell styles. A sliced response carries `totalRows` and is for reading or narrow raw actions only
-- `openl_update_table` - Replace the complete `RawSource` matrix; rejects a window carrying `totalRows` because writing it would delete omitted rows. Call `openl_get_table` without `styles=true`: Studio write APIs cannot change formatting, and `style` is rejected rather than silently ignored
+- `openl_update_table` - Replace the complete `RawSource` matrix while preserving or adding rows; before writing, it reads one live row and rejects a shorter source even if `totalRows` was removed, preventing a sliced view from deleting unseen rows. Remove rows with `openl_delete_table_rows`. Call `openl_get_table` without `styles=true`: Studio write APIs cannot change formatting, and `style` is rejected rather than silently ignored
 - `openl_append_table` - Append full-width `RawSource` rows
 - `openl_create_project_table` - Create a table from a complete `RawSource` matrix in an existing module, or pass `modulePath` (an `.xlsx` project-relative path) to create a new module; cell formatting is unsupported by Studio write APIs
 - `openl_delete_table` - Delete an entire table (to remove a row/column WITHIN a table, use the raw action tools below)

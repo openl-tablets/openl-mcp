@@ -6,6 +6,7 @@
 import { ProtocolError, ProtocolErrorCode } from "@modelcontextprotocol/server";
 import type { ZodError } from "zod";
 
+import { validateTableIdMatch, type OpenLClient } from "../client.js";
 import * as schemas from "../schemas.js";
 import type * as Types from "../types.js";
 import { formatResponse, paginateCollection } from "../formatters.js";
@@ -77,6 +78,46 @@ function validateRawSourceAppendRows(
         `Each appended RawSource row must cover all ${width} column(s) — provide one cell object per column ` +
         `(use { "value": null } for intentionally blank cells). Nothing was appended. ` +
         `Call openl_get_table() to inspect the table's exact column layout.`,
+    );
+  }
+}
+
+/**
+ * Refuse a whole-table replacement that would remove rows. A sliced RawSource
+ * view remains dangerous after a caller drops its `totalRows` marker, so the
+ * submitted height must be checked against a bounded read of the live table.
+ */
+async function validateRawSourceReplacementRows(
+  client: OpenLClient,
+  projectId: string,
+  tableId: string,
+  source: Types.RawTableCell[][],
+): Promise<void> {
+  const readFirstRow = (id: string): Promise<Types.RawTableView> =>
+    client.getTable(projectId, id, { startRow: 0, maxRows: 1 });
+
+  let current: Types.RawTableView;
+  try {
+    current = await readFirstRow(tableId);
+  } catch (error) {
+    const aliased = isNotFoundError(error) ? resolveTableIdAlias(projectId, tableId) : undefined;
+    if (aliased === undefined) {
+      throw error;
+    }
+    current = await readFirstRow(aliased);
+  }
+
+  const reportedTotal = current.totalRows;
+  const currentRows = typeof reportedTotal === "number" && Number.isFinite(reportedTotal)
+    ? Math.max(current.source.length, reportedTotal)
+    : current.source.length;
+  if (source.length < currentRows) {
+    throw new ProtocolError(
+      ProtocolErrorCode.InvalidParams,
+      `Cannot replace table '${tableId}' with ${source.length} row(s): the current table has ${currentRows} row(s). ` +
+        "openl_update_table cannot remove rows because a partial RawSource view without totalRows is " +
+        "indistinguishable from an intentional deletion. Use openl_delete_table_rows with an explicit position " +
+        "and count to remove rows, or another narrow raw table action for isolated edits. Nothing was written.",
     );
   }
 }
@@ -200,7 +241,7 @@ export function registerTableHandlers(): void {
     category: "Rules & Tables",
     title: "Get Table Structure & Data",
     description:
-      "Get a table as its authoritative RawSource 2D cell matrix. Typed/parsed table views are intentionally unsupported because they are incomplete and cannot safely round-trip workbook content. startRow/maxRows read a large table in row slices (a windowed response carries totalRows), and styles=true adds each cell's Excel style. Only a complete response without totalRows can be modified and passed to openl_update_table; update_table rejects windows because replacing with one would delete omitted rows. A table id changes when an edit relocates the table; stale ids produced by this server are resolved automatically, otherwise refresh ids with openl_list_tables().",
+      "Get a table as its authoritative RawSource 2D cell matrix. Typed/parsed table views are intentionally unsupported because they are incomplete and cannot safely round-trip workbook content. startRow/maxRows read a large table in row slices (a windowed response carries totalRows), and styles=true adds each cell's Excel style. A window cannot replace the whole table: openl_update_table rejects totalRows and independently refuses a source with fewer rows than the live table, so removing the marker cannot erase omitted rows. For a large table whose complete response becomes a preview, use the narrow raw table action tools instead. A table id changes when an edit relocates the table; stale ids produced by this server are resolved automatically, otherwise refresh ids with openl_list_tables().",
     schema: schemas.getTableSchema,
     annotations: {
       readOnlyHint: true,
@@ -299,9 +340,10 @@ export function registerTableHandlers(): void {
     category: "Rules & Tables",
     title: "Replace Entire Table",
     description:
-      "Replace the ENTIRE table RawSource matrix with a modified version. Typed table DTOs are intentionally unsupported. Use for modifying, deleting, reordering, or structural changes; prefer the narrow raw action tools for isolated edits and append_table for additions. Required workflow: call get_table() without styles=true, preserve the complete matrix including covered cells/spans, modify it, then pass the full RawSource object here. Studio table write APIs cannot change formatting, so cell style is read-only and rejected. The response returns the CURRENT tableId after relocation. The tool reads the table back to trigger recompilation, so openl_project_status reflects the change.",
+      "Replace the ENTIRE table RawSource matrix with a modified version. Typed table DTOs are intentionally unsupported. Use for modifying, reordering, or structural changes that preserve or add rows; row removal is rejected, so use openl_delete_table_rows with an explicit position/count. Prefer the narrow raw action tools for isolated edits and append_table for additions. Required workflow: call get_table() without styles=true, preserve the complete matrix including covered cells/spans, modify it, then pass the full RawSource object here. Before writing, the tool reads one live row to verify the submitted source is not shorter than the table; this prevents a sliced view from deleting unseen rows even if totalRows was removed. Studio table write APIs cannot change formatting, so cell style is read-only and rejected. The response returns the CURRENT tableId after relocation. The tool reads the table back to trigger recompilation, so openl_project_status reflects the change.",
     schema: schemas.updateTableSchema,
     annotations: {
+      destructiveHint: true,
       idempotentHint: true,
       openWorldHint: true,
     },
@@ -315,6 +357,11 @@ export function registerTableHandlers(): void {
       const projectId = typedArgs.projectId;
       const requestedId = typedArgs.tableId;
       const notes: string[] = [];
+
+      // Preserve the client contract: an id mismatch is an input error and
+      // must fail before the row-count guard performs any Studio request.
+      validateTableIdMatch(requestedId, view.id);
+      await validateRawSourceReplacementRows(client, projectId, requestedId, view.source);
 
       // EPBDS-16084/16086: an edit that relocates the table changes its
       // location-derived id. Studio PR #1778 reports the new id directly (the
@@ -377,7 +424,7 @@ export function registerTableHandlers(): void {
     category: "Rules & Tables",
     title: "Append Raw Source Rows",
     description:
-      "Append RawSource rows to an existing table. Typed append DTOs are intentionally unsupported. Every row must cover ALL columns of the table; wrong-width rows are rejected before anything is written. Use { value: null } for a blank cell and preserve covered placeholders for merged regions. For modifying, deleting, or reordering use a narrow raw action tool or update_table. The response returns the CURRENT tableId after relocation, and the read-back triggers recompilation.",
+      "Append RawSource rows to an existing table. Typed append DTOs are intentionally unsupported. Every row must cover ALL columns of the table; wrong-width rows are rejected before anything is written. Use { value: null } for a blank cell and preserve covered placeholders for merged regions. For modifying or reordering use a narrow raw action tool or update_table; remove rows/columns only with the corresponding delete action. The response returns the CURRENT tableId after relocation, and the read-back triggers recompilation.",
     schema: schemas.appendTableSchema,
     annotations: {
       openWorldHint: true,

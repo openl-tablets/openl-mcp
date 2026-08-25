@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `openl_update_table` now checks the submitted row count against the live table before writing, so removing `totalRows` from a sliced view cannot silently delete unseen rows (EPBDS-16486).
 - Paginated list responses now advance `next_offset` by the rows actually delivered after size truncation, preventing agents from silently skipping results (EPBDS-16483).
 - CLI output piped into another command (`openl-mcp --list-tools | jq …`) is no longer cut off after the first ~64 KB: the process exited before stdout had drained.
 - Markdown test-result responses now identify each returned test unit and show failed assertions with expected and actual values (EPBDS-16134).

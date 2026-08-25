@@ -140,6 +140,14 @@ describe("MCP core — tool-call error channel", () => {
     }
   });
 
+  it("advertises whole-table replacement as destructive and idempotent", async () => {
+    const tools = await client.listTools();
+    const update = tools.tools.find((tool) => tool.name === "openl_update_table");
+
+    expect(update?.annotations?.destructiveHint).toBe(true);
+    expect(update?.annotations?.idempotentHint).toBe(true);
+  });
+
   it("surfaces a backend HTTP 405 as an isError result, not a protocol error", async () => {
     // handleToolError maps HTTP 405 to ProtocolErrorCode.MethodNotFound — the same code an
     // unknown tool produces. A registered tool that gets a 405 is still a tool

@@ -510,14 +510,14 @@ const rawTableViewSchema = z.strictObject({
 export const updateTableSchema = z.object({
   projectId: projectIdSchema,
   tableId: tableIdSchema,
-  view: rawTableViewSchema.describe("Full, non-windowed RawSource structure from openl_get_table() with modifications applied. Send the complete source matrix, not only changed cells; a view carrying totalRows is a partial window and is rejected."),
+  view: rawTableViewSchema.describe("Full, non-windowed RawSource structure from openl_get_table() with modifications applied. Send the complete source matrix, not only changed cells; a view carrying totalRows is rejected, and the handler independently rejects a source with fewer rows than the live table."),
   response_format: ResponseFormat.optional(),
 }).strict().superRefine((value, ctx) => {
   if (value.view.totalRows !== undefined) {
     ctx.addIssue({
       code: "custom",
       path: ["view", "totalRows"],
-      message: "A windowed RawSource view cannot replace the whole table because omitted rows would be deleted. Call openl_get_table without startRow/maxRows and update that complete response, or use a narrow raw table action.",
+      message: "A windowed RawSource view cannot replace the whole table because omitted rows would be deleted. Use narrow raw table actions to edit a large table; remove rows only with openl_delete_table_rows and an explicit position/count.",
     });
   }
 });
