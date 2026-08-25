@@ -74,6 +74,24 @@ function pageItemCount(data: unknown): number {
   return 1;
 }
 
+/** Align a page cursor with the items that are actually present in the response. */
+function paginationForDeliveredItems(
+  pagination: PaginationMetadata,
+  deliveredCount: number,
+  pageTruncated: boolean,
+): PaginationMetadata {
+  const nextOffset = pagination.offset + deliveredCount;
+  const hasMore = pagination.total_count !== undefined
+    ? nextOffset < pagination.total_count
+    : pageTruncated || pagination.has_more;
+
+  return {
+    ...pagination,
+    has_more: hasMore,
+    next_offset: hasMore ? nextOffset : undefined,
+  };
+}
+
 /** Keep backend metadata from overriding formatter-owned response fields. */
 function withoutWrapperFields(record: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
@@ -154,7 +172,7 @@ export function formatResponse<T>(
       limit,
       offset,
       has_more,
-      next_offset: has_more ? offset + limit : undefined,
+      next_offset: has_more ? offset + count : undefined,
       ...(total !== undefined ? { total_count: total } : {}),
     };
   }
@@ -201,9 +219,17 @@ export function formatResponse<T>(
           let itemCount = Math.max(1, Math.floor(parsedResponse.data.length * ratio * 0.9));
           let result: string;
           do {
+            const truncatedData = parsedResponse.data.slice(0, itemCount);
             const truncatedWrapper = {
               ...parsedResponse,
-              data: parsedResponse.data.slice(0, itemCount),
+              data: truncatedData,
+              ...(parsedResponse.pagination ? {
+                pagination: paginationForDeliveredItems(
+                  parsedResponse.pagination,
+                  truncatedData.length,
+                  truncatedData.length < parsedResponse.data.length,
+                ),
+              } : {}),
               truncated: true,
               truncation_message: RESPONSE_LIMITS.TRUNCATION_MESSAGE,
             };
@@ -211,9 +237,23 @@ export function formatResponse<T>(
             if (result.length <= charLimit) break;
             itemCount = Math.max(1, Math.floor(itemCount * 0.8));
           } while (itemCount > 1);
-          return result.length <= charLimit
-            ? result
-            : truncateJsonPreview(parsedResponse, charLimit);
+          if (result.length <= charLimit) {
+            return result;
+          }
+
+          const previewData = parsedResponse.data.slice(0, 1);
+          const previewResponse = {
+            ...parsedResponse,
+            data: previewData,
+            ...(parsedResponse.pagination ? {
+              pagination: paginationForDeliveredItems(
+                parsedResponse.pagination,
+                previewData.length,
+                previewData.length < parsedResponse.data.length,
+              ),
+            } : {}),
+          };
+          return truncateJsonPreview(previewResponse, charLimit);
         }
         return truncateJsonPreview(parsedResponse, charLimit);
       } catch {
@@ -1543,8 +1583,9 @@ export function paginateResults<T>(
 } {
   const total_count = results.length;
   const data = results.slice(offset, offset + limit);
-  const has_more = offset + limit < total_count;
-  const next_offset = has_more ? offset + limit : null;
+  const deliveredEnd = offset + data.length;
+  const has_more = deliveredEnd < total_count;
+  const next_offset = has_more ? deliveredEnd : null;
 
   return { data, has_more, next_offset, total_count };
 }

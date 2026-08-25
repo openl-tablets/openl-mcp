@@ -286,6 +286,20 @@ describe("formatters", () => {
       expect(parsed.pagination).toBeDefined();
     });
 
+    it("advances a short page by the number of delivered items", () => {
+      const parsed = JSON.parse(formatResponse([{ id: 10 }, { id: 11 }], "json", {
+        pagination: { limit: 50, offset: 10, total: 100, hasMore: true },
+      }));
+
+      expect(parsed.pagination).toMatchObject({
+        limit: 50,
+        offset: 10,
+        has_more: true,
+        next_offset: 12,
+        total_count: 100,
+      });
+    });
+
     it("preserves backend collection metadata in JSON and Markdown", () => {
       const options = {
         responseMetadata: {
@@ -370,6 +384,55 @@ describe("formatters", () => {
       // This input is far over the limit, so the array-truncation path always runs.
       expect(result).toContain("truncated");
       expect(result).toContain(RESPONSE_LIMITS.TRUNCATION_MESSAGE);
+    });
+
+    it("continues a truncated page from the first item not delivered", () => {
+      const backendPage = Array.from({ length: 200 }, (_, i) => ({
+        id: i,
+        name: `Table${i}`,
+        longText: "A".repeat(200),
+      }));
+      const parsed = JSON.parse(formatResponse(backendPage, "json", {
+        pagination: { limit: 200, offset: 0, total: 275, hasMore: true },
+      }));
+
+      expect(parsed.truncated).toBe(true);
+      expect(parsed.data.length).toBeLessThan(backendPage.length);
+      expect(parsed.pagination).toMatchObject({
+        limit: 200,
+        offset: 0,
+        has_more: true,
+        next_offset: parsed.data.length,
+        total_count: 275,
+      });
+    });
+
+    it("makes a truncated final backend page resumable", () => {
+      const backendPage = Array.from({ length: 75 }, (_, id) => ({ id, longText: "A".repeat(400) }));
+      const parsed = JSON.parse(formatResponse(backendPage, "json", {
+        pagination: { limit: 200, offset: 200, total: 275, hasMore: false },
+      }));
+
+      expect(parsed.truncated).toBe(true);
+      expect(parsed.data.length).toBeLessThan(backendPage.length);
+      expect(parsed.pagination.has_more).toBe(true);
+      expect(parsed.pagination.next_offset).toBe(200 + parsed.data.length);
+    });
+
+    it("advances an oversized-item preview without skipping the rest of the page", () => {
+      const backendPage = [
+        { id: "oversized", longText: "A".repeat(10_000) },
+        { id: "next" },
+        { id: "last" },
+      ];
+      const parsed = JSON.parse(formatResponse(backendPage, "json", {
+        characterLimit: 1_000,
+        pagination: { limit: 200, offset: 0, total: 275, hasMore: true },
+      }));
+
+      expect(parsed.data.preview_format).toBe("json");
+      expect(parsed.pagination.has_more).toBe(true);
+      expect(parsed.pagination.next_offset).toBe(1);
     });
 
     it("caps a large single-object JSON response with an explicit valid-JSON preview", () => {
