@@ -291,6 +291,7 @@ These conventions are mandatory for anyone — human or AI agent — changing th
 
 - Keep all documentation up to date with every code change. When a change adds, removes, or alters tools, prompts, dependencies, configuration, or behavior, update the affected docs in the same change — never leave them for later.
 - This covers every document, not just the README: this `AGENTS.md`, the `README*.md` files, everything under `docs/`, the prompt files in `prompts/`, and the spec docs under `.specify/`.
+- Treat published, versioned release notes under `docs/release-notes/` as immutable historical snapshots. Do not update an already released version to describe behavior added later; record that behavior in `CHANGELOG.md` under `Unreleased` and in the next release's notes. Change published release notes only to correct a factual error about what that release actually contained.
 - Remove obsolete information rather than letting it accumulate: no references to removed tools, prompts, or APIs, and no stale counts, examples, or links.
 
 ### Pull Requests
