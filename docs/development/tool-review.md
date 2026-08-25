@@ -585,7 +585,7 @@ The server registers **74 tools**. All are listed below.
 | 70 | `openl_read_merge_conflict_file` | Project | ✅ Complete | `GET /projects/{projectId}/merge/conflicts/files` | Read bounded BASE/OURS/THEIRS conflict-file content |
 | 71 | `openl_cancel_merge_conflicts` | Project | ✅ Complete | `DELETE /projects/{projectId}/merge/conflicts` | Clear pending session-bound conflict state after user handoff or cancellation |
 | 72 | `openl_delete_project` | Project | ✅ Complete | `DELETE /projects/{projectId}?comment=…` | Delete a project after exact-name confirmation |
-| 73 | `openl_delete_project_branch` | Project | ✅ Complete | `DELETE /projects/{projectId}/branches/{branch}?force=…` | Delete a non-base project branch with confirmation/protection guards |
+| 73 | `openl_delete_project_branch` | Project | ✅ Complete | `GET /projects/{projectId}` + `GET /projects/{projectId}/branches` + optional `POST /projects/{projectId}/merge/check` + `DELETE /projects/{projectId}/branches/{branch}?force=…` | Safe-delete a non-base branch; unmerged, unsaved, or unverifiable changes require explicit data-loss confirmation |
 | 74 | `openl_get_version` | Diagnostics | ✅ Complete | none (local build metadata) | Report the server's version, build id, commit/ref, build time, and Node/platform runtime |
 
 **Legend:**
