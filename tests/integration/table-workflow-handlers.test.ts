@@ -50,13 +50,13 @@ describe("table workflow handlers", () => {
     const response = await executeTool("run_table", {
       projectId: "p1",
       tableId: "t1",
-      inputJson: { params: [{ age: 25 }], runtimeContext: { state: "CA" } },
+      inputJson: { params: { age: 25 }, runtimeContext: { state: "CA" } },
       fromModule: "Main",
       response_format: "json",
     }, client);
 
     expect(startParams).toEqual({ tableId: "t1", fromModule: "Main" });
-    expect(startBody).toEqual({ params: [{ age: 25 }], runtimeContext: { state: "CA" } });
+    expect(startBody).toEqual({ params: { age: 25 }, runtimeContext: { state: "CA" } });
     expect(resultReads).toBe(2);
     expect(resultFields).toContain("result");
     expect(resultFields).not.toContain("resultSchema");

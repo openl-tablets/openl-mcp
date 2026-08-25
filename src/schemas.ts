@@ -144,7 +144,15 @@ export const runTableSchema = z.object({
   inputJson: z.union([
     z.array(z.unknown()),
     z.record(z.string(), z.unknown()),
-  ]).describe("Method input as JSON. Pass either the raw parameter array/object, or { params, runtimeContext? }. The value is sent to Studio unchanged."),
+  ]).superRefine((input, ctx) => {
+    if (!Array.isArray(input) && Array.isArray(input.params)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["params"],
+        message: "params must be an object keyed by method parameter name; Studio does not bind positional arrays in the params wrapper. Use { params: { parameterName: value }, runtimeContext? }.",
+      });
+    }
+  }).describe("Method input as JSON. Use an object keyed by method parameter name, or { params: { parameterName: value }, runtimeContext? }. A top-level array is the value of a single array-valued parameter, not a positional argument list. The value is sent to Studio unchanged."),
   fromModule: z.string().trim().min(1).optional().describe("Optional module name whose runtime context should be used. Usually omit; discover module names with openl_list_project_modules()."),
   withSchema: z.boolean().optional().describe("Include result and parameter JSON Schemas. Default false because schemas can be large."),
   timeoutMs: z.number().int().positive().max(600000).default(120000).optional().describe("Maximum time for the complete Studio start-and-result workflow, in milliseconds. Default 120000 (2 minutes), maximum 600000 (10 minutes). A timeout cancels the pending Studio run."),
