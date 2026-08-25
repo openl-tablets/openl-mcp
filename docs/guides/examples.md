@@ -122,6 +122,12 @@ Check whether 'feature/new-premium-logic' can be merged into the current branch
 Merge 'feature/new-premium-logic' into the current branch
 ```
 
+The merge check reports branch direction and whether protection, permission, or
+lock rules permit an attempt. `status: "mergeable"` with `canMerge: true` means
+the source has changes absent from the target and the attempt is allowed; it does
+not guarantee a conflict-free merge. Studio discovers conflicts only during the
+actual merge.
+
 If a merge reports conflicts, the assistant keeps the same Studio session, lists
 the conflicted files, and reads BASE/OURS/THEIRS versions as needed. It must not
 choose a side: Studio does not expose a sufficiently safe resolution API, and an

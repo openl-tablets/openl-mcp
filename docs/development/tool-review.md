@@ -579,8 +579,8 @@ The server registers **74 tools**. All are listed below.
 | 64 | `openl_list_table_property_definitions` | Rules | ✅ Complete | `GET /projects/{projectId}/properties` | List properties allowed for a table context |
 | 65 | `openl_copy_table` | Rules | ✅ Complete | `POST /projects/{projectId}/tables/{tableId}/copy` | Copy a table server-side with its source structure and formatting |
 | 66 | `openl_list_project_branches` | Project | ✅ Complete | `GET /projects/{projectId}/branches?scope=project\|repository` | List project-holding branches by default or all repository merge targets, with base/protected flags |
-| 67 | `openl_check_project_merge` | Project | ✅ Complete | `POST /projects/{projectId}/merge/check` | Preview merge direction, feasibility, permissions, and blockers |
-| 68 | `openl_merge_project_branches` | Project | ✅ Complete | `POST /merge/check` + `POST /projects/{projectId}/merge` | Recheck and merge branches; return session-bound conflicts when present |
+| 67 | `openl_check_project_merge` | Project | ✅ Complete | `POST /projects/{projectId}/merge/check` | Check merge direction, branch relationship, permissions, and blockers; not a conflict preview |
+| 68 | `openl_merge_project_branches` | Project | ✅ Complete | `POST /merge/check` + `POST /projects/{projectId}/merge` | Recheck and attempt the merge; discover and return session-bound conflicts when present |
 | 69 | `openl_get_merge_conflicts` | Project | ✅ Complete | `GET /projects/{projectId}/merge/conflicts` | Get conflicted paths, revision sides, and default merge message |
 | 70 | `openl_read_merge_conflict_file` | Project | ✅ Complete | `GET /projects/{projectId}/merge/conflicts/files` | Read bounded BASE/OURS/THEIRS conflict-file content |
 | 71 | `openl_cancel_merge_conflicts` | Project | ✅ Complete | `DELETE /projects/{projectId}/merge/conflicts` | Clear pending session-bound conflict state after user handoff or cancellation |

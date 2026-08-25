@@ -233,8 +233,8 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - `openl_list_project_modules` - List modules declared by a project
 - `openl_list_module_sheets` - List worksheets in a project module
 - `openl_list_project_branches` - List project-holding branches by default or all repository merge targets with `scope: "repository"`, including base/protected metadata
-- `openl_check_project_merge` - Preview merge feasibility and permissions
-- `openl_merge_project_branches` - Merge project branches after a fresh feasibility check
+- `openl_check_project_merge` - Check merge direction, branch relationship, permissions, and blockers; `mergeable`/`canMerge` permits an attempt but does not predict conflicts
+- `openl_merge_project_branches` - Recheck and attempt the merge, where conflicts are first discovered
 - `openl_get_merge_conflicts` - Get the session-bound conflict set and revision metadata
 - `openl_read_merge_conflict_file` - Read bounded BASE/OURS/THEIRS file content
 - `openl_cancel_merge_conflicts` - Clear pending merge conflict state
