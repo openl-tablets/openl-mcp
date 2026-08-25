@@ -268,7 +268,7 @@ them through image rendering and reject them as unsupported images.
 - `openl_append_table` - Append full-width RawSource rows
 - `openl_create_project_table` - Create a table/rule from a complete RawSource matrix
 - `openl_delete_table` - Delete an entire table from the project
-- `openl_run_table` - Execute one session-scoped regular-table run at a time with a deadline covering startup and bounded, backoff-based result polling; clean pending Studio state on cancellation, timeout, or failure
+- `openl_run_table` - Execute one session-scoped regular-table run at a time with parameters keyed by method name, rejecting an array-valued `params` wrapper before Studio can silently replace its values with nulls; a top-level array represents one array-valued parameter rather than positional arguments. Bound the complete workflow with a deadline covering startup and backoff-based result polling; clean pending Studio state on cancellation, timeout, or failure
 - `openl_get_table_dependencies` - Get the executable and datatype dependency graph for a project/module (optionally filtered by layer), or one table's dependency/dependent neighborhood. JSON returns the adjacency list, including bounded first/last value previews for vocabularies; Markdown visualizes executable calls as a Mermaid flowchart and the data model with declared fields, vocabulary values, and reference cardinalities as a Mermaid ER diagram, plus a separate inheritance diagram when needed
 - `openl_list_table_property_definitions` - Get properties allowed by Studio for a table context
 - `openl_copy_table` - Copy a table server-side while preserving its source structure and formatting

@@ -131,9 +131,17 @@ describe("RawSource-only table contracts", () => {
 });
 
 describe("table workflow schemas", () => {
-  it("accepts both backend-supported run input forms and rejects scalar JSON", () => {
+  it("accepts named and single-array inputs but rejects positional params wrappers", () => {
     expect(runTableSchema.safeParse({ projectId: "p1", tableId: "t1", inputJson: [42] }).success).toBe(true);
     expect(runTableSchema.safeParse({ projectId: "p1", tableId: "t1", inputJson: { params: { age: 25 } } }).success).toBe(true);
+    const positional = runTableSchema.safeParse({ projectId: "p1", tableId: "t1", inputJson: { params: [42] } });
+    expect(positional.success).toBe(false);
+    if (!positional.success) {
+      expect(positional.error.issues).toContainEqual(expect.objectContaining({
+        path: ["inputJson", "params"],
+        message: expect.stringMatching(/object keyed by method parameter name/),
+      }));
+    }
     expect(runTableSchema.safeParse({ projectId: "p1", tableId: "t1", inputJson: "invalid" }).success).toBe(false);
   });
 
