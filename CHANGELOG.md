@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING:** `openl_list_project_local_changes` and `openl_restore_project_local_change` now require explicit `projectId` and `moduleName` arguments and use Studio's project-scoped local-history API instead of whichever project and module happen to be current in the HTTP session (EPBDS-16490).
+
+### Fixed
+
+- `openl_run_table` now rejects `{ params: [...] }` with an actionable validation error instead of allowing Studio to execute it with null arguments, and no longer presents top-level arrays as positional arguments (EPBDS-16491).
+- Merge tools now state that the precheck covers branch relationship and attempt blockers rather than conflicts, and conflict responses no longer repeat the superseded `mergeable` verdict (EPBDS-16489).
+- `openl_delete_project_branch` now checks whether the current branch is merged into the repository base and requires explicit data-loss confirmation before deleting unmerged commits, unsaved changes, or a branch whose divergence cannot be verified (EPBDS-16488).
+- `openl_update_table` now checks the submitted row count against the live table before writing, so removing `totalRows` from a sliced view cannot silently delete unseen rows (EPBDS-16486).
+- Paginated list responses now advance `next_offset` by the rows actually delivered after size truncation, preventing agents from silently skipping results (EPBDS-16483).
+
+## [1.2.0] - 2026-08-24
+
 ### Added
 
 - `OPENL_MCP_TOOLS`: an optional server-side allow-list of the tools to serve. **Unset** — the default — serves every tool, so no existing deployment changes. **Set** to a comma-separated list (bare or `openl_`-prefixed), only those tools are listed and only those can be called; anything else answers `MethodNotFound`. **Set but naming no tool** (`""`, whitespace, a lone comma) serves nothing and logs why — a restriction setting must not fail towards less restriction. A read-and-diagnostics subset of 39 tools cuts the schema payload a client receives from ~169 KB to ~85 KB.
@@ -16,7 +30,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **BREAKING:** `openl_list_project_local_changes` and `openl_restore_project_local_change` now require explicit `projectId` and `moduleName` arguments and use Studio's project-scoped local-history API instead of whichever project and module happen to be current in the HTTP session (EPBDS-16490).
 - `openl_get_table_dependencies` now exposes Studio's datatype/vocabulary graph with project-level layer filtering and datatype relationship and value details (EPBDS-15474).
 - Binary project/conflict file reads now return lossless base64 in an interoperable JSON TextContent envelope, and `openl_write_project_file` accepts a schema-declared base64 `blob` while retaining whitespace-wrapped legacy base64 input (EPBDS-16385).
 - Upgraded to the MCP TypeScript SDK v2 and added negotiation for the modern `2026-07-28` protocol while retaining the legacy 2025 protocol for existing clients. HTTP modern requests are stateless; stdio remains connection-pinned (EPBDS-16385).
@@ -29,11 +42,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `openl_run_table` now rejects `{ params: [...] }` with an actionable validation error instead of allowing Studio to execute it with null arguments, and no longer presents top-level arrays as positional arguments (EPBDS-16491).
-- Merge tools now state that the precheck covers branch relationship and attempt blockers rather than conflicts, and conflict responses no longer repeat the superseded `mergeable` verdict (EPBDS-16489).
-- `openl_delete_project_branch` now checks whether the current branch is merged into the repository base and requires explicit data-loss confirmation before deleting unmerged commits, unsaved changes, or a branch whose divergence cannot be verified (EPBDS-16488).
-- `openl_update_table` now checks the submitted row count against the live table before writing, so removing `totalRows` from a sliced view cannot silently delete unseen rows (EPBDS-16486).
-- Paginated list responses now advance `next_offset` by the rows actually delivered after size truncation, preventing agents from silently skipping results (EPBDS-16483).
 - CLI output piped into another command (`openl-mcp --list-tools | jq …`) is no longer cut off after the first ~64 KB: the process exited before stdout had drained.
 - Markdown test-result responses now identify each returned test unit and show failed assertions with expected and actual values (EPBDS-16134).
 - Updated the transitive `@hono/node-server` dependency to a patched release for the Windows `serve-static` path-traversal advisory GHSA-frvp-7c67-39w9.
