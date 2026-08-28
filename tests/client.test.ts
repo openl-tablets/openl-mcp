@@ -2031,32 +2031,40 @@ describe("OpenLClient — additional method coverage", () => {
     });
   });
 
-  describe("Local change history (gap)", () => {
+  describe("Local change history", () => {
     describe("getProjectLocalChanges", () => {
-      it("GETs /history/project and returns the change items", async () => {
+      it("GETs the explicitly addressed project and module history", async () => {
+        let params: Record<string, unknown> | undefined;
         const items: Types.ProjectHistoryItem[] = [
           { id: "history-1", current: true, modifiedOn: "2026-01-01T00:00:00Z" },
         ];
-        mockAxios.onGet("/history/project").reply(200, items);
+        mockAxios.onGet("/projects/design%3AProject/local-history").reply((config) => {
+          params = config.params;
+          return [200, items];
+        });
 
-        const result = await client.getProjectLocalChanges();
+        const result = await client.getProjectLocalChanges("design:Project", "Main Rules");
         expect(result).toEqual(items);
+        expect(params).toEqual({ module: "Main Rules" });
       });
     });
 
     describe("restoreProjectLocalChange", () => {
-      it("POSTs the historyId as a text/plain body to /history/restore", async () => {
-        let contentType: string | undefined;
+      it("POSTs the selected version as JSON for the explicitly addressed project and module", async () => {
         let body: unknown;
-        mockAxios.onPost("/history/restore").reply((config) => {
+        let contentType: string | undefined;
+        let params: Record<string, unknown> | undefined;
+        mockAxios.onPost("/projects/design%3AProject/local-history/restore").reply((config) => {
+          body = JSON.parse(config.data);
           contentType = (config.headers?.["Content-Type"] ?? config.headers?.["content-type"]) as string;
-          body = config.data;
+          params = config.params;
           return [204];
         });
 
-        await client.restoreProjectLocalChange("hist-42");
-        expect(contentType).toBe("text/plain");
-        expect(body).toBe("hist-42");
+        await client.restoreProjectLocalChange("design:Project", "Main Rules", "hist-42");
+        expect(body).toEqual({ version: "hist-42" });
+        expect(contentType).toContain("application/json");
+        expect(params).toEqual({ module: "Main Rules" });
       });
     });
   });

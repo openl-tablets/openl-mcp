@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING:** `openl_list_project_local_changes` and `openl_restore_project_local_change` now require explicit `projectId` and `moduleName` arguments and use Studio's project-scoped local-history API instead of whichever project and module happen to be current in the HTTP session (EPBDS-16490).
 - `openl_get_table_dependencies` now exposes Studio's datatype/vocabulary graph with project-level layer filtering and datatype relationship and value details (EPBDS-15474).
 - Binary project/conflict file reads now return lossless base64 in an interoperable JSON TextContent envelope, and `openl_write_project_file` accepts a schema-declared base64 `blob` while retaining whitespace-wrapped legacy base64 input (EPBDS-16385).
 - Upgraded to the MCP TypeScript SDK v2 and added negotiation for the modern `2026-07-28` protocol while retaining the legacy 2025 protocol for existing clients. HTTP modern requests are stateless; stdio remains connection-pinned (EPBDS-16385).

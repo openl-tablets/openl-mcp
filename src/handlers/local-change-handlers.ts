@@ -14,7 +14,7 @@ export function registerLocalChangeHandlers(): void {
     category: "Project",
     title: "List Local Change History",
     description:
-      "List local change history for a project. Returns list of workspace history items with versions, authors, timestamps, and comments. NOTE: Requires the project to be opened (openl_open_project first); not available for repository 'local' (local projects cannot be opened). Uses session-based project context; no projectId parameter.",
+      "List a module's local edit history for an explicitly identified project. Returns versions, timestamps, and which version is current. The project must be opened first with openl_open_project; repository 'local' is unsupported because local projects cannot be opened. Use openl_list_project_modules to obtain the required moduleName.",
     schema: schemas.listProjectLocalChangesSchema,
     annotations: {
       readOnlyHint: true,
@@ -26,9 +26,7 @@ export function registerLocalChangeHandlers(): void {
 
       const format = typedArgs.response_format;
 
-      // Note: This endpoint requires project to be loaded in OpenL Studio session.
-      // The endpoint `/history/project` uses session-based project context.
-      const changes = await client.getProjectLocalChanges();
+      const changes = await client.getProjectLocalChanges(typedArgs.projectId, typedArgs.moduleName);
 
       const formattedResult = formatResponse(changes, format, {
         dataType: "local_changes",
@@ -45,7 +43,7 @@ export function registerLocalChangeHandlers(): void {
     category: "Project",
     title: "Restore Previous Local Version",
     description:
-      "Restore a project to a specified version from its local history. Use the historyId from openl_list_project_local_changes response. NOTE: Requires the project to be opened first; not available for repository 'local'. Uses session-based project context; no projectId parameter.",
+      "Restore a project module to a version from its local edit history. Use the projectId and moduleName from the corresponding openl_list_project_local_changes call, plus a historyId returned by it. The project must be opened first; repository 'local' is unsupported.",
     schema: schemas.restoreProjectLocalChangeSchema,
     annotations: {
       destructiveHint: true,
@@ -56,13 +54,17 @@ export function registerLocalChangeHandlers(): void {
 
       const format = typedArgs.response_format;
 
-      // Note: This endpoint requires project to be loaded in OpenL Studio session.
-      // The endpoint `/history/restore` uses session-based project context.
-      await client.restoreProjectLocalChange(typedArgs.historyId);
+      await client.restoreProjectLocalChange(
+        typedArgs.projectId,
+        typedArgs.moduleName,
+        typedArgs.historyId,
+      );
 
       const result = {
         success: true,
-        message: `Successfully restored project to history version '${typedArgs.historyId}'`,
+        message: `Successfully restored project module to local history version '${typedArgs.historyId}'`,
+        projectId: typedArgs.projectId,
+        moduleName: typedArgs.moduleName,
         historyId: typedArgs.historyId,
       };
 

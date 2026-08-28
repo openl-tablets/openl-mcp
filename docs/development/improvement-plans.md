@@ -462,11 +462,10 @@ vs none, oversized body, unknown session id, origin checks, shutdown.
   (violates the tests-mirror-src convention); `tests/stomp-waits.compilation.test.ts`
   should be `tests/stomp-waits.test.ts`; `tests/cli-spawn.test.ts` mirrors no
   `src/cli-spawn.ts` (it exercises `index.ts` dispatch — rename or document).
-- Six tools' handler layer is exercised nowhere: `list_deploy_repositories`,
-  `list_project_local_changes`, `list_repository_features`, `redeploy_project`,
-  `repository_project_revisions`, `restore_project_local_change` — which is
+- Three tools' handler layer is exercised nowhere: `list_deploy_repositories`,
+  `list_repository_features`, and `redeploy_project` — which is
   exactly where the A4/A9-class formatter and resolution bugs live.
-- `local-change-handlers.ts` 13%, `repository-handlers.ts` 47%, `login.ts` 52%,
+- `repository-handlers.ts` 47%, `login.ts` 52%,
   `fetch-guides.ts` 48%.
 
 ### E6. Test-suite correctness [P1, S]

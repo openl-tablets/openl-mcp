@@ -102,8 +102,8 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 
 **Git-based versioning**:
 - View committed project revisions (`openl_repository_project_revisions`)
-- View uncommitted workspace changes (`openl_list_project_local_changes`)
-- Restore a previous local change (`openl_restore_project_local_change`)
+- View a module's uncommitted workspace changes by explicit project and module (`openl_list_project_local_changes`)
+- Restore that module to a previous local change (`openl_restore_project_local_change`)
 
 **Revision Metadata**:
 - Commit hash (SHA)
@@ -228,8 +228,8 @@ The OpenL MCP Server is a Model Context Protocol implementation that provides AI
 - `openl_close_project` - Close project with save/discard options
 - `openl_project_status` - Lazily compile when idle and return compile state plus diagnostics (errors/warnings with location)
 - `openl_create_project_branch` - Create new branch
-- `openl_list_project_local_changes` - List local change history
-- `openl_restore_project_local_change` - Restore previous local version
+- `openl_list_project_local_changes` - List a module's local change history by explicit `projectId` and `moduleName`
+- `openl_restore_project_local_change` - Restore a module to a local version by explicit `projectId` and `moduleName`
 - `openl_list_project_modules` - List modules declared by a project
 - `openl_list_module_sheets` - List worksheets in a project module
 - `openl_list_project_branches` - List project-holding branches by default or all repository merge targets with `scope: "repository"`, including base/protected metadata
