@@ -315,7 +315,7 @@ The old `content` plus `encoding: "base64"` request remains accepted for compati
 ### 21. `openl_restore_project_local_change`
 
 **Status**: ✅ Complete  
-**OpenL API**: `POST /projects/{projectId}/local-history/restore?module={moduleName}` with `{ "version": historyId }`
+**OpenL API**: `POST /projects/{projectId}/local-history/restore?module={moduleName}` with `{ "version": historyId }` (requires project to be open)
 
 **Extra/Missed Inputs**:
 - ✅ Covered: `projectId`, required `moduleName`, `historyId`
@@ -527,7 +527,7 @@ The server registers **74 tools**. All are listed below.
 | 12 | `openl_get_project_agent_context` | Guidance | ✅ Complete | project AGENTS.md chain (file-search, ANCESTORS scope) | Resolve the AGENTS.md hierarchy applying to a project path, with referenced bundled-guide ids |
 | 13 | `openl_create_project_branch` | Project | ✅ Complete | `POST /projects/{projectId}/branches` | Create new branch from revision |
 | 14 | `openl_list_project_local_changes` | Project | ✅ Complete | `GET /projects/{projectId}/local-history?module=...` | List one module's local change history (requires project open) |
-| 15 | `openl_restore_project_local_change` | Project | ✅ Complete | `POST /projects/{projectId}/local-history/restore?module=...` | Restore one module to a previous local version |
+| 15 | `openl_restore_project_local_change` | Project | ✅ Complete | `POST /projects/{projectId}/local-history/restore?module=...` | Restore one module to a previous local version (requires project open) |
 | 16 | `openl_repository_project_revisions` | Repository | ✅ Complete | `GET /projects/{projectId}/history` | Get committed history in the project's current branch |
 | 17 | `openl_read_project_file` | Files | ✅ Complete | project file read | Read a file from the project |
 | 18 | `openl_write_project_file` | Files | ✅ Complete | project file write | Create or overwrite a project file |

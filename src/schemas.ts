@@ -36,7 +36,7 @@ export const PaginationParams = z.object({
 });
 
 // Project ID: opaque backend identifier from openl_list_projects() response
-export const projectIdSchema = z.string().describe("Project ID returned by backend. Use the exact 'projectId' value from openl_list_projects() response without modification or reformatting.");
+export const projectIdSchema = z.string().min(1, "Project ID must not be empty.").describe("Project ID returned by backend. Use the exact 'projectId' value from openl_list_projects() response without modification or reformatting.");
 
 export const repositoryNameSchema = z.string().describe("Repository identifier. Pass either the 'id' or the 'name' field from openl_list_repositories() — the tool accepts both (and is case-insensitive). DO NOT invent values like 'Design Repository' or 'design-repo'; the actual names are typically short tokens (e.g. 'Design'). Always call openl_list_repositories() first if you don't already have the value in context.");
 
