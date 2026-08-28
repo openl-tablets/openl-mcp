@@ -1893,41 +1893,30 @@ export class OpenLClient {
     );
   }
 
-  /**
-   * Get project local changes (workspace history)
-   *
-   * @returns List of local change history items
-   * @note This endpoint requires the project to be loaded in OpenL Studio session.
-   *       The endpoint `/history/project` uses session-based project context.
-   */
-  async getProjectLocalChanges(): Promise<Types.ProjectHistoryItem[]> {
-    // Note: This endpoint requires the project to be loaded in OpenL Studio session
-    // The endpoint is /history/project and uses session-based project context
+  /** Get one named module's local edit history from an opened project. */
+  async getProjectLocalChanges(
+    projectId: string,
+    moduleName: string
+  ): Promise<Types.ProjectHistoryItem[]> {
+    const projectPath = this.buildProjectPath(projectId);
     const response = await this.axiosInstance.get<Types.ProjectHistoryItem[]>(
-      "/history/project"
+      `${projectPath}/local-history`,
+      { params: { module: moduleName } }
     );
     return response.data;
   }
 
-  /**
-   * Restore project to a local change version
-   *
-   * @param historyId - History ID to restore
-   * @returns Success status (204 No Content on success)
-   * @note This endpoint requires the project to be loaded in OpenL Studio session.
-   *       The endpoint `/history/restore` uses session-based project context.
-   */
-  async restoreProjectLocalChange(historyId: string): Promise<void> {
-    // Note: This endpoint requires the project to be loaded in OpenL Studio session
-    // The endpoint is /history/restore and uses session-based project context
+  /** Restore a named module from one opened project's local edit history. */
+  async restoreProjectLocalChange(
+    projectId: string,
+    moduleName: string,
+    historyId: string
+  ): Promise<void> {
+    const projectPath = this.buildProjectPath(projectId);
     await this.axiosInstance.post(
-      "/history/restore",
-      historyId,
-      {
-        headers: {
-          "Content-Type": "text/plain",
-        },
-      }
+      `${projectPath}/local-history/restore`,
+      { version: historyId },
+      { params: { module: moduleName } }
     );
   }
 

@@ -15,7 +15,7 @@ Projects with `repository: 'local'` are stored on disk without Git. For them, **
 | Repositories/projects | `openl_list_repositories`, `openl_list_repository_features`, `openl_list_projects`, `openl_get_project` | ✅ Supported. Note: `openl_list_projects(repository: "local")` may fail if "local" is not in list_repositories; list without filter then filter by `repository === "local"` in response. For repo "local", branches/versions N/A |
 | Open/save/close | `openl_open_project`, `openl_save_project`, `openl_close_project` | ❌ Blocked in MCP and API |
 | Git (branches, history) | `openl_list_branches`, `openl_create_project_branch`, `openl_repository_project_revisions` | ❌ Not applicable (no Git) |
-| Session history | `openl_list_project_local_changes`, `openl_restore_project_local_change` | ❌ Require opened project; local cannot be opened |
+| Local edit history | `openl_list_project_local_changes`, `openl_restore_project_local_change` | ❌ Require opened project; local cannot be opened |
 | Tables/tests | `openl_list_tables`, `openl_get_table`, `openl_update_table`, `openl_append_table`, `openl_create_project_table`, `openl_delete_table`, the raw table-source action tools (`openl_insert_table_rows`, `openl_delete_table_rows`, `openl_update_table_cell`, `openl_merge_table_cells`, …), `openl_start_project_tests`, `openl_get_test_results_*` | ✅ Allowed; no OPENED/EDITING check; tests run without open |
 | Project files | `openl_read_project_file`, `openl_write_project_file`, `openl_search_project_files`, `openl_copy_project_file`, `openl_move_project_file`, `openl_delete_project_file` | ✅ Work directly on project files |
 | Deploy | `openl_list_deploy_repositories`, `openl_list_deployments`, `openl_deploy_project`, `openl_redeploy_project` | Deploy from design repo; local usually not used |
@@ -301,27 +301,27 @@ The old `content` plus `encoding: "base64"` request remains accepted for compati
 ### 20. `openl_list_project_local_changes`
 
 **Status**: ✅ Complete  
-**OpenL API**: `GET /history/project` (session-based, requires project to be open)
+**OpenL API**: `GET /projects/{projectId}/local-history?module={moduleName}` (requires project to be open)
 
 **Extra/Missed Inputs**:
-- ✅ Covered: No `projectId` parameter needed (endpoint uses session-based project context)
+- ✅ Covered: `projectId`, required `moduleName`
+- ℹ️ Studio defaults an omitted module to the first module, but MCP requires `moduleName` so history never depends on descriptor ordering
 
 **Recommendations**:
-- Document that project must be opened in OpenL Studio session first (use `openl_open_project` to open the project)
-- Consider adding validation to check if project is open before calling
+- None
 
 ---
 
 ### 21. `openl_restore_project_local_change`
 
 **Status**: ✅ Complete  
-**OpenL API**: `POST /history/restore` with `historyId` (text/plain body)
+**OpenL API**: `POST /projects/{projectId}/local-history/restore?module={moduleName}` with `{ "version": historyId }`
 
 **Extra/Missed Inputs**:
-- ✅ Covered: `historyId` (no `projectId` parameter needed - endpoint uses session-based project context)
+- ✅ Covered: `projectId`, required `moduleName`, `historyId`
 
 **Recommendations**:
-- Document that project must be opened in OpenL Studio session first (use `openl_open_project` to open the project)
+- None
 
 ---
 
@@ -526,8 +526,8 @@ The server registers **74 tools**. All are listed below.
 | 11 | `openl_project_status` | Project | ✅ Complete | project compile state + diagnostics | Get `compileState` plus errors/warnings with location |
 | 12 | `openl_get_project_agent_context` | Guidance | ✅ Complete | project AGENTS.md chain (file-search, ANCESTORS scope) | Resolve the AGENTS.md hierarchy applying to a project path, with referenced bundled-guide ids |
 | 13 | `openl_create_project_branch` | Project | ✅ Complete | `POST /projects/{projectId}/branches` | Create new branch from revision |
-| 14 | `openl_list_project_local_changes` | Project | ✅ Complete | `GET /history/project` (session-based) | List local change history (requires project open) |
-| 15 | `openl_restore_project_local_change` | Project | ✅ Complete | `POST /history/restore` with `historyId` | Restore project to previous local version |
+| 14 | `openl_list_project_local_changes` | Project | ✅ Complete | `GET /projects/{projectId}/local-history?module=...` | List one module's local change history (requires project open) |
+| 15 | `openl_restore_project_local_change` | Project | ✅ Complete | `POST /projects/{projectId}/local-history/restore?module=...` | Restore one module to a previous local version |
 | 16 | `openl_repository_project_revisions` | Repository | ✅ Complete | `GET /projects/{projectId}/history` | Get committed history in the project's current branch |
 | 17 | `openl_read_project_file` | Files | ✅ Complete | project file read | Read a file from the project |
 | 18 | `openl_write_project_file` | Files | ✅ Complete | project file write | Create or overwrite a project file |

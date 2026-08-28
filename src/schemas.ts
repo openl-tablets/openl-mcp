@@ -669,12 +669,18 @@ export const listDeployRepositoriesSchema = z.object({
 // Local Changes & Restore Schemas
 // =============================================================================
 
+// Studio can default an omitted module to the first descriptor entry, but local history
+// belongs to a specific edited module, so MCP requires an explicit, stable selection.
 export const listProjectLocalChangesSchema = z.object({
+  projectId: projectIdSchema,
+  moduleName: z.string().trim().min(1).describe("Module name exactly as returned by openl_list_project_modules()."),
   response_format: ResponseFormat.optional(),
 }).strict();
 
 export const restoreProjectLocalChangeSchema = z.object({
-  historyId: z.string().describe("History ID to restore (from list_project_local_changes response)"),
+  projectId: projectIdSchema,
+  moduleName: z.string().trim().min(1).describe("Module name used with openl_list_project_local_changes()."),
+  historyId: z.string().trim().min(1).describe("Local history entry ID to restore, from openl_list_project_local_changes()."),
   response_format: ResponseFormat.optional(),
 }).strict();
 

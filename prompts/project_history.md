@@ -12,7 +12,7 @@ arguments:
 OpenL tracks two kinds of history:
 
 - **Committed history** — the Git commit log of a project in a design repository. Read it with **openl_repository_project_revisions**.
-- **Local workspace history** — uncommitted changes saved while the project is open. List it with **openl_list_project_local_changes** and roll back with **openl_restore_project_local_change**.
+- **Local workspace history** — uncommitted versions of a specific module while its project is open. List them with **openl_list_project_local_changes** and roll back with **openl_restore_project_local_change**.
 
 History applies only to projects in a design repository. For `repository: 'local'`, neither committed revisions nor local change history is available (local projects cannot be opened).
 
@@ -40,12 +40,17 @@ The history is read from the branch the project is currently on. Addressing it b
 
 ## Local workspace history — openl_list_project_local_changes
 
-Use this for the uncommitted change history of a project you have open. It is session-based: call **openl_open_project** first, and it takes no `projectId` argument.
+Use this for the uncommitted change history of a module in a project you have open. Call **openl_open_project** first, then **openl_list_project_modules** to obtain the exact module name. The history endpoint addresses the project and module explicitly instead of relying on whichever module happens to be current in the HTTP session.
 
 - Review versions saved locally before they are committed
 - Find an earlier local version to recover from
 
-To roll back, pass the `historyId` from the list response to **openl_restore_project_local_change** (this overwrites the current local state, so confirm before restoring).
+Both local-history tools require:
+
+- `projectId` — the stable project ID returned by **openl_list_projects**
+- `moduleName` — the exact module name returned by **openl_list_project_modules**
+
+To roll back, pass those same identifiers and the `historyId` from the list response to **openl_restore_project_local_change**. This overwrites that module's current local state, so confirm before restoring.
 
 ## Choosing between them
 

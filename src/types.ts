@@ -451,7 +451,7 @@ export interface ProjectRevision {
   commentParts?: string[];
 }
 
-/** One project working-copy snapshot from GET /history/project. */
+/** One module working-copy snapshot from GET /projects/{projectId}/local-history. */
 export interface ProjectHistoryItem {
   current?: boolean;
   id?: string;
