@@ -13,6 +13,7 @@ import {
   listProjectBranchesSchema,
   listProjectsSchema,
   mergeProjectBranchesSchema,
+  projectIdSchema,
   runTableSchema,
   updateTableSchema,
   z,
@@ -29,6 +30,14 @@ const rawTable = {
     covered: false,
   }]],
 };
+
+describe("opaque project identifiers", () => {
+  it("rejects an empty ID without normalizing non-empty values", () => {
+    expect(projectIdSchema.safeParse("").success).toBe(false);
+    expect(projectIdSchema.parse(" design:Rules ")).toBe(" design:Rules ");
+    expect(projectIdSchema.parse(" ")).toBe(" ");
+  });
+});
 
 describe("RawSource-only table contracts", () => {
   it("publishes only RawSource for create, update, and append", () => {

@@ -59,8 +59,8 @@ by id on demand.
 - `openl_save_project` - Save project changes to Git with validation
 - `openl_close_project` - Close project with save/discard options (prevents data loss)
 - `openl_create_project_branch` - Create new branch
-- `openl_list_project_local_changes` - View one module's workspace history using explicit `projectId` and `moduleName`
-- `openl_restore_project_local_change` - Restore one module to a listed local version using explicit `projectId` and `moduleName`
+- `openl_list_project_local_changes` - View one module's workspace history using explicit `projectId` and `moduleName`; requires an opened project and does not support repository `local`
+- `openl_restore_project_local_change` - Restore one module to a listed local version using explicit `projectId` and `moduleName`; requires an opened project and does not support repository `local`
 - `openl_start_project_tests` - Start project test execution
 - `openl_get_test_results_summary` - Get brief test execution summary
 - `openl_get_test_results` - Get full test execution results with pagination
