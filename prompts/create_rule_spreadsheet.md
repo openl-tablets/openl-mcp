@@ -15,7 +15,8 @@ typed Spreadsheet or SimpleSpreadsheet request.
 2. Load the bundled Spreadsheet specification and formula guidance. OpenL
    expressions are stored as cell text; do not substitute Excel formulas.
 3. Inspect an existing Spreadsheet with `openl_get_table` when possible and
-   preserve its row/column headers, formulas, blanks, merges, and covered cells.
+   preserve its row/column headers, formulas, blanks, merges, covered cells, and
+   context-parsed multi-value arrays.
 4. Build the complete `source` matrix and call `openl_create_project_table` with
    `{ tableType: "RawSource", name, source }`.
 5. Prefer raw action tools for individual formula/row/column corrections. Use

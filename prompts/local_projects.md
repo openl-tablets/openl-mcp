@@ -10,7 +10,7 @@ For projects with **repository: 'local'** (local-only, stored as files on disk, 
 - **Never check or require OPENED/EDITING** — local projects are always considered editable.
 - **Avoid calling** `openl_open_project`, `openl_save_project`, or `openl_close_project`; do not use Git tools (branches, history, revert).
 - **Use** `openl_list_projects` (call without repository filter, follow pagination to completion, then filter results by `repository === "local"`—filter parameter "local" often fails), `openl_get_project`, and table/test tools (`openl_list_tables`, `openl_get_table`, `openl_update_table`, `openl_append_table`, `openl_create_project_table`, `openl_start_project_tests`, `openl_get_test_results_summary`, `openl_get_test_results`, `openl_get_test_results_by_table`) directly — no open step. Tests for local projects run without opening the project.
-- **Use RawSource only** for table content: get returns the raw matrix and create/update/append accept only `tableType: "RawSource"`. Never construct typed Rules/Spreadsheet/Datatype/Test payloads.
+- **Use RawSource only** for table content: get returns the raw matrix and create/update/append accept only `tableType: "RawSource"`. Preserve Studio's context-parsed one-dimensional multi-value arrays; never construct typed Rules/Spreadsheet/Datatype/Test payloads or guess OpenL array text.
 
 # Local projects (repository: local)
 

@@ -539,6 +539,34 @@ describe("Tool Handler Integration Tests", () => {
       expect(putBody.tableType).toBe("RawSource");
     });
 
+    it("openl_get_table multi-values round-trip through a full-table update", async () => {
+      const rawTable = {
+        id: "t1",
+        tableType: "RawSource",
+        kind: "Data",
+        source: [
+          [{ cell: "A1", value: "Data Rating ratings" }],
+          [{ cell: "A2", value: "attributes" }],
+          [{ cell: "A3", value: "Ratings" }],
+          [{ cell: "A4", value: ["MA2", "FA+", "SPA"] }],
+        ],
+      };
+      let putBody: Record<string, any> = {};
+      mockAxios.onGet(/\/tables\/t1$/).reply(200, rawTable);
+      mockAxios.onPut(/\/tables\/t1$/).reply((config) => {
+        putBody = JSON.parse(config.data);
+        return [204];
+      });
+
+      const getResult = await executeTool("get_table", {
+        projectId: "p1", tableId: "t1", response_format: "json",
+      }, client);
+      const view = JSON.parse(getResult.content[0].text as string).data;
+      await executeTool("update_table", { projectId: "p1", tableId: "t1", view }, client);
+
+      expect(putBody.source[3][0].value).toEqual(["MA2", "FA+", "SPA"]);
+    });
+
     it("openl_update_table rejects a windowed RawSource view before it can delete omitted rows", async () => {
       const view = {
         id: "t1",
@@ -828,6 +856,27 @@ describe("Tool Handler Integration Tests", () => {
       expect(postBody).toEqual({
         operation: "update",
         target: { type: "cell", row: 2, column: 1, value: null },
+      });
+    });
+
+    it("openl_update_table_cell forwards a Studio multi-value array unchanged", async () => {
+      let postBody: Record<string, any> = {};
+      mockAxios.onPost(/\/tables\/t1\/actions$/).reply((config) => {
+        postBody = JSON.parse(config.data);
+        return [204];
+      });
+      mockAxios.onGet(/\/tables\/t1$/).reply(200, {
+        id: "t1", name: "T", tableType: "RawSource", kind: "Data",
+      });
+
+      await executeTool("update_table_cell", {
+        projectId: "p1", tableId: "t1", row: 3, column: 0,
+        value: ["MA2", "FA+", "SPA"],
+      }, client);
+
+      expect(postBody).toEqual({
+        operation: "update",
+        target: { type: "cell", row: 3, column: 0, value: ["MA2", "FA+", "SPA"] },
       });
     });
 

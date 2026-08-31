@@ -95,6 +95,16 @@ write endpoints ignore style fields, so MCP write schemas intentionally reject
 `style` instead of reporting a formatting change that did not happen. Full-table
 updates must start from a raw read without styles.
 
+Raw cell values have one shared read/write domain across create, append, full
+update, and every narrow cell/row/column/range action: scalar
+string/number/boolean/null values or Studio's one-dimensional multi-value arrays.
+Representable arrays are non-empty and contain only those scalars; a singleton
+`[null]`, nested arrays, objects, and string elements surrounded by characters
+Studio trims (whitespace or ISO controls) are rejected. MCP validates only this
+transport shape. Context-dependent parsing
+and reversible workbook serialization remain Studio responsibilities, so MCP does
+not guess or construct OpenL lexical array syntax.
+
 ## Build identity
 
 The package version alone cannot identify a running server: every nightly tarball

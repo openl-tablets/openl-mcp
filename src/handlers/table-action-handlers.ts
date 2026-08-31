@@ -67,6 +67,9 @@ const ACTION_SUFFIX =
   "(row 0 is the header row, column 0 carries the leading labels). An edit that relocates the table " +
   "(it had no room to grow in place) CHANGES its location-derived id; the response always returns the " +
   "table's CURRENT id as 'tableId' (plus previousTableId when it changed) — use it for subsequent calls. " +
+  "When the tool writes cell values, it accepts scalar string/number/boolean/null values and Studio's " +
+  "one-dimensional multi-value arrays. Arrays must be non-empty and contain only scalars; [null], nested " +
+  "arrays, objects, and string elements surrounded by Studio-trimmed whitespace or control characters are rejected. " +
   "Note: the studio does not auto-compile after an edit; this tool reads the table back to trigger the " +
   "recompile, so a subsequent openl_project_status reflects the change.";
 
@@ -232,7 +235,7 @@ const ACTION_TOOLS: ActionToolSpec[] = [
     pastTenseEdit: "updated a cell of",
     annotations: { idempotentHint: true, openWorldHint: true },
     description:
-      "Update the value of a single existing cell at ('row','column') in a table's raw source. 'value' is required: pass a string/number/boolean to set the cell, or null to clear it." +
+      "Update the value of a single existing cell at ('row','column') in a table's raw source. 'value' is required: pass a scalar or one-dimensional multi-value array to set the cell, or null to clear it." +
       ACTION_SUFFIX,
     buildAction: (a) => ({
       operation: "update",
@@ -242,7 +245,7 @@ const ACTION_TOOLS: ActionToolSpec[] = [
         column: a.column as number,
         // `value` is required by the schema (nullable), so it is always present and
         // sent explicitly: a non-null value sets the cell, null clears it.
-        value: a.value,
+        value: a.value as Types.RawCellValue,
       },
     }),
   },

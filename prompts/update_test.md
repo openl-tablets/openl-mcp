@@ -19,6 +19,8 @@ is not an MCP contract.
 ## Workflow
 
 1. Call `openl_get_table(testId)` and inspect its `source` matrix.
+   Preserve context-parsed multi-value arrays as arrays when updating or
+   round-tripping Test cells.
 2. Consult the bundled Test table specification before changing header,
    parameter, `_res_`, or `_error_` cells.
 3. Prefer a narrow raw action:
@@ -33,3 +35,8 @@ is not an MCP contract.
 
 Always use the current `tableId` returned by an edit because relocation changes
 the id.
+
+Writable arrays must be non-empty and one-dimensional with scalar
+string/number/boolean/null elements. `[null]`, nested arrays, objects, and string
+elements surrounded by Studio-trimmed whitespace or control characters are
+rejected.

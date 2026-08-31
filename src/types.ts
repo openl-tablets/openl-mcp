@@ -580,19 +580,23 @@ export interface RawTableCellStyle {
   border?: RawTableCellBorder;
 }
 
+/** A scalar value accepted in a raw table cell or multi-value array. */
+export type RawCellScalar = string | number | boolean | null;
+
+/** A scalar cell value or Studio's one-dimensional multi-value representation. */
+export type RawCellValue = RawCellScalar | RawCellScalar[];
+
 /**
  * A single cell in a raw table view's 2D source matrix.
  *
- * Mirrors `RawTableCell` in the studio OpenAPI. `value` is typed as `unknown`
- * because the backend serializes whatever JSON value the cell holds (string,
- * number, boolean, null). `cell` is the A1-notation address (e.g. `B3`) and
- * matches the cell address that compilation messages reference — absent for
- * covered cells.
+ * Mirrors `RawTableCell` in the studio OpenAPI. `cell` is the A1-notation
+ * address (e.g. `B3`) and matches the cell address that compilation messages
+ * reference — absent for covered cells.
  */
 export interface RawTableCell {
   /** A1-notation cell address (e.g. `B3`). Read-only; absent for covered cells. */
   cell?: string;
-  value?: unknown;
+  value?: RawCellValue;
   /** Number of columns this cell spans (>=2 when merging; absent otherwise). */
   colspan?: number;
   /** Number of rows this cell spans (>=2 when merging; absent otherwise). */
@@ -652,7 +656,7 @@ export interface RawTableAppend {
  * colspan/rowspan to merge; `covered` marks a cell masked by another's span.
  */
 export interface RawCellInput {
-  value?: unknown;
+  value?: RawCellValue;
   colspan?: number;
   rowspan?: number;
   covered?: boolean;
@@ -673,7 +677,7 @@ export interface RawTableActionTarget {
   cells?: RawCellInput[] | RawCellInput[][];
   row?: number;
   column?: number;
-  value?: unknown;
+  value?: RawCellValue;
   rowspan?: number;
   colspan?: number;
   /** Number of rows/columns to delete in a `rows`/`columns` delete (>= 1; defaults to 1). */
