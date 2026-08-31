@@ -14,7 +14,10 @@ arguments:
 
 After any edit to a table or rule (`openl_update_table`, `openl_append_table`, `openl_create_project_table`), call `openl_project_status` to confirm the project still compiles. If `compileState` is `errors`, surface the diagnostics with file/module context, propose fixes, re-validate. Only `openl_save_project` once `compileState` is `ok` (or you have explicit approval to save with warnings).
 
-Table content is always `RawSource`. Preserve the complete raw matrix on replacement and use the narrow raw action tools for isolated fixes; do not reconstruct a typed table DTO from diagnostics.
+Table content is always `RawSource`. Preserve the complete raw matrix—including
+context-parsed multi-value arrays—on replacement and use the narrow raw action
+tools for isolated fixes; do not reconstruct a typed table DTO or guess OpenL
+array text from diagnostics.
 
 # Validate-After-Edit Workflow
 

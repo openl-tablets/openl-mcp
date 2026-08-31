@@ -94,6 +94,15 @@ supported because they cannot preserve the full workbook layout. When you ask
 for a change, Claude reads that matrix, prefers a narrow raw source action for
 isolated edits, validates the project, and saves it with a commit comment.
 
+Studio can expose a context-dependent multi-value cell as a JSON array, for
+example `{ "value": ["MA2", "FA+", "SPA"] }`. The same value can be sent
+unchanged through create, append, full update, or narrow cell/row/column/range
+tools. Arrays must be non-empty and contain only string, number, boolean, or null
+elements; `[null]`, nested arrays, objects, empty strings, and string elements
+surrounded by characters Studio trims (whitespace or ISO controls) are rejected.
+Studio—not the MCP client—maps
+the array to the correct OpenL workbook text.
+
 ## Run tests
 
 ```text

@@ -91,10 +91,10 @@ branch; `send` merges the current branch into the other branch.
 
 ### Rules/Tables Tools (10)
 - `openl_list_tables` - List project tables with pagination; follow `has_more` / `next_offset` until `has_more` is false when a complete inventory is required
-- `openl_get_table` - Get the authoritative `RawSource` 2D cell matrix; `startRow`/`maxRows` read a large table in row slices and `styles=true` includes read-only Excel cell styles. A sliced response carries `totalRows` and is for reading or narrow raw actions only
-- `openl_update_table` - Replace the complete `RawSource` matrix while preserving or adding rows; before writing, it reads one live row and rejects a shorter source even if `totalRows` was removed, preventing a sliced view from deleting unseen rows. Remove rows with `openl_delete_table_rows`. Call `openl_get_table` without `styles=true`: Studio write APIs cannot change formatting, and `style` is rejected rather than silently ignored
-- `openl_append_table` - Append full-width `RawSource` rows
-- `openl_create_project_table` - Create a table from a complete `RawSource` matrix in an existing module, or pass `modulePath` (an `.xlsx` project-relative path) to create a new module; cell formatting is unsupported by Studio write APIs
+- `openl_get_table` - Get the authoritative `RawSource` 2D cell matrix, including context-parsed one-dimensional multi-value arrays; `startRow`/`maxRows` read a large table in row slices and `styles=true` includes read-only Excel cell styles. A sliced response carries `totalRows` and is for reading or narrow raw actions only
+- `openl_update_table` - Replace the complete `RawSource` matrix while preserving or adding rows, including scalar and representable one-dimensional array values returned by `openl_get_table`; before writing, it reads one live row and rejects a shorter source even if `totalRows` was removed, preventing a sliced view from deleting unseen rows. Remove rows with `openl_delete_table_rows`. Call `openl_get_table` without `styles=true`: Studio write APIs cannot change formatting, and `style` is rejected rather than silently ignored
+- `openl_append_table` - Append full-width `RawSource` rows with scalar or representable one-dimensional array cell values
+- `openl_create_project_table` - Create a table from a complete `RawSource` matrix in an existing module, or pass `modulePath` (an `.xlsx` project-relative path) to create a new module; cell values may be scalars or representable one-dimensional arrays, while cell formatting is unsupported by Studio write APIs
 - `openl_delete_table` - Delete an entire table (to remove a row/column WITHIN a table, use the raw action tools below)
 - `openl_run_table` - Execute a regular (non-Test) table with JSON input and wait for its result; provide parameters by name, either directly or under an object-valued `params` field. The tool rejects `{ params: [...] }` because Studio silently executes that shape with null arguments; a top-level array remains available as the value of a single array-valued parameter, not as positional arguments. `timeoutMs` bounds the complete start-and-result workflow (default 2 minutes), and cancellation, timeout, or any other failed workflow clears the pending Studio run. Studio permits only one run per HTTP session, so concurrent calls through the same MCP connection are rejected rather than allowed to replace each other's result
 - `openl_get_table_dependencies` - Get the executable and datatype dependency graph: omit `tableId` for a whole-project/module view with optional `layer` (`executable`/`datatype`/`all`), or provide it for a table's dependency/dependent neighborhood. JSON returns the adjacency list, including bounded first/last value previews for vocabularies; Markdown visualizes executable calls as a Mermaid flowchart and the data model with declared fields, `Name<Type>` vocabulary headers, bounded values (`+ N more` when truncated), and reference cardinalities as a Mermaid ER diagram, plus a separate inheritance diagram when needed
@@ -102,7 +102,7 @@ branch; `send` merges the current branch into the other branch.
 - `openl_copy_table` - Copy a table server-side inside the project while preserving formatting, merged cells, comments, and structure
 
 ### Raw Table-Source Action Tools (12)
-In-place edits to a table's raw source (any table type). One tool per operation×orientation handles **one OR more** rows/columns — pass a single row/column or several; the studio takes a single `rows`/`columns` block target (one row/column is just a one-element block), so there is no separate "row" vs "rows" tool. Positions are 0-based (row 0 is the header, column 0 the leading labels). `cells` is required and non-empty (one cell per column/row; use `{ value: null }` for a blank cell). An edit that relocates the table changes its id; each tool returns the table's CURRENT `tableId` (plus `previousTableId` when it changed) and reads the table back to trigger a recompile.
+In-place edits to a table's raw source (any table type). One tool per operation×orientation handles **one OR more** rows/columns — pass a single row/column or several; the studio takes a single `rows`/`columns` block target (one row/column is just a one-element block), so there is no separate "row" vs "rows" tool. Positions are 0-based (row 0 is the header, column 0 the leading labels). `cells` is required and non-empty (one cell per column/row; use `{ value: null }` for a blank cell). Writable values use the same round-trip contract as full-table writes: string/number/boolean/null scalars or one-dimensional arrays of those scalars. Arrays must be non-empty; `[null]`, nested arrays, objects, and string elements surrounded by characters Studio trims (whitespace or ISO controls) are rejected. An edit that relocates the table changes its id; each tool returns the table's CURRENT `tableId` (plus `previousTableId` when it changed) and reads the table back to trigger a recompile.
 
 Rows / columns (one or many):
 - `openl_append_table_rows` / `openl_append_table_columns` - Add one or more rows/columns to the end (`cells` is a 2D array, one inner list per row/column)
@@ -258,6 +258,13 @@ HTTP), never from the server. A PAT is supplied as
 - Prefer the narrow raw table-source action tools for isolated edits. When a full
   replacement is necessary, call `openl_get_table` without `styles=true` and
   round-trip the complete `source`, preserving blank/covered cells and spans.
+- Raw cell values use Studio's round-trip-safe domain everywhere: scalar
+  string/number/boolean/null values and representable one-dimensional arrays of
+  those scalars. Arrays must contain at least one item; a singleton `[null]`,
+  nested arrays, objects, and string elements surrounded by characters Studio
+  trims (whitespace or ISO controls) are not representable. MCP validates this
+  shape but leaves all context-dependent OpenL
+  parsing and workbook serialization to Studio.
 - Cell styles are read-only in Studio's table REST API. `styles=true` is useful
   for inspection, but every MCP table write schema rejects `style`; never
   advertise formatting edits unless Studio adds a working write contract.

@@ -34,7 +34,9 @@ DTOs are incomplete and can lose workbook structure.
 2. Consult the relevant bundled specification/guide for the table kind.
 3. Build each new row as an array of raw cell objects. Every row must cover the
    full table width. Use `{ "value": null }` for a blank cell and preserve
-   `{ "covered": true }` placeholders for merged regions.
+   `{ "covered": true }` placeholders for merged regions. A context-dependent
+   multi-value cell uses Studio's one-dimensional scalar-array representation;
+   do not serialize it to guessed OpenL text.
 4. Call `openl_append_table` with
    `appendData: { tableType: "RawSource", rows }`.
 5. Continue with the returned `tableId`, verify through `openl_get_table`, then
@@ -46,3 +48,7 @@ use `openl_update_table` only when replacing the complete source matrix.
 
 For repository `local`, edit and test directly. For Git-backed repositories,
 follow the open/edit/validate/save lifecycle.
+
+Writable arrays must be non-empty and contain only string/number/boolean/null
+elements. `[null]`, nested arrays, objects, and string elements surrounded by
+Studio-trimmed whitespace or control characters are rejected.

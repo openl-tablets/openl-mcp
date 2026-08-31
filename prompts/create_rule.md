@@ -18,7 +18,8 @@ properties, spans, and layout information.
    Vocabulary, Data, Test, or another supported OpenL kind—based on the guide.
 3. When possible, inspect a correct table of that kind with `openl_get_table` and
    adapt its `source` matrix. Preserve blank and covered cells, merged spans, and
-   formula text exactly.
+   formula text exactly. Preserve context-parsed multi-value arrays as arrays;
+   Studio is responsible for their OpenL workbook serialization.
 4. Create the table with `openl_create_project_table` using only:
 
 ```json
@@ -39,3 +40,8 @@ properties, spans, and layout information.
 Never send typed `SimpleRules`, `Spreadsheet`, `Datatype`, or `Test` request
 objects to create/update/append tools. The semantic kind lives inside the raw
 OpenL grid; the transport discriminator remains `RawSource`.
+
+Writable values are scalar string/number/boolean/null values or non-empty
+one-dimensional arrays of those scalars. `[null]`, nested arrays, objects, and
+string elements surrounded by Studio-trimmed whitespace or control characters
+are not representable.

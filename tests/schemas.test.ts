@@ -3,6 +3,8 @@
 import { describe, expect, it } from "@jest/globals";
 import {
   appendTableSchema,
+  appendTableColumnsSchema,
+  appendTableRowsSchema,
   copyTableSchema,
   createProjectSchema,
   createProjectTableSchema,
@@ -15,6 +17,12 @@ import {
   mergeProjectBranchesSchema,
   projectIdSchema,
   runTableSchema,
+  insertTableColumnsSchema,
+  insertTableRowsSchema,
+  updateTableCellSchema,
+  updateTableColumnSchema,
+  updateTableRangeSchema,
+  updateTableRowSchema,
   updateTableSchema,
   z,
 } from "../src/schemas.js";
@@ -30,6 +38,76 @@ const rawTable = {
     covered: false,
   }]],
 };
+
+const rawCellWriteSchemas = [
+  {
+    name: "create table",
+    schema: createProjectTableSchema,
+    input: (value: unknown) => ({
+      projectId: "p1", moduleName: "Main",
+      table: { ...rawTable, source: [[{ value }]] },
+    }),
+  },
+  {
+    name: "full update",
+    schema: updateTableSchema,
+    input: (value: unknown) => ({
+      projectId: "p1", tableId: "t1",
+      view: { ...rawTable, source: [[{ value }]] },
+    }),
+  },
+  {
+    name: "append table",
+    schema: appendTableSchema,
+    input: (value: unknown) => ({
+      projectId: "p1", tableId: "t1",
+      appendData: { tableType: "RawSource", rows: [[{ value }]] },
+    }),
+  },
+  {
+    name: "append rows",
+    schema: appendTableRowsSchema,
+    input: (value: unknown) => ({ projectId: "p1", tableId: "t1", cells: [[{ value }]] }),
+  },
+  {
+    name: "append columns",
+    schema: appendTableColumnsSchema,
+    input: (value: unknown) => ({ projectId: "p1", tableId: "t1", cells: [[{ value }]] }),
+  },
+  {
+    name: "insert rows",
+    schema: insertTableRowsSchema,
+    input: (value: unknown) => ({ projectId: "p1", tableId: "t1", position: 1, cells: [[{ value }]] }),
+  },
+  {
+    name: "insert columns",
+    schema: insertTableColumnsSchema,
+    input: (value: unknown) => ({ projectId: "p1", tableId: "t1", position: 1, cells: [[{ value }]] }),
+  },
+  {
+    name: "update row",
+    schema: updateTableRowSchema,
+    input: (value: unknown) => ({ projectId: "p1", tableId: "t1", position: 0, cells: [{ value }] }),
+  },
+  {
+    name: "update column",
+    schema: updateTableColumnSchema,
+    input: (value: unknown) => ({ projectId: "p1", tableId: "t1", position: 0, cells: [{ value }] }),
+  },
+  {
+    name: "update cell",
+    schema: updateTableCellSchema,
+    input: (value: unknown) => ({ projectId: "p1", tableId: "t1", row: 0, column: 0, value }),
+  },
+  {
+    name: "update range",
+    schema: updateTableRangeSchema,
+    input: (value: unknown) => ({
+      projectId: "p1", tableId: "t1", row: 0, column: 0,
+      cells: [[{ value }, { value: null }]],
+    }),
+  },
+];
 
 describe("opaque project identifiers", () => {
   it("rejects an empty ID without normalizing non-empty values", () => {
@@ -65,6 +143,68 @@ describe("RawSource-only table contracts", () => {
       tableId: "t1",
       view: rawTable,
     }).view.source[0][0]).toEqual(rawTable.source[0][0]);
+  });
+
+  it.each(rawCellWriteSchemas)("accepts Studio multi-value arrays for $name", ({ schema, input }) => {
+    for (const value of [
+      ["MA2", "FA+", "SPA"],
+      [42],
+      [true],
+      [null, "ACME, Inc", "C:\\"],
+      ["\uFEFFStudio preserves BOM boundaries\uFEFF"],
+    ]) {
+      expect(schema.safeParse(input(value)).success).toBe(true);
+    }
+  });
+
+  it.each(rawCellWriteSchemas)("rejects non-representable cell structures for $name", ({ schema, input }) => {
+    for (const value of [
+      [],
+      [null],
+      [["nested"]],
+      { unsupported: true },
+      [""],
+      [" leading"],
+      ["trailing "],
+      ["\u0000leading control"],
+      ["trailing control\u009F"],
+      ["\u00A0leading non-breaking space"],
+    ]) {
+      expect(schema.safeParse(input(value)).success).toBe(false);
+    }
+  });
+
+  it("publishes the same scalar-or-array value domain without an object alternative", () => {
+    const json = z.toJSONSchema(updateTableCellSchema) as Record<string, any>;
+    const serializedValueSchema = JSON.stringify(json.properties.value);
+
+    expect(serializedValueSchema).toContain('"type":"array"');
+    expect(serializedValueSchema).toContain('"maxItems":1');
+    expect(serializedValueSchema).toContain('"minItems":2');
+    expect(serializedValueSchema).toContain("\\\\u0000-\\\\u0020");
+    expect(serializedValueSchema).toContain("\\\\u007F-\\\\u00A0");
+    expect(serializedValueSchema).not.toContain('"type":"object"');
+  });
+
+  it("explains the supported cell-value domain in validation errors", () => {
+    const objectResult = updateTableCellSchema.safeParse({
+      projectId: "p1", tableId: "t1", row: 0, column: 0, value: { unsupported: true },
+    });
+
+    expect(objectResult.success).toBe(false);
+    if (!objectResult.success) {
+      expect(z.prettifyError(objectResult.error)).toMatch(
+        /Cell value must be a string, number, boolean, null, or a representable one-dimensional array/,
+      );
+    }
+
+    const singletonNullResult = updateTableCellSchema.safeParse({
+      projectId: "p1", tableId: "t1", row: 0, column: 0, value: [null],
+    });
+    expect(singletonNullResult.success).toBe(false);
+    if (!singletonNullResult.success) {
+      expect(z.prettifyError(singletonNullResult.error)).toMatch(/\[null\] is not representable/);
+    }
   });
 
   it("rejects read-only cell styles from every table write contract", () => {

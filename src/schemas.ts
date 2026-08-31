@@ -212,8 +212,39 @@ export const copyTableSchema = z.object({
   response_format: ResponseFormat.optional(),
 }).strict();
 
+const arrayCellStringSchema = z.string().regex(
+  // Mirrors Studio's StringUtils.isSpaceOrControl(char), which is broader than
+  // JavaScript \s: ISO controls and every Unicode space separator are trimmed.
+  /^[^\u0000-\u0020\u007F-\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000](?:[\s\S]*[^\u0000-\u0020\u007F-\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000])?$/,
+  "Array string elements must be non-empty and have no leading or trailing characters trimmed by Studio (whitespace or ISO controls).",
+);
+const arrayCellNonNullValueSchema = z.union([
+  arrayCellStringSchema,
+  z.number(),
+  z.boolean(),
+]);
+const arrayCellValueSchema = z.union([
+  z.array(arrayCellNonNullValueSchema).length(1, {
+    error: "A single-value array must contain exactly one non-null scalar value.",
+  }),
+  z.array(z.union([arrayCellNonNullValueSchema, z.null()])).min(2, {
+    error: "An array containing null must have at least two elements; [null] is not representable.",
+  }),
+]);
+
+/** The round-trip-safe raw cell value domain exposed by the Studio API. */
+const cellValueSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+  arrayCellValueSchema,
+], {
+  error: "Cell value must be a string, number, boolean, null, or a representable one-dimensional array of those scalar values. Arrays must be non-empty; [null], nested arrays, objects, and string elements surrounded by Studio-trimmed whitespace or control characters are not supported.",
+});
+
 const rawTableCellSchema = z.strictObject({
-  value: z.unknown().optional(),
+  value: cellValueSchema.optional().describe("Cell value as a scalar or representable one-dimensional scalar array. Null or omitted is an empty cell."),
   colspan: z.number().int().min(1).optional(),
   rowspan: z.number().int().min(1).optional(),
   covered: z.boolean().optional(),
@@ -241,12 +272,9 @@ export const appendTableSchema = z.object({
 // the tools surface the new id the same way update/append do.
 // =============================================================================
 
-/** A cell value the studio accepts (`oneOf` string/number/boolean, or null for an empty/cleared cell). */
-const cellValueSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
-
 /** A cell value for a raw table-source edit. */
 const rawCellInputSchema = z.object({
-  value: cellValueSchema.optional().describe("Cell value: a string, number, or boolean. Null or omitted is an empty cell."),
+  value: cellValueSchema.optional().describe("Cell value as a scalar or representable one-dimensional scalar array. Null or omitted is an empty cell."),
   colspan: z.number().int().min(1).optional().describe("Number of columns this cell spans (>= 2 to merge; omit or 1 for a single column)."),
   rowspan: z.number().int().min(1).optional().describe("Number of rows this cell spans (>= 2 to merge; omit or 1 for a single row)."),
   covered: z.boolean().optional().describe("Marks a cell covered by another cell's span; its value is ignored."),
@@ -292,7 +320,7 @@ export const updateTableCellSchema = z.object({
   ...tableActionBase,
   row: z.number().int().min(0).describe("0-based row index of the cell (0..height-1)."),
   column: z.number().int().min(0).describe("0-based column index of the cell (0..width-1)."),
-  value: cellValueSchema.describe("New cell value (string, number, or boolean) to set, or null to clear the cell. Required — pass null explicitly to clear so the intent is unambiguous."),
+  value: cellValueSchema.describe("New scalar or representable one-dimensional scalar-array value. Required — pass null explicitly to clear so the intent is unambiguous."),
 }).strict();
 
 export const mergeTableCellsSchema = z.object({

@@ -30,7 +30,8 @@ Target semantic table kind: `{tableType}`. The transport still remains `RawSourc
    available. Its `source` is the authoritative shape to adapt.
 3. Build the complete workbook grid, including the Test header, parameter
    columns, `_res_`/`_error_` expectations, blank cells, and merged-cell
-   placeholders required by the specification.
+   placeholders required by the specification. Multi-value parameter or
+   attribute cells may use the one-dimensional arrays returned by Studio.
 4. Create it with:
 
 ```json
@@ -51,3 +52,8 @@ Target semantic table kind: `{tableType}`. The transport still remains `RawSourc
 
 Never substitute typed `headers`, `rows[{values}]`, or `testedTableName` payloads
 for the raw source.
+
+Array-valued cells must be non-empty and contain only string/number/boolean/null
+elements. `[null]`, nested arrays, objects, and string elements surrounded by
+Studio-trimmed whitespace or control characters are rejected; Studio performs
+the context-dependent serialization.

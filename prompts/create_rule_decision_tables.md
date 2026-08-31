@@ -16,7 +16,8 @@ semantics, not MCP request variants. MCP exposes their content only as a
    table's bundled specification.
 3. Inspect an existing example with `openl_get_table` when possible. Read its
    header, signature cells, condition/action columns, rule rows, merges, and
-   blank placeholders directly from `source`.
+   blank placeholders directly from `source`. Keep any context-parsed
+   multi-value arrays as arrays instead of inventing OpenL lexical text.
 4. Build a complete grid that follows the specification. Do not infer a typed
    JSON shape such as `args`, `headers`, or `rules`.
 5. Call `openl_create_project_table` with
