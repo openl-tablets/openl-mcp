@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Asynchronous run and test-result tools now wait internally through Studio's `202 Accepted` / `{"status":"notReady"}` responses instead of requiring agent-side polling; test-result reads avoid invalid statistics, pagination, or fabricated empty results, and coded legacy `409 *.not.completed` run responses remain supported without swallowing genuine conflicts (EPBDS-16636).
 - Raw table create, append, full update, and narrow source-action tools now share Studio's round-trip-safe scalar and one-dimensional multi-value cell contract, so arrays returned by `openl_get_table` can be written back consistently while unsupported structures are rejected locally (EPBDS-16513).
 - `openl_run_table` now rejects `{ params: [...] }` with an actionable validation error instead of allowing Studio to execute it with null arguments, and no longer presents top-level arrays as positional arguments (EPBDS-16491).
 - Merge tools now state that the precheck covers branch relationship and attempt blockers rather than conflicts, and conflict responses no longer repeat the superseded `mergeable` verdict (EPBDS-16489).

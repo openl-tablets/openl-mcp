@@ -30,7 +30,7 @@ BEFORE any deployment (MANDATORY):
 1. Validate project → MUST pass (0 errors)
    Use `openl_project_status(projectId)` to check `compileState` and review `diagnostics` (errors/warnings with location)
 2. Run all tests → ALL must pass
-   Use `openl_start_project_tests()` then `openl_get_test_results()` to run tests, or use OpenL Studio UI
+   Use `openl_start_project_tests()` then `openl_get_test_results()` to run tests, or use OpenL Studio UI. The result tool waits internally until Studio has completed the test run.
 3. Check for errors → MUST be 0
    Use `openl_project_status(projectId)` and confirm there are no error diagnostics
 

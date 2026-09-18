@@ -6,9 +6,10 @@
 import { ProtocolError, ProtocolErrorCode } from "@modelcontextprotocol/server";
 import * as schemas from "../schemas.js";
 import { formatResponse } from "../formatters.js";
-import { isAxiosError } from "../utils.js";
+import { isAxiosError, isResultNotReady } from "../utils.js";
 import { registerTool, type ToolHandlerExtra, type ToolResponse } from "./common.js";
 import type { OpenLClient } from "../client.js";
+import type * as Types from "../types.js";
 
 const RUN_DEFAULT_TIMEOUT_MS = 120_000;
 const RUN_POLL_INITIAL_INTERVAL_MS = 250;
@@ -21,8 +22,17 @@ const RUN_RESULT_FIELDS =
 // only by project. Overlap could replace or cancel another tool call's run.
 const activeTableRunClients = new WeakSet<OpenLClient>();
 
-function isConflict(error: unknown): boolean {
-  return isAxiosError(error) && error.response?.status === 409;
+function isLegacyResultNotReady(error: unknown): boolean {
+  if (!isAxiosError(error) || error.response?.status !== 409) {
+    return false;
+  }
+  const data = error.response.data;
+  const code = typeof data === "object" && data !== null && "code" in data
+    ? (data as { code?: unknown }).code
+    : undefined;
+  return typeof code === "string" && (
+    code.endsWith(".not.completed") || code.endsWith(".not-completed")
+  );
 }
 
 function isRequestTimeout(error: unknown): boolean {
@@ -80,7 +90,7 @@ async function waitForRunResult(
   deadline: number,
   timeoutMs: number,
   extra?: ToolHandlerExtra,
-): Promise<Awaited<ReturnType<OpenLClient["getTableRunResult"]>>> {
+): Promise<Types.RunExecutionResult> {
   const progressToken = extra?._meta?.progressToken;
   let pollIntervalMs = RUN_POLL_INITIAL_INTERVAL_MS;
 
@@ -92,16 +102,19 @@ async function waitForRunResult(
       throw makeRunTimeoutError(timeoutMs);
     }
     try {
-      return await client.getTableRunResult(projectId, {
+      const result = await client.getTableRunResult(projectId, {
         fields: withSchema ? undefined : RUN_RESULT_FIELDS,
         signal: extra?.signal,
         timeoutMs: remainingRunTime(deadline, timeoutMs),
       });
+      if (!isResultNotReady(result)) {
+        return result;
+      }
     } catch (error) {
       if (Date.now() >= deadline || isRequestTimeout(error)) {
         throw makeRunTimeoutError(timeoutMs);
       }
-      if (!isConflict(error)) {
+      if (!isLegacyResultNotReady(error)) {
         throw error;
       }
     }

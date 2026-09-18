@@ -21,11 +21,13 @@ arguments:
    - Returns execution status and metadata
 2. Use `openl_get_test_results_summary()` for brief summary (without testCases)
 3. Use `openl_get_test_results()` for full results with pagination
+   - Result tools wait internally while the asynchronous test run is in progress; do not poll them from the agent
    - **IMPORTANT**: Pagination applies to test tables, not individual test cases
    - Each page returns test results aggregated by table (e.g., one table may contain multiple tests)
    - Example: Page 1 might show 5 tables with aggregated test counts (7 tests, 8 tests, etc.)
    - **NOTE**: The 'unpaged' parameter may not work correctly on the backend - use pagination (page/offset/size) instead
 4. Use `openl_get_test_results_by_table()` for results filtered by table ID
+   - It waits for the run to finish before filtering; an in-progress run is not interpreted as zero tests
    - **NOTE**: The 'unpaged' parameter may not work correctly on the backend - use pagination if needed
 
 # Test Selection Logic

@@ -28,7 +28,7 @@ describe("table workflow handlers", () => {
     mockAxios.restore();
   });
 
-  it("runs a table, waits through 409, and omits bulky schemas by default", async () => {
+  it("runs a table, waits through current 202 and legacy 409 not-ready responses, and omits bulky schemas by default", async () => {
     let startParams: Record<string, unknown> | undefined;
     let startBody: unknown;
     let resultReads = 0;
@@ -42,9 +42,13 @@ describe("table workflow handlers", () => {
     mockAxios.onGet("/projects/p1/run/result").reply((config) => {
       resultReads += 1;
       resultFields = config.params?.fields;
-      return resultReads === 1
-        ? [409, { message: "still running" }]
-        : [200, { tableId: "t1", tableName: "Rate", result: { premium: 125 }, executionTimeMs: 4.5 }];
+      if (resultReads === 1) {
+        return [202, { status: "notReady" }];
+      }
+      if (resultReads === 2) {
+        return [409, { code: "openl.error.409.run.not.completed", message: "still running" }];
+      }
+      return [200, { tableId: "t1", tableName: "Rate", result: { premium: 125 }, executionTimeMs: 4.5 }];
     });
 
     const response = await executeTool("run_table", {
@@ -57,7 +61,7 @@ describe("table workflow handlers", () => {
 
     expect(startParams).toEqual({ tableId: "t1", fromModule: "Main" });
     expect(startBody).toEqual({ params: { age: 25 }, runtimeContext: { state: "CA" } });
-    expect(resultReads).toBe(2);
+    expect(resultReads).toBe(3);
     expect(resultFields).toContain("result");
     expect(resultFields).not.toContain("resultSchema");
     expect(jsonResult<Record<string, unknown>>(response.content[0].text)).toMatchObject({
@@ -88,7 +92,7 @@ describe("table workflow handlers", () => {
   it("cancels the Studio run when the MCP request is aborted", async () => {
     let cancelled = false;
     mockAxios.onPost("/projects/p1/run").reply(202);
-    mockAxios.onGet("/projects/p1/run/result").reply(409, { message: "still running" });
+    mockAxios.onGet("/projects/p1/run/result").reply(202, { status: "notReady" });
     mockAxios.onDelete("/projects/p1/run").reply(() => {
       cancelled = true;
       return [204];
@@ -193,7 +197,7 @@ describe("table workflow handlers", () => {
 
   it("bounds result polling and cancels the Studio run on timeout", async () => {
     mockAxios.onPost("/projects/p1/run").reply(202);
-    mockAxios.onGet("/projects/p1/run/result").reply(409, { message: "still running" });
+    mockAxios.onGet("/projects/p1/run/result").reply(202, { status: "notReady" });
     mockAxios.onDelete("/projects/p1/run").reply(204);
 
     await expect(executeTool("run_table", {
@@ -209,16 +213,19 @@ describe("table workflow handlers", () => {
     expect(mockAxios.history.delete).toHaveLength(1);
   });
 
-  it("cancels the Studio run when reading its result fails", async () => {
+  it("cancels the Studio run instead of treating a genuine 409 as not ready", async () => {
     mockAxios.onPost("/projects/p1/run").reply(202);
-    mockAxios.onGet("/projects/p1/run/result").reply(500, { message: "failed" });
+    mockAxios.onGet("/projects/p1/run/result").reply(409, {
+      code: "openl.error.409.run.conflict",
+      message: "conflicting run state",
+    });
     mockAxios.onDelete("/projects/p1/run").reply(204);
 
     await expect(executeTool("run_table", {
       projectId: "p1",
       tableId: "t1",
       inputJson: [],
-    }, client)).rejects.toThrow(/failed|500/);
+    }, client)).rejects.toThrow(/conflicting run state|409/);
 
     expect(mockAxios.history.delete).toHaveLength(1);
   });

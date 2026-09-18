@@ -3,7 +3,7 @@
  */
 
 import { createHash } from "crypto";
-import type { ExtractedErrorInfo } from "./types.js";
+import type { ExtractedErrorInfo, ResultNotReadyView } from "./types.js";
 
 /**
  * Compute a SHA-256 hash fingerprint of a sensitive value for debugging
@@ -202,6 +202,17 @@ export function isAxiosError(error: unknown): error is import("axios").AxiosErro
     error !== null &&
     "isAxiosError" in error &&
     (error as { isAxiosError?: boolean }).isAxiosError === true
+  );
+}
+
+/** Type guard for the 202 body returned while an asynchronous result is not ready. */
+export function isResultNotReady(value: unknown): value is ResultNotReadyView {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    "status" in value &&
+    value.status === "notReady"
   );
 }
 

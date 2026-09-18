@@ -11,6 +11,7 @@ import type * as Types from "./types.js";
 import { AuthenticationManager } from "./auth.js";
 import { DEFAULTS, ERROR_LOCAL_REPOSITORY, REPOSITORY_LOCAL } from "./constants.js";
 import {
+  isResultNotReady,
   validateTimeout,
   sanitizeError,
   normalizeOpenLBaseUrl,
@@ -1570,13 +1571,13 @@ export class OpenLClient {
     );
   }
 
-  /** Read the completed result of the current regular table run. */
+  /** Read the current regular table run result, or `notReady` while it is still running. */
   async getTableRunResult(
     projectId: string,
     options?: { fields?: string; signal?: AbortSignal; timeoutMs?: number }
-  ): Promise<Types.RunExecutionResult> {
+  ): Promise<Types.RunExecutionResult | Types.ResultNotReadyView> {
     const projectPath = this.buildProjectPath(projectId);
-    const response = await this.axiosInstance.get<Types.RunExecutionResult>(
+    const response = await this.axiosInstance.get<Types.RunExecutionResult | Types.ResultNotReadyView>(
       `${projectPath}/run/result`,
       {
         params: options?.fields ? { fields: options.fields } : undefined,
@@ -1584,6 +1585,9 @@ export class OpenLClient {
         timeout: options?.timeoutMs,
       }
     );
+    if (response.status === 202) {
+      return { status: "notReady" };
+    }
     return response.data;
   }
 
@@ -2098,7 +2102,7 @@ export class OpenLClient {
    * 
    * @param projectId - Project ID
    * @param options - Summary options
-   * @returns Test results summary
+   * @returns Test results summary, or `notReady` while the execution is still running
    * @throws Error if headers not found or request fails
    */
   async getTestResultsSummary(
@@ -2107,8 +2111,10 @@ export class OpenLClient {
       failuresOnly?: boolean;
       failures?: number;
       unpaged?: boolean;
+      signal?: AbortSignal;
+      timeoutMs?: number;
     }
-  ): Promise<Types.TestResultsSummary> {
+  ): Promise<Types.TestResultsSummary | Types.ResultNotReadyView> {
     const projectPath = this.buildProjectPath(projectId);
     const headers = this.getTestExecutionHeaders(projectId);
 
@@ -2124,7 +2130,7 @@ export class OpenLClient {
     if (options?.failures !== undefined) params.failures = options.failures;
     if (options?.unpaged) params.unpaged = true;
 
-    const response = await this.axiosInstance.get<Types.TestsExecutionSummary>(
+    const response = await this.axiosInstance.get<Types.TestsExecutionSummary | Types.ResultNotReadyView>(
       `${projectPath}/tests/summary`,
       {
         params,
@@ -2132,9 +2138,17 @@ export class OpenLClient {
           ...headers,
           "Accept": "application/json",
         },
+        signal: options?.signal,
+        timeout: options?.timeoutMs,
       }
     );
 
+    if (response.status === 202) {
+      return { status: "notReady" };
+    }
+    if (isResultNotReady(response.data)) {
+      return response.data;
+    }
     const summary = response.data;
     const numberOfPassed = summary.numberOfTests - summary.numberOfFailures;
 
@@ -2151,7 +2165,7 @@ export class OpenLClient {
    * 
    * @param projectId - Project ID
    * @param options - Result options including pagination
-   * @returns Full test execution summary with testCases
+   * @returns Full test execution summary with testCases, or `notReady` while execution is still running
    * @throws Error if headers not found or request fails
    */
   async getTestResults(
@@ -2164,8 +2178,10 @@ export class OpenLClient {
       size?: number;
       limit?: number; // Alias for size
       unpaged?: boolean;
+      signal?: AbortSignal;
+      timeoutMs?: number;
     }
-  ): Promise<Types.TestsExecutionSummary> {
+  ): Promise<Types.TestsExecutionSummary | Types.ResultNotReadyView> {
     const projectPath = this.buildProjectPath(projectId);
     const headers = this.getTestExecutionHeaders(projectId);
 
@@ -2185,7 +2201,7 @@ export class OpenLClient {
     else if (options?.limit !== undefined) params.size = options.limit; // Map limit to size
     if (options?.unpaged) params.unpaged = true;
 
-    const response = await this.axiosInstance.get<Types.TestsExecutionSummary>(
+    const response = await this.axiosInstance.get<Types.TestsExecutionSummary | Types.ResultNotReadyView>(
       `${projectPath}/tests/summary`,
       {
         params,
@@ -2193,9 +2209,14 @@ export class OpenLClient {
           ...headers,
           "Accept": "application/json",
         },
+        signal: options?.signal,
+        timeout: options?.timeoutMs,
       }
     );
 
+    if (response.status === 202) {
+      return { status: "notReady" };
+    }
     return response.data;
   }
 
@@ -2205,7 +2226,7 @@ export class OpenLClient {
    * @param projectId - Project ID
    * @param tableId - Table ID to filter results
    * @param options - Result options
-   * @returns Filtered test execution summary
+   * @returns Filtered test execution summary, or `notReady` while execution is still running
    * @throws Error if headers not found or request fails
    */
   async getTestResultsByTable(
@@ -2219,14 +2240,21 @@ export class OpenLClient {
       size?: number;
       limit?: number;
       unpaged?: boolean;
+      signal?: AbortSignal;
+      timeoutMs?: number;
     }
-  ): Promise<Types.TestsExecutionSummary> {
+  ): Promise<Types.TestsExecutionSummary | Types.ResultNotReadyView> {
     if (options?.unpaged) {
       const unpagedResults = await this.getTestResults(projectId, {
         failuresOnly: options.failuresOnly,
         failures: options.failures,
         unpaged: true,
+        signal: options.signal,
+        timeoutMs: options.timeoutMs,
       });
+      if (isResultNotReady(unpagedResults)) {
+        return unpagedResults;
+      }
       const filteredTestCases = (unpagedResults.testCases || []).filter(
         (testCase) => testCase.tableId === tableId
       );
@@ -2256,6 +2284,8 @@ export class OpenLClient {
       // Use caller's size/limit only as page size when iterating pages.
       size: options?.size,
       limit: options?.limit,
+      signal: options?.signal,
+      timeoutMs: options?.timeoutMs,
     };
     let pageIndex = 0;
     let templateSummary: Types.TestsExecutionSummary | null = null;
@@ -2271,6 +2301,9 @@ export class OpenLClient {
         size: pageSize,
         page: pageIndex,
       });
+      if (isResultNotReady(pageResults)) {
+        return pageResults;
+      }
       if (!templateSummary) {
         templateSummary = pageResults;
       }
@@ -2304,10 +2337,16 @@ export class OpenLClient {
     if (!templateSummary) {
       // No pages returned any results; construct an empty summary shape by
       // calling getTestResults once (without pagination options).
-      templateSummary = await this.getTestResults(projectId, {
+      const fallbackSummary = await this.getTestResults(projectId, {
         failuresOnly: options?.failuresOnly,
         failures: options?.failures,
+        signal: options?.signal,
+        timeoutMs: options?.timeoutMs,
       });
+      if (isResultNotReady(fallbackSummary)) {
+        return fallbackSummary;
+      }
+      templateSummary = fallbackSummary;
     }
 
     // Apply caller's pagination options within the filtered test cases.

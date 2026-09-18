@@ -339,6 +339,11 @@ export interface CopyTableRequest {
   sheetName?: string;
 }
 
+/** Successful 202 response while an asynchronous Studio result is still being produced. */
+export interface ResultNotReadyView {
+  status: "notReady";
+}
+
 /** Result of a regular table execution through the Studio Run API. */
 export interface RunExecutionResult {
   contextParameters?: TraceParameterValue[];

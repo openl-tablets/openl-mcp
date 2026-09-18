@@ -6,8 +6,17 @@
 import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import MockAdapter from "axios-mock-adapter";
 import { OpenLClient } from "../src/client.js";
+import { isResultNotReady } from "../src/utils.js";
 import type { OpenLConfig, ProjectViewModel, SummaryTableView } from "../src/types.js";
 import type * as Types from "../src/types.js";
+
+function assertResultReady<T>(
+  result: T | Types.ResultNotReadyView,
+): asserts result is T {
+  if (isResultNotReady(result)) {
+    throw new Error("Expected completed test results, received notReady");
+  }
+}
 
 describe("OpenLClient", () => {
   let client: OpenLClient;
@@ -1147,6 +1156,7 @@ describe("OpenLClient", () => {
       });
 
       const summary = await client.getTestResultsSummary("design-project1");
+      assertResultReady(summary);
       expect(summary.numberOfTests).toBe(5);
       expect(summary.numberOfFailures).toBe(1);
       expect(summary.numberOfPassed).toBe(4);
@@ -1158,6 +1168,7 @@ describe("OpenLClient", () => {
       mockAxios.onGet(`${projectPath}/tests/summary`, { params: { unpaged: true } }).reply(200, mockSummary);
 
       const summary = await client.getTestResultsSummary("design-project1", { unpaged: true });
+      assertResultReady(summary);
       expect(summary.numberOfTests).toBe(5);
     });
 
@@ -1170,6 +1181,7 @@ describe("OpenLClient", () => {
       });
 
       const results = await client.getTestResults("design-project1");
+      assertResultReady(results);
       expect(results.testCases).toHaveLength(2);
     });
 
@@ -1179,6 +1191,7 @@ describe("OpenLClient", () => {
       mockAxios.onGet(`${projectPath}/tests/summary`, { params: { unpaged: true } }).reply(200, mockSummary);
 
       const results = await client.getTestResults("design-project1", { unpaged: true });
+      assertResultReady(results);
       expect(results.testCases).toHaveLength(2);
     });
 
@@ -1193,6 +1206,7 @@ describe("OpenLClient", () => {
       });
 
       const results = await client.getTestResultsByTable("design-project1", "test_table_abc");
+      assertResultReady(results);
       // Only the matching testCase should be returned
       expect(results.testCases).toHaveLength(1);
       expect(results.testCases[0].tableId).toBe("test_table_abc");
@@ -1223,6 +1237,7 @@ describe("OpenLClient", () => {
       });
 
       const summary = await client.getTestResultsSummary("design-project1");
+      assertResultReady(summary);
       expect(summary.numberOfTests).toBe(5);
     });
 
@@ -1247,6 +1262,7 @@ describe("OpenLClient", () => {
       });
 
       const summary = await client.getTestResultsSummary("design-project1");
+      assertResultReady(summary);
       expect(summary.numberOfTests).toBe(5);
     });
 
@@ -1273,6 +1289,7 @@ describe("OpenLClient", () => {
       });
 
       const summary = await client.getTestResultsSummary("design-project1");
+      assertResultReady(summary);
       expect(summary.numberOfTests).toBe(5);
     });
 

@@ -2003,6 +2003,80 @@ describe("Tool Handler Integration Tests", () => {
     });
 
     describe("get_test_results_summary", () => {
+      it("waits through 202 notReady for every test-result view", async () => {
+        mockAxios.onPost(`/projects/${encodedProjectId}/tests/run`).reply(202, undefined, {
+          "x-test-execution-id": "test-session-not-ready",
+        });
+        await executeTool("start_project_tests", {
+          projectId: "design-project1",
+        }, client);
+
+        let resultReads = 0;
+        mockAxios.onGet(/\/projects\/design-project1\/tests\/summary/).reply(() => {
+          resultReads += 1;
+          if (resultReads % 2 === 1) {
+            return [202, { status: "notReady" }];
+          }
+          return [200, {
+            testCases: [{
+              name: "Test_calculatePremium",
+              tableId: "Test_calculatePremium_1234",
+              executionTimeMs: 10,
+              numberOfTests: 2,
+              numberOfFailures: 0,
+              testUnits: [],
+            }],
+            executionTimeMs: 10,
+            numberOfTests: 2,
+            numberOfFailures: 0,
+            pageNumber: 0,
+            pageSize: 50,
+            numberOfElements: 1,
+          }];
+        });
+
+        const summary = await executeTool("get_test_results_summary", {
+          projectId: "design-project1",
+          response_format: "json",
+        }, client);
+        const full = await executeTool("get_test_results", {
+          projectId: "design-project1",
+          response_format: "json",
+        }, client);
+        const byTable = await executeTool("get_test_results_by_table", {
+          projectId: "design-project1",
+          tableId: "Test_calculatePremium_1234",
+          response_format: "json",
+        }, client);
+
+        for (const response of [summary, full, byTable]) {
+          expect(JSON.parse(response.content[0].text).data).toMatchObject({
+            numberOfTests: 2,
+            numberOfFailures: 0,
+          });
+        }
+        expect(resultReads).toBe(6);
+      });
+
+      it("stops waiting when the MCP request is cancelled", async () => {
+        mockAxios.onPost(`/projects/${encodedProjectId}/tests/run`).reply(202, undefined, {
+          "x-test-execution-id": "test-session-cancelled",
+        });
+        await executeTool("start_project_tests", {
+          projectId: "design-project1",
+        }, client);
+
+        const controller = new AbortController();
+        mockAxios.onGet(/\/projects\/design-project1\/tests\/summary/).reply(() => {
+          controller.abort();
+          return [202, { status: "notReady" }];
+        });
+
+        await expect(executeTool("get_test_results_summary", {
+          projectId: "design-project1",
+        }, client, { signal: controller.signal })).rejects.toThrow(/aborted/i);
+      });
+
       it("should execute openl_get_test_results_summary with stored headers", async () => {
         // First, start test execution to store headers
         const sessionHeaders = {
