@@ -363,6 +363,8 @@ The old `content` plus `encoding: "base64"` request remains accepted for compati
 
 **Description**: Get brief test execution summary without detailed test cases. Returns aggregated statistics (execution time, total tests, passed, failed) without the testCases array.
 
+While Studio is still running the tests, the tool waits internally through successful `202 Accepted` / `{"status":"notReady"}` responses; no incomplete aggregate is calculated and no agent-side polling is required.
+
 **Extra/Missed Inputs**:
 - ✅ All API parameters covered: `projectId`, `failures`, `unpaged`
 - ✅ Uses stored headers from test execution session
@@ -380,6 +382,8 @@ The old `content` plus `encoding: "base64"` request remains accepted for compati
 **OpenL API**: `GET /projects/{projectId}/tests/summary`
 
 **Description**: Get full test execution results with pagination support. Returns complete test execution summary including testCases array grouped by table. **IMPORTANT**: Pagination applies to test tables (not individual test cases). Each page returns test results aggregated by table (e.g., 'TestTable1' with 7 tests, 'TestTable2' with 8 tests).
+
+While Studio is still running the tests, the tool waits internally before calculating pagination metadata.
 
 **Extra/Missed Inputs**:
 - ✅ All API parameters covered: `projectId`, `failuresOnly`, `failures`, `page`, `offset`, `size`, `limit` (alias for size), `unpaged`
@@ -404,6 +408,8 @@ The old `content` plus `encoding: "base64"` request remains accepted for compati
 **OpenL API**: `GET /projects/{projectId}/tests/summary` + client-side filtering
 
 **Description**: Get test execution results filtered by specific table ID. Returns filtered test execution summary with only test cases for the specified table.
+
+The tool waits through Studio's `202 {"status":"notReady"}` before applying the table filter, so an in-progress run is never presented as an empty result.
 
 **Extra/Missed Inputs**:
 - ✅ All API parameters covered: `projectId`, `tableId`, `failuresOnly`, `failures`, `unpaged`
@@ -572,7 +578,7 @@ The server registers **74 tools**. All are listed below.
 | 57 | `openl_get_started` | Guidance | ✅ Complete | none (local) | Onboarding bootstrap: workflow protocol + workspace orientation |
 | 58 | `openl_list_guides` | Guidance | ✅ Complete | none (local guides bundle) | Metadata index of the bundled OpenL docs (filterable, paginated) |
 | 59 | `openl_get_guides` | Guidance | ✅ Complete | none (local guides bundle) | Full markdown bodies for requested guide ids |
-| 60 | `openl_run_table` | Rules | ✅ Complete | single-active `POST /projects/{projectId}/run` + bounded `GET /run/result` polling (`DELETE /run` on failure) | Execute a regular table within one session-wide deadline and wait inside one tool call for its result |
+| 60 | `openl_run_table` | Rules | ✅ Complete | single-active `POST /projects/{projectId}/run` + bounded `GET /run/result` polling on `202 notReady` (`DELETE /run` on failure) | Execute a regular table within one session-wide deadline and wait inside one tool call for its result |
 | 61 | `openl_get_table_dependencies` | Rules | ✅ Complete | `GET /projects/{projectId}/tables/graph` or `/tables/{tableId}/graph` | Get executable/datatype project or module graphs, or one table's dependency/dependent neighborhood; Markdown renders a Mermaid flowchart and a field/vocabulary-aware ER diagram with `Name<Type>` vocabulary headers |
 | 62 | `openl_list_project_modules` | Project | ✅ Complete | `GET /projects/{projectId}/modules` | List modules declared by a project |
 | 63 | `openl_list_module_sheets` | Project | ✅ Complete | `GET /projects/{projectId}/modules/{moduleName}/sheets` | List worksheet names in a module |
