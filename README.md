@@ -1,3 +1,12 @@
+> [!IMPORTANT]
+> **Repository Archived**
+> 
+> Please note that this repository has been archived and is no longer maintained. There will be no further releases of standalone `openl-mcp` modules. 
+> 
+> The MCP Server has been fully integrated into **OpenL Studio** and is now delivered as a single, unified package. 
+> 
+> 📚 For the latest documentation and instructions, please refer to the **[OpenL Tablets MCP Server Guide](https://github.com/openl-tablets/openl-tablets/blob/main/Docs/user-guides/mcp-server/index.md)**.
+
 # OpenL MCP Server
 
 Let an AI assistant work with your OpenL Studio business rules. Connect Claude
